@@ -1,0 +1,12 @@
+{
+  "name": "catalogo-acenox-local",
+  "version": "1.0.0",
+  "description": "Generador manual y por lotes de catalogos PDF",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^31.7.7"
+  }
+}

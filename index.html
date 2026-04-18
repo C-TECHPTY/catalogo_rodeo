@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador de Catalogo</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <button id="toggleSidebarButton" class="toggle-sidebar no-print" type="button" aria-label="Mostrar u ocultar panel">
+        Menu de configuracion
+    </button>
+
+    <div class="app-shell">
+        <aside id="controlPanel" class="control-panel no-print">
+            <div class="control-panel__inner">
+                <div class="control-panel__header">
+                    <h1>Generador de Catalogo</h1>
+                    <p>Usa el modo manual para un catalogo y el modo por lotes para generar varios PDF locales por categoria.</p>
+                </div>
+
+                <div class="mode-switch">
+                    <button id="manualModeButton" class="mode-switch__button mode-switch__button--active" type="button">Modo manual</button>
+                    <button id="batchModeButton" class="mode-switch__button" type="button">Modo por lotes</button>
+                </div>
+
+                <section class="controls-section manual-only">
+                    <h2>Datos generales</h2>
+                    <div class="controls-grid">
+                        <label class="control-field">
+                            <span>Titulo principal</span>
+                            <input id="catalogTitle" type="text" value="Acenox Catalogo Comercial">
+                        </label>
+
+                        <label class="control-field">
+                            <span>Texto footer</span>
+                            <input id="footerText" type="text" value="Catalogo comercial interno Acenox">
+                        </label>
+
+                        <label class="control-field">
+                            <span>Mostrar portada</span>
+                            <input id="includeCover" type="checkbox" checked>
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Plantilla</span>
+                            <select id="templateSelect">
+                                <option value="classic">Clasica original</option>
+                                <option value="editorial">Editorial premium</option>
+                                <option value="industrial">Industrial moderno</option>
+                                <option value="minimal">Minimal comercial</option>
+                                <option value="showcase">Showcase de marca</option>
+                                <option value="horizon">Horizontal editorial</option>
+                                <option value="ledger">Horizontal tecnica</option>
+                                <option value="campin1">CAMPIN1</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Productos por pagina</span>
+                            <input id="productsPerPage" type="number" min="1" max="12" step="1" value="6">
+                        </label>
+                    </div>
+                </section>
+
+                <section class="controls-section manual-only">
+                    <h2>Diseno</h2>
+                    <div class="controls-grid">
+                        <label class="control-field">
+                            <span>Color principal</span>
+                            <input id="primaryColor" type="color" value="#b7192e">
+                        </label>
+
+                        <label class="control-field">
+                            <span>Color secundario</span>
+                            <input id="secondaryColor" type="color" value="#1d1d1b">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Imagen de portada</span>
+                            <input id="coverImageFile" type="file" accept=".jpg,.jpeg,.png,.webp,.JPG,.JPEG,.PNG,.WEBP">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Logo paginas de producto</span>
+                            <input id="pageLogoFile" type="file" accept=".jpg,.jpeg,.png,.webp,.svg,.JPG,.JPEG,.PNG,.WEBP,.SVG">
+                        </label>
+
+                        <label class="control-field">
+                            <span>Logo en pagina</span>
+                            <select id="pageLogoPosition">
+                                <option value="right">Derecha</option>
+                                <option value="left">Izquierda</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Fondo de paginas</span>
+                            <input id="pageBackgroundFile" type="file" accept=".jpg,.jpeg,.png,.webp,.JPG,.JPEG,.PNG,.WEBP">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Intensidad del fondo</span>
+                            <input id="pageBackgroundOpacity" type="range" min="0" max="0.35" step="0.01" value="0.12">
+                        </label>
+                    </div>
+                </section>
+
+                <section class="controls-section manual-only">
+                    <h2>Editor visual</h2>
+                    <div class="controls-grid">
+                        <label class="control-field control-field--wide">
+                            <span>Plantilla editable</span>
+                            <select id="layoutPresetSelect">
+                                <option value="default">Predeterminada</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Bloque</span>
+                            <select id="layoutBlockSelect">
+                                <option value="coverTitle">Portada titulo</option>
+                                <option value="pageHeader">Encabezado</option>
+                                <option value="pageLogo">Logo pagina</option>
+                                <option value="productsGrid">Bloque productos</option>
+                                <option value="productImage">Imagen producto</option>
+                                <option value="productCode">Codigo producto</option>
+                                <option value="productPrice">Precio</option>
+                                <option value="productDescription">Descripcion</option>
+                                <option value="productMeta">Datos tecnicos</option>
+                                <option value="pageFooter">Footer</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Modo visual</span>
+                            <button id="toggleLayoutEditorButton" class="ghost-button" type="button">Activar editor</button>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Posicion X</span>
+                            <input id="layoutOffsetX" type="range" min="-220" max="220" step="2" value="0">
+                        </label>
+
+                        <label class="control-field">
+                            <span>Posicion Y</span>
+                            <input id="layoutOffsetY" type="range" min="-220" max="220" step="2" value="0">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Tamano del bloque</span>
+                            <input id="layoutScale" type="range" min="0.6" max="1.6" step="0.02" value="1">
+                        </label>
+                    </div>
+                    <div class="panel-actions">
+                        <button id="saveLayoutPresetButton" type="button">Guardar como nueva</button>
+                        <button id="resetLayoutBlockButton" type="button">Restaurar bloque</button>
+                        <button id="resetLayoutPresetButton" type="button">Restaurar plantilla</button>
+                    </div>
+                    <p id="layoutEditorStatus" class="status-message">Activa el editor para mover bloques en la vista previa y guardar una plantilla propia.</p>
+                </section>
+
+                <section class="controls-section manual-only">
+                    <h2>Archivos</h2>
+                    <div class="controls-grid">
+                        <label class="control-field control-field--wide">
+                            <span>Archivo Excel</span>
+                            <input id="excelFile" type="file" accept=".xlsx,.xlsm,.xls">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Imagenes</span>
+                            <input id="imageFiles" type="file" accept=".jpg,.jpeg,.png,.webp,.JPG,.JPEG,.PNG,.WEBP" multiple webkitdirectory>
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Multimedia extra por ITEM</span>
+                            <input id="extraMediaFiles" type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.webm,.mov,.JPG,.JPEG,.PNG,.WEBP,.MP4,.WEBM,.MOV" multiple webkitdirectory>
+                        </label>
+                    </div>
+                </section>
+
+                <section class="controls-section manual-only">
+                    <h2>Publicacion web</h2>
+                    <div class="controls-grid">
+                        <label class="control-field">
+                            <span>Nombre del catalogo</span>
+                            <input id="webCatalogSlug" type="text" value="catalogo-publicable">
+                        </label>
+
+                        <label class="control-field">
+                            <span>Vigencia del link</span>
+                            <select id="webExpiryDays">
+                                <option value="7">7 dias</option>
+                                <option value="15">15 dias</option>
+                                <option value="30" selected>30 dias</option>
+                                <option value="90">90 dias</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>URL base publica</span>
+                            <input id="webBaseUrl" type="text" value="" placeholder="https://tuempresa.com/catalogos">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>API base publica</span>
+                            <input id="webApiBaseUrl" type="text" value="" placeholder="https://tuempresa.com/catalogos_api">
+                        </label>
+
+                        <label class="control-field">
+                            <span>FTP host</span>
+                            <input id="hostingFtpHost" type="text" value="" placeholder="ftp.rodeoimportzl.com">
+                        </label>
+
+                        <label class="control-field">
+                            <span>FTP usuario</span>
+                            <input id="hostingFtpUser" type="text" value="" placeholder="Usuario FTP">
+                        </label>
+
+                        <label class="control-field">
+                            <span>FTP clave</span>
+                            <input id="hostingFtpPassword" type="password" value="" placeholder="Clave FTP">
+                        </label>
+
+                        <label class="control-field">
+                            <span>Ruta remota catalogos</span>
+                            <input id="hostingRemoteDir" type="text" value="/public_html/catalogos" placeholder="/public_html/catalogos">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>API key privada</span>
+                            <input id="hostingApiKey" type="password" value="" placeholder="API key de catalogos_api/config.php">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Carpeta salida web</span>
+                            <div class="path-picker">
+                                <input id="webOutputPath" type="text" readonly placeholder="Selecciona donde guardar el paquete publicable">
+                                <button id="pickWebOutputButton" type="button">Buscar</button>
+                            </div>
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Link generado</span>
+                            <div class="path-picker">
+                                <input id="generatedWebLink" type="text" readonly placeholder="Exporta el paquete web para generar un link listo para copiar">
+                                <button id="copyWebLinkButton" type="button">Copiar</button>
+                            </div>
+                        </label>
+                    </div>
+                    <p id="webExportStatus" class="status-message">La exportacion web generara HTML, JSON, multimedia y metadata listos para subir al hosting.</p>
+                    <div id="webPublishProgressPanel" class="batch-progress-panel" hidden>
+                        <div class="batch-progress-bar">
+                            <span id="webPublishProgressBarFill" class="batch-progress-bar__fill" style="width: 0%;"></span>
+                        </div>
+                        <p id="webPublishProgressText" class="batch-progress-text">Esperando publicacion al hosting.</p>
+                    </div>
+                </section>
+
+                <section class="controls-section manual-only">
+                    <h2>Acciones</h2>
+                    <div class="panel-actions">
+                        <button id="renderButton" type="button">Generar catalogo</button>
+                        <button id="printButton" type="button">Imprimir / Exportar PDF</button>
+                        <button id="exportWebButton" type="button">Exportar paquete web</button>
+                        <button id="publishHostingButton" type="button">Publicar al hosting</button>
+                    </div>
+                    <p id="statusMessage" class="status-message">Carga un Excel y tus imagenes para comenzar.</p>
+                </section>
+
+                <section id="batchControls" class="controls-section batch-only" hidden>
+                    <h2>Origen lote</h2>
+                    <div class="controls-grid">
+                        <label class="control-field control-field--wide">
+                            <span>Excel base</span>
+                            <div class="path-picker">
+                                <input id="batchExcelPath" type="text" readonly placeholder="Selecciona el Excel base">
+                                <button id="pickBatchExcelButton" type="button">Buscar</button>
+                            </div>
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Carpeta raiz de imagenes</span>
+                            <div class="path-picker">
+                                <input id="batchImagesRoot" type="text" readonly placeholder="Selecciona la carpeta de categorias">
+                                <button id="pickBatchImagesButton" type="button">Buscar</button>
+                            </div>
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Carpeta destino PDF</span>
+                            <div class="path-picker">
+                                <input id="batchOutputRoot" type="text" readonly placeholder="Selecciona donde guardar los PDF">
+                                <button id="pickBatchOutputButton" type="button">Buscar</button>
+                            </div>
+                        </label>
+                    </div>
+                </section>
+
+                <section class="controls-section batch-only" hidden>
+                    <h2>Configuracion lote</h2>
+                    <div class="controls-grid">
+                        <label class="control-field">
+                            <span>Plantilla base</span>
+                            <select id="batchTemplateSelect">
+                                <option value="editorial">Editorial premium</option>
+                                <option value="classic">Clasica original</option>
+                                <option value="industrial">Industrial moderno</option>
+                                <option value="minimal">Minimal comercial</option>
+                                <option value="showcase">Showcase de marca</option>
+                                <option value="horizon">Horizontal editorial</option>
+                                <option value="ledger">Horizontal tecnica</option>
+                                <option value="campin1">CAMPIN1</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Compresion imagen</span>
+                            <input id="batchImageQuality" type="range" min="0.45" max="0.95" step="0.05" value="0.72">
+                        </label>
+
+                        <label class="control-field">
+                            <span>Color principal base</span>
+                            <input id="batchPrimaryColor" type="color" value="#b7192e">
+                        </label>
+
+                        <label class="control-field">
+                            <span>Color secundario base</span>
+                            <input id="batchSecondaryColor" type="color" value="#1d1d1b">
+                        </label>
+
+                        <label class="control-field">
+                            <span>Logo en pagina</span>
+                            <select id="batchLogoPosition">
+                                <option value="right">Derecha</option>
+                                <option value="left">Izquierda</option>
+                            </select>
+                        </label>
+                    </div>
+                </section>
+
+                <section class="controls-section batch-only" hidden>
+                    <h2>Categorias</h2>
+                    <div class="panel-actions">
+                        <button id="scanBatchFoldersButton" type="button">Escanear carpetas</button>
+                        <button id="generateBatchButton" type="button">Generar PDFs por lote</button>
+                    </div>
+                    <div id="batchProgressPanel" class="batch-progress-panel" hidden>
+                        <div class="batch-progress-bar">
+                            <span id="batchProgressBarFill" class="batch-progress-bar__fill" style="width: 0%;"></span>
+                        </div>
+                        <p id="batchProgressText" class="batch-progress-text">Esperando inicio de lote.</p>
+                    </div>
+                    <div id="batchCategoryList" class="batch-category-list">
+                        <p class="batch-empty">Selecciona el Excel base, la carpeta de imagenes y la carpeta destino para empezar.</p>
+                    </div>
+                    <div id="batchResultsList" class="batch-results-list"></div>
+                    <p id="batchStatusMessage" class="status-message">El modo por lotes funciona dentro de la app local de escritorio.</p>
+                </section>
+            </div>
+        </aside>
+
+        <main class="workspace">
+            <main id="catalogRoot" class="catalog-root">
+                <section class="cover-page">
+                    <div class="cover-page__bg"></div>
+                    <div class="cover-page__overlay"></div>
+                    <div class="cover-page__frame"></div>
+                    <div class="cover-page__title" data-layout-block="coverTitle">
+                        <p class="cover-page__eyebrow">Catalogo comercial</p>
+                        <h2>Acenox Catalogo Comercial</h2>
+                        <p class="cover-page__subtitle">Carga tu Excel e imagenes para visualizar el catalogo.</p>
+                    </div>
+                </section>
+
+                <section class="catalog-page sample-page">
+                    <div class="catalog-page__bg"></div>
+                    <div class="catalog-page__chrome"></div>
+
+                    <div class="page-header" data-layout-block="pageHeader">
+                        <div class="page-header__accent"></div>
+                        <div class="page-header__copy">
+                            <p class="page-header__eyebrow">Vista previa</p>
+                            <h2 class="page-header__title">Acenox Catalogo Comercial</h2>
+                        </div>
+                    </div>
+
+                    <div class="products-grid" data-layout-block="productsGrid">
+                        <article class="product-card product-card--placeholder">
+                            <div class="product-card__title-bar">Carga Excel e imagenes para visualizar el catalogo</div>
+                            <div class="product-card__image-wrap" data-layout-block="productImage">
+                                <div class="product-card__placeholder">Imagen no disponible</div>
+                            </div>
+                            <div class="product-card__info-row">
+                                <p class="product-card__code" data-layout-block="productCode"><span>ITEM:</span> --</p>
+                                <p class="product-card__price" data-layout-block="productPrice">$0.00</p>
+                            </div>
+                            <p class="product-card__description" data-layout-block="productDescription">La plantilla replicara el estilo del catalogo cuando cargues tu archivo Excel y las imagenes por ITEM.</p>
+                            <div class="product-card__meta" data-layout-block="productMeta">
+                                <span class="product-card__chip"><span>Disp</span> --</span>
+                                <span class="product-card__chip"><span>CB</span> ----</span>
+                                <span class="product-card__chip"><span>Emp</span> --</span>
+                                <span class="product-card__chip"><span>UM</span> --</span>
+                            </div>
+                        </article>
+                    </div>
+
+                    <footer class="page-footer" data-layout-block="pageFooter">
+                        <div class="page-footer__line"></div>
+                        <div class="page-footer__band">
+                            <span class="page-footer__label">Catalogo comercial interno Acenox</span>
+                        </div>
+                        <div class="page-footer__number">1</div>
+                    </footer>
+                </section>
+            </main>
+            <div id="layoutEditorOverlay" class="layout-editor-overlay no-print" hidden></div>
+        </main>
+    </div>
+
+    <script src="./script.js"></script>
+</body>
+</html>

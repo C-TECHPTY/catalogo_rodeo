@@ -1,0 +1,72 @@
+<?php
+declare(strict_types=1);
+
+require __DIR__ . '/bootstrap.php';
+
+$payload = read_json_input();
+require_api_key($payload);
+
+$slug = slugify((string) ($payload['slug'] ?? 'catalogo-publicable'));
+$title = trim((string) ($payload['title'] ?? 'Catalogo publicable'));
+$template = trim((string) ($payload['template'] ?? 'classic'));
+$publicUrl = trim((string) ($payload['public_url'] ?? ''));
+$pdfUrl = trim((string) ($payload['pdf_url'] ?? ''));
+$sellerName = trim((string) ($payload['seller_name'] ?? ''));
+$clientName = trim((string) ($payload['client_name'] ?? ''));
+$notes = trim((string) ($payload['notes'] ?? ''));
+$catalogJsonPath = trim((string) ($payload['catalog_json_path'] ?? ''));
+$expiresAt = !empty($payload['expires_at']) ? date('Y-m-d H:i:s', strtotime((string) $payload['expires_at'])) : null;
+$status = trim((string) ($payload['status'] ?? 'active'));
+
+$sql = <<<SQL
+INSERT INTO catalogs (
+    slug, title, template, public_url, pdf_url, generated_at, expires_at, status,
+    seller_name, client_name, notes, catalog_json_path, api_payload
+) VALUES (
+    :slug, :title, :template, :public_url, :pdf_url, NOW(), :expires_at, :status,
+    :seller_name, :client_name, :notes, :catalog_json_path, :api_payload
+)
+ON DUPLICATE KEY UPDATE
+    title = VALUES(title),
+    template = VALUES(template),
+    public_url = VALUES(public_url),
+    pdf_url = VALUES(pdf_url),
+    expires_at = VALUES(expires_at),
+    status = VALUES(status),
+    seller_name = VALUES(seller_name),
+    client_name = VALUES(client_name),
+    notes = VALUES(notes),
+    catalog_json_path = VALUES(catalog_json_path),
+    api_payload = VALUES(api_payload),
+    updated_at = NOW()
+SQL;
+
+$statement = db()->prepare($sql);
+$statement->execute([
+    'slug' => $slug,
+    'title' => $title,
+    'template' => $template,
+    'public_url' => $publicUrl,
+    'pdf_url' => $pdfUrl,
+    'expires_at' => $expiresAt,
+    'status' => $status,
+    'seller_name' => $sellerName,
+    'client_name' => $clientName,
+    'notes' => $notes,
+    'catalog_json_path' => $catalogJsonPath,
+    'api_payload' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+]);
+
+$catalog = fetch_catalog_by_slug($slug);
+
+json_response([
+    'ok' => true,
+    'catalog' => [
+        'id' => $catalog['id'],
+        'slug' => $catalog['slug'],
+        'title' => $catalog['title'],
+        'public_url' => $catalog['public_url'],
+        'expires_at' => $catalog['expires_at'],
+        'status' => resolve_catalog_status($catalog),
+    ],
+]);
