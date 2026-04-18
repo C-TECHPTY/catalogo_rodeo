@@ -845,6 +845,9 @@ function buildWebExportHtml(snapshotHtml, metadata) {
             display: grid;
             gap: 16px;
         }
+        .web-media-modal__stage {
+            position: relative;
+        }
         .web-media-modal__frame {
             min-height: 320px;
             border-radius: 20px;
@@ -860,6 +863,40 @@ function buildWebExportHtml(snapshotHtml, metadata) {
             max-width: 100%;
             max-height: 68vh;
             object-fit: contain;
+        }
+        .web-media-modal__nav {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 2;
+            width: 42px;
+            height: 42px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(23,23,23,0.88);
+            color: #fff;
+            font: inherit;
+            font-size: 20px;
+            cursor: pointer;
+            box-shadow: 0 10px 22px rgba(0,0,0,0.18);
+        }
+        .web-media-modal__nav[disabled] {
+            opacity: 0.36;
+            cursor: not-allowed;
+        }
+        .web-media-modal__nav--prev { left: 14px; }
+        .web-media-modal__nav--next { right: 14px; }
+        .web-media-modal__toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .web-media-modal__counter {
+            color: #5d5d59;
+            font-size: 13px;
+            font-weight: 700;
         }
         .web-media-modal__thumbs {
             display: flex;
@@ -916,6 +953,11 @@ function buildWebExportHtml(snapshotHtml, metadata) {
             cursor: pointer;
             box-shadow: 0 10px 20px rgba(0,0,0,0.14);
         }
+        .web-order-action--ghost {
+            background: rgba(23,23,23,0.08);
+            color: #171717;
+            box-shadow: none;
+        }
         .web-order-inline {
             position: absolute;
             right: 10px;
@@ -928,6 +970,30 @@ function buildWebExportHtml(snapshotHtml, metadata) {
             border-radius: 999px;
             background: rgba(255,255,255,0.92);
             box-shadow: 0 10px 20px rgba(0,0,0,0.14);
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+        [data-item]:hover .web-order-inline,
+        [data-item]:focus-within .web-order-inline,
+        [data-item]:hover .web-media-inline,
+        [data-item]:focus-within .web-media-inline,
+        [data-item] .web-order-inline--visible,
+        [data-item] .web-media-inline--visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .web-qty-step {
+            width: 34px;
+            min-width: 34px;
+            min-height: 34px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(23,23,23,0.08);
+            color: #171717;
+            font: inherit;
+            font-size: 18px;
+            cursor: pointer;
         }
         .web-order-inline__qty {
             width: 72px;
@@ -936,6 +1002,29 @@ function buildWebExportHtml(snapshotHtml, metadata) {
             border-radius: 999px;
             padding: 0 10px;
             font: inherit;
+            text-align: center;
+        }
+        .web-media-modal__order {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .web-media-inline {
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+        .web-order-inline--modal {
+            position: static;
+            right: auto;
+            bottom: auto;
+            background: #f6f4ef;
+            box-shadow: none;
+            padding: 0;
+            opacity: 1;
+            transform: none;
         }
         .web-order-panel {
             position: fixed;
@@ -996,12 +1085,31 @@ function buildWebExportHtml(snapshotHtml, metadata) {
             color: #5d5d59;
             font-size: 13px;
         }
+        .web-order-item__price {
+            margin-top: 8px;
+            font-size: 13px;
+            color: #171717;
+            font-weight: 700;
+        }
+        .web-order-item__meta {
+            margin-top: 8px;
+            display: grid;
+            gap: 4px;
+            font-size: 12px;
+            color: #5d5d59;
+        }
         .web-order-item__row {
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 10px;
             margin-top: 10px;
+        }
+        .web-order-item__actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
         }
         .web-order-item__qty {
             width: 90px;
@@ -1010,6 +1118,33 @@ function buildWebExportHtml(snapshotHtml, metadata) {
             border-radius: 12px;
             padding: 0 10px;
             font: inherit;
+            text-align: center;
+        }
+        .web-order-item__line-total {
+            font-size: 14px;
+            font-weight: 700;
+            color: #171717;
+            text-align: right;
+        }
+        .web-order-totals {
+            display: grid;
+            gap: 8px;
+            padding: 14px;
+            border: 1px solid #e3dfd6;
+            border-radius: 16px;
+            background: #f4f1ea;
+        }
+        .web-order-totals__row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 14px;
+            color: #383834;
+        }
+        .web-order-totals__row strong {
+            font-size: 16px;
+            color: #171717;
         }
         .web-order-form {
             display: grid;
@@ -1051,6 +1186,19 @@ function buildWebExportHtml(snapshotHtml, metadata) {
             .web-export-shell { padding-top: 12px; }
             .web-media-modal__dialog { padding: 16px; }
             .web-order-panel { width: 100%; }
+            .web-media-modal__nav {
+                width: 38px;
+                height: 38px;
+            }
+            .web-media-modal__toolbar,
+            .web-order-item__row {
+                align-items: stretch;
+            }
+            .web-order-inline,
+            .web-media-inline {
+                opacity: 1;
+                transform: none;
+            }
         }
     </style>
 </head>
@@ -1074,7 +1222,15 @@ function buildWebExportHtml(snapshotHtml, metadata) {
                 <button class="web-media-modal__close" id="webMediaClose" type="button">x</button>
             </div>
             <div class="web-media-modal__hero">
-                <div class="web-media-modal__frame" id="webMediaFrame"></div>
+                <div class="web-media-modal__stage">
+                    <button class="web-media-modal__nav web-media-modal__nav--prev" id="webMediaPrev" type="button" aria-label="Anterior">&#8249;</button>
+                    <div class="web-media-modal__frame" id="webMediaFrame"></div>
+                    <button class="web-media-modal__nav web-media-modal__nav--next" id="webMediaNext" type="button" aria-label="Siguiente">&#8250;</button>
+                </div>
+                <div class="web-media-modal__toolbar">
+                    <div class="web-media-modal__counter" id="webMediaCounter">1 / 1</div>
+                    <div class="web-media-modal__order" id="webMediaOrder"></div>
+                </div>
                 <div class="web-media-modal__thumbs" id="webMediaThumbs"></div>
             </div>
         </div>
@@ -1103,6 +1259,7 @@ function buildWebExportHtml(snapshotHtml, metadata) {
         (function () {
             const metadata = JSON.parse(document.getElementById("catalogMeta").textContent || "{}");
             const products = new Map((metadata.catalog || []).map((entry) => [String(entry.item || ""), entry]));
+            const catalogRoot = document.getElementById("catalogRoot");
             const expiredBanner = document.getElementById("webExpiredBanner");
             const modal = document.getElementById("webMediaModal");
             const modalClose = document.getElementById("webMediaClose");
@@ -1110,6 +1267,10 @@ function buildWebExportHtml(snapshotHtml, metadata) {
             const modalSubtitle = document.getElementById("webMediaSubtitle");
             const modalFrame = document.getElementById("webMediaFrame");
             const modalThumbs = document.getElementById("webMediaThumbs");
+            const modalPrev = document.getElementById("webMediaPrev");
+            const modalNext = document.getElementById("webMediaNext");
+            const modalCounter = document.getElementById("webMediaCounter");
+            const modalOrder = document.getElementById("webMediaOrder");
             const orderFloating = document.getElementById("webOrderFloating");
             const orderPanel = document.getElementById("webOrderPanel");
             const orderClose = document.getElementById("webOrderClose");
@@ -1119,7 +1280,8 @@ function buildWebExportHtml(snapshotHtml, metadata) {
             const orderSubmit = document.getElementById("webOrderSubmit");
             const orderNote = document.getElementById("webOrderNote");
             const cart = new Map();
-            const apiBaseUrl = String(metadata.apiBaseUrl || "").replace(/\/+$/, "");
+            let activeViewer = null;
+            const apiBaseUrl = String(metadata.apiBaseUrl || "").replace(/\\/+$/, "");
             const expiresAt = metadata.expiresAt ? new Date(metadata.expiresAt) : null;
             if (expiresAt && !Number.isNaN(expiresAt.getTime()) && Date.now() > expiresAt.getTime()) {
                 expiredBanner.classList.add("web-expired-banner--visible");
@@ -1165,25 +1327,27 @@ function buildWebExportHtml(snapshotHtml, metadata) {
                 const visualHost = node.querySelector(".product-card__image-wrap, .campin1-hero__visual, .showcase-card__visual, .industrial-card__visual, .minimal-card__visual, .editorial-card__visual, .horizontal-card__visual") || node;
                 const orderInline = document.createElement("div");
                 orderInline.className = "web-order-inline";
-                const qtyInput = document.createElement("input");
-                qtyInput.type = "number";
-                qtyInput.min = "1";
-                qtyInput.value = "1";
-                qtyInput.className = "web-order-inline__qty";
-                qtyInput.setAttribute("data-add-qty", item);
+                const qtyInput = createQtyInput(item, 1);
+                const minusButton = createQtyStepButton("-", () => updateQtyInputValue(qtyInput, -1));
+                const plusButton = createQtyStepButton("+", () => updateQtyInputValue(qtyInput, 1));
                 const addButton = document.createElement("button");
                 addButton.type = "button";
                 addButton.className = "web-order-action";
-                addButton.textContent = "Agregar";
+                addButton.textContent = "Agregar vultos";
+                addButton.setAttribute("data-add-product", item);
+                qtyInput.title = "Cantidad en vultos";
                 addButton.addEventListener("click", () => {
-                    const qty = Math.max(1, Number(qtyInput.value) || 1);
-                    addToOrder(product, qty);
+                    const bultos = Math.max(1, Number(qtyInput.value) || 1);
+                    addToOrder(product, bultos);
                 });
+                orderInline.appendChild(minusButton);
                 orderInline.appendChild(qtyInput);
+                orderInline.appendChild(plusButton);
                 orderInline.appendChild(addButton);
                 visualHost.appendChild(orderInline);
                 const clickableImage = node.querySelector("img.product-card__image, .campin1-hero__visual img, img");
                 if (clickableImage && hasViewerMedia) {
+                    clickableImage.setAttribute("data-open-viewer", item);
                     clickableImage.setAttribute("title", video ? "Ver fotos y video" : gallery.length > 1 ? "Ver mas fotos" : "Ver foto");
                     clickableImage.setAttribute("role", "button");
                     clickableImage.setAttribute("tabindex", "0");
@@ -1199,6 +1363,7 @@ function buildWebExportHtml(snapshotHtml, metadata) {
                 const button = document.createElement("button");
                 button.type = "button";
                 button.className = "web-media-trigger web-media-trigger--inline";
+                button.setAttribute("data-open-viewer", item);
                 button.textContent = video ? "Ver fotos y video" : gallery.length > 1 ? "Ver mas fotos" : "Ver foto";
                 button.addEventListener("click", () => openMediaViewer(product, gallery, video));
                 const mediaInline = document.createElement("div");
@@ -1209,6 +1374,28 @@ function buildWebExportHtml(snapshotHtml, metadata) {
                 mediaInline.appendChild(button);
                 mediaInline.appendChild(hint);
                 node.appendChild(mediaInline);
+            });
+            catalogRoot.addEventListener("click", (event) => {
+                const viewerTrigger = event.target.closest("[data-open-viewer]");
+                if (viewerTrigger) {
+                    const item = viewerTrigger.getAttribute("data-open-viewer");
+                    if (item) {
+                        event.preventDefault();
+                        openViewerForItem(item);
+                        return;
+                    }
+                }
+                const productCard = event.target.closest("[data-item]");
+                if (productCard && !event.target.closest("button, input, textarea, select, a, label")) {
+                    const visualTap = event.target.closest(".product-card__image-wrap, .campin1-hero__visual, .showcase-card__visual, .industrial-card__visual, .minimal-card__visual, .editorial-card__visual, .horizontal-card__visual, img");
+                    if (visualTap) {
+                        const item = productCard.getAttribute("data-item");
+                        if (item) {
+                            openViewerForItem(item);
+                            return;
+                        }
+                    }
+                }
             });
             orderFloating.addEventListener("click", openOrderPanel);
             orderClose.addEventListener("click", closeOrderPanel);
@@ -1225,7 +1412,10 @@ function buildWebExportHtml(snapshotHtml, metadata) {
                     const nextQty = Math.max(1, Number(input.value) || 1);
                     const current = cart.get(item);
                     if (!current) return;
-                    current.quantity = nextQty;
+                    current.bultos = nextQty;
+                    current.quantity = current.bultos;
+                    current.piecesTotal = current.bultos * Number(current.packageQty || 1);
+                    current.lineTotal = current.piecesTotal * Number(current.priceValue || 0);
                     renderOrderSummary();
                 }
             });
@@ -1247,8 +1437,11 @@ function buildWebExportHtml(snapshotHtml, metadata) {
                     items: Array.from(cart.values()).map((entry) => ({
                         item_code: entry.item,
                         description: entry.description,
-                        quantity: entry.quantity,
-                        price: entry.price
+                        quantity: entry.bultos,
+                        price: entry.priceValue,
+                        package_qty: entry.packageQty,
+                        pieces_total: entry.piecesTotal,
+                        line_total: entry.lineTotal
                     }))
                 };
                 try {
@@ -1278,12 +1471,28 @@ function buildWebExportHtml(snapshotHtml, metadata) {
                 modal.setAttribute("aria-hidden", "false");
                 modalTitle.textContent = product.description || product.shortDescription || product.item || "Producto";
                 modalSubtitle.textContent = [product.item ? "ITEM: " + product.item : "", product.price || "", product.available ? "Disponible: " + product.available : ""].filter(Boolean).join(" | ");
+                activeViewer = { product, items, index: 0 };
                 renderMedia(items, 0);
+                renderModalOrder(product);
+            }
+            function openViewerForItem(item) {
+                const product = products.get(String(item || ""));
+                if (!product || !product.media) return;
+                const mainGallery = product.media.mainImage ? [String(product.media.mainImage)] : [];
+                const extraGallery = Array.isArray(product.media.gallery) ? product.media.gallery.filter(Boolean).map(String) : [];
+                const gallery = [...new Set([...mainGallery, ...extraGallery])];
+                const video = product.media.video ? String(product.media.video) : "";
+                if (!gallery.length && !video) return;
+                openMediaViewer(product, gallery, video);
             }
             function renderMedia(items, activeIndex) {
+                if (!items.length) return;
                 modalFrame.innerHTML = "";
                 modalThumbs.innerHTML = "";
                 const active = items[activeIndex];
+                if (activeViewer) {
+                    activeViewer.index = activeIndex;
+                }
                 const mainNode = active.type === "video" ? document.createElement("video") : document.createElement("img");
                 if (active.type === "video") {
                     mainNode.src = active.src;
@@ -1294,6 +1503,9 @@ function buildWebExportHtml(snapshotHtml, metadata) {
                     mainNode.alt = "Multimedia del producto";
                 }
                 modalFrame.appendChild(mainNode);
+                modalCounter.textContent = (activeIndex + 1) + " / " + items.length;
+                modalPrev.disabled = items.length <= 1;
+                modalNext.disabled = items.length <= 1;
                 items.forEach((item, index) => {
                     const thumb = document.createElement("button");
                     thumb.type = "button";
@@ -1306,35 +1518,75 @@ function buildWebExportHtml(snapshotHtml, metadata) {
                     modalThumbs.appendChild(thumb);
                 });
             }
+            function renderModalOrder(product) {
+                modalOrder.innerHTML = "";
+                const orderInline = document.createElement("div");
+                orderInline.className = "web-order-inline web-order-inline--modal";
+                const qtyInput = createQtyInput(product.item, 1);
+                const minusButton = createQtyStepButton("-", () => updateQtyInputValue(qtyInput, -1));
+                const plusButton = createQtyStepButton("+", () => updateQtyInputValue(qtyInput, 1));
+                const addButton = document.createElement("button");
+                addButton.type = "button";
+                addButton.className = "web-order-action";
+                addButton.textContent = "Agregar vultos";
+                addButton.addEventListener("click", () => {
+                    const bultos = Math.max(1, Number(qtyInput.value) || 1);
+                    addToOrder(product, bultos);
+                });
+                orderInline.appendChild(minusButton);
+                orderInline.appendChild(qtyInput);
+                orderInline.appendChild(plusButton);
+                orderInline.appendChild(addButton);
+                modalOrder.appendChild(orderInline);
+            }
             function closeModal() {
                 modal.classList.remove("web-media-modal--open");
                 modal.setAttribute("aria-hidden", "true");
                 modalFrame.innerHTML = "";
                 modalThumbs.innerHTML = "";
+                modalOrder.innerHTML = "";
+                modalCounter.textContent = "1 / 1";
+                activeViewer = null;
             }
             function addToOrder(product, quantity) {
                 if (!product || !product.item) return;
                 const qtyToAdd = Math.max(1, Number(quantity) || 1);
+                const priceValue = parsePriceValue(product.price);
+                const packageQty = parsePackageQty(product.packageQty || product.empaque || product.package || product.media?.packageQty || product.media?.empaque || product.media?.package);
+                const piecesToAdd = qtyToAdd * packageQty;
                 if (!cart.has(product.item)) {
                     cart.set(product.item, {
                         item: product.item,
                         description: product.description || product.shortDescription || product.item,
                         price: product.price || "",
-                        quantity: qtyToAdd
+                        priceValue,
+                        packageQty,
+                        bultos: qtyToAdd,
+                        piecesTotal: piecesToAdd,
+                        quantity: qtyToAdd,
+                        lineTotal: piecesToAdd * priceValue
                     });
                 } else {
-                    cart.get(product.item).quantity += qtyToAdd;
+                    const current = cart.get(product.item);
+                    current.bultos += qtyToAdd;
+                    current.quantity = current.bultos;
+                    current.priceValue = priceValue;
+                    current.packageQty = packageQty;
+                    current.piecesTotal = current.bultos * current.packageQty;
+                    current.lineTotal = current.piecesTotal * current.priceValue;
                 }
                 renderOrderSummary();
                 openOrderPanel();
             }
             function renderOrderSummary() {
                 const entries = Array.from(cart.values());
-                orderFloating.textContent = "Pedido (" + entries.reduce((sum, entry) => sum + entry.quantity, 0) + ")";
+                const totalUnits = entries.reduce((sum, entry) => sum + Number(entry.bultos || 0), 0);
+                const subtotal = entries.reduce((sum, entry) => sum + Number(entry.lineTotal || 0), 0);
+                orderFloating.textContent = "Pedido (" + totalUnits + " bultos)";
                 orderSummary.innerHTML = entries.length
-                    ? entries.map((entry) => '<article class="web-order-item"><h3>' + escapeHtmlJs(entry.description) + '</h3><p>ITEM: ' + escapeHtmlJs(entry.item) + (entry.price ? ' | ' + escapeHtmlJs(entry.price) : '') + '</p><div class="web-order-item__row"><input class="web-order-item__qty" data-qty-input="' + escapeHtmlJs(entry.item) + '" type="number" min="1" value="' + Number(entry.quantity || 1) + '"><button class="web-order-submit" data-qty-item="' + escapeHtmlJs(entry.item) + '" type="button">Actualizar</button><button class="web-order-panel__close" data-remove-item="' + escapeHtmlJs(entry.item) + '" type="button">x</button></div></article>').join("")
+                    ? entries.map((entry) => '<article class="web-order-item"><h3>' + escapeHtmlJs(entry.description) + '</h3><p>ITEM: ' + escapeHtmlJs(entry.item) + '</p><div class="web-order-item__price">Precio unitario: ' + escapeHtmlJs(formatMoney(entry.priceValue)) + '</div><div class="web-order-item__meta"><div>Empaque: ' + escapeHtmlJs(String(entry.packageQty)) + ' piezas</div><div>Vultos: ' + escapeHtmlJs(String(entry.bultos)) + '</div><div>Piezas totales: ' + escapeHtmlJs(String(entry.piecesTotal)) + '</div></div><div class="web-order-item__row"><div class="web-order-item__actions"><input class="web-order-item__qty" data-qty-input="' + escapeHtmlJs(entry.item) + '" type="number" min="1" value="' + Number(entry.bultos || 1) + '"><button class="web-order-submit" data-qty-item="' + escapeHtmlJs(entry.item) + '" type="button">Actualizar</button><button class="web-order-action web-order-action--ghost" data-remove-item="' + escapeHtmlJs(entry.item) + '" type="button">Eliminar</button></div><div class="web-order-item__line-total">' + escapeHtmlJs(formatMoney(entry.lineTotal)) + '</div></div></article>').join("") + '<div class="web-order-totals"><div class="web-order-totals__row"><span>Subtotal</span><span>' + escapeHtmlJs(formatMoney(subtotal)) + '</span></div><div class="web-order-totals__row"><strong>Total general</strong><strong>' + escapeHtmlJs(formatMoney(subtotal)) + '</strong></div></div>'
                     : '<p class="web-order-note">Aun no has agregado productos al pedido.</p>';
-                orderHeaderText.textContent = entries.length ? "Productos seleccionados: " + entries.length : "Agrega productos desde el catalogo.";
+                orderHeaderText.textContent = entries.length ? "Productos seleccionados: " + entries.length + " | Vultos totales: " + totalUnits : "Agrega productos desde el catalogo.";
             }
             function openOrderPanel() {
                 orderPanel.classList.add("web-order-panel--open");
@@ -1344,9 +1596,69 @@ function buildWebExportHtml(snapshotHtml, metadata) {
                 orderPanel.classList.remove("web-order-panel--open");
                 orderPanel.setAttribute("aria-hidden", "true");
             }
+            function updateQtyInputValue(input, delta) {
+                const nextValue = Math.max(1, (Number(input.value) || 1) + delta);
+                input.value = String(nextValue);
+            }
+            function createQtyInput(item, value) {
+                const input = document.createElement("input");
+                input.type = "number";
+                input.min = "1";
+                input.value = String(Math.max(1, Number(value) || 1));
+                input.className = "web-order-inline__qty";
+                input.setAttribute("data-add-qty", item);
+                return input;
+            }
+            function createQtyStepButton(label, onClick) {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "web-qty-step";
+                button.textContent = label;
+                button.addEventListener("click", onClick);
+                return button;
+            }
+            function parsePriceValue(value) {
+                if (typeof value === "number") return value;
+                const normalized = String(value || "").replace(/[^0-9.,-]/g, "").replace(/,/g, ".");
+                const parsed = Number(normalized);
+                return Number.isFinite(parsed) ? parsed : 0;
+            }
+            function parsePackageQty(value) {
+                const normalized = String(value || "").replace(/[^0-9.,-]/g, "").replace(/,/g, ".");
+                const parsed = Number(normalized);
+                return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+            }
+            function formatMoney(value) {
+                return new Intl.NumberFormat("es-PA", {
+                    style: "currency",
+                    currency: "USD",
+                    minimumFractionDigits: 2
+                }).format(Number(value) || 0);
+            }
             modalClose.addEventListener("click", closeModal);
             modal.addEventListener("click", (event) => { if (event.target === modal) closeModal(); });
-            window.addEventListener("keydown", (event) => { if (event.key === "Escape") { closeModal(); closeOrderPanel(); } });
+            modalPrev.addEventListener("click", () => {
+                if (!activeViewer || activeViewer.items.length <= 1) return;
+                const nextIndex = (activeViewer.index - 1 + activeViewer.items.length) % activeViewer.items.length;
+                renderMedia(activeViewer.items, nextIndex);
+            });
+            modalNext.addEventListener("click", () => {
+                if (!activeViewer || activeViewer.items.length <= 1) return;
+                const nextIndex = (activeViewer.index + 1) % activeViewer.items.length;
+                renderMedia(activeViewer.items, nextIndex);
+            });
+            window.addEventListener("keydown", (event) => {
+                if (event.key === "Escape") { closeModal(); closeOrderPanel(); }
+                if (!activeViewer) return;
+                if (event.key === "ArrowLeft") {
+                    const nextIndex = (activeViewer.index - 1 + activeViewer.items.length) % activeViewer.items.length;
+                    renderMedia(activeViewer.items, nextIndex);
+                }
+                if (event.key === "ArrowRight") {
+                    const nextIndex = (activeViewer.index + 1) % activeViewer.items.length;
+                    renderMedia(activeViewer.items, nextIndex);
+                }
+            });
             function escapeHtmlJs(text) {
                 return String(text || "")
                     .replace(/&/g, "&amp;")

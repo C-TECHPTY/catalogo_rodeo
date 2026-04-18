@@ -25,18 +25,22 @@ $subtotal = 0.0;
 $normalizedItems = [];
 
 foreach ($items as $item) {
-    $quantity = max(0.0, (float) ($item['quantity'] ?? 0));
-    if ($quantity <= 0) {
+    $bultos = max(0.0, (float) ($item['quantity'] ?? 0));
+    if ($bultos <= 0) {
         continue;
     }
 
     $price = parse_decimal($item['price'] ?? 0);
-    $lineTotal = $quantity * $price;
+    $packageQty = max(1.0, parse_decimal($item['package_qty'] ?? 1));
+    $piecesTotal = $bultos * $packageQty;
+    $lineTotal = $piecesTotal * $price;
     $subtotal += $lineTotal;
     $normalizedItems[] = [
         'item_code' => trim((string) ($item['item_code'] ?? '')),
         'description' => trim((string) ($item['description'] ?? '')),
-        'quantity' => $quantity,
+        'quantity' => $bultos,
+        'package_qty' => $packageQty,
+        'pieces_total' => $piecesTotal,
         'price' => $price,
         'line_total' => $lineTotal,
     ];
@@ -115,10 +119,12 @@ $lines = [
 
 foreach ($normalizedItems as $item) {
     $lines[] = sprintf(
-        '- %s | %s | Cantidad: %s | Precio: %.2f | Total: %.2f',
+        '- %s | %s | Vultos: %s | Empaque: %s | Piezas: %s | Precio: %.2f | Total: %.2f',
         $item['item_code'],
         $item['description'],
         rtrim(rtrim(number_format($item['quantity'], 2, '.', ''), '0'), '.'),
+        rtrim(rtrim(number_format($item['package_qty'], 2, '.', ''), '0'), '.'),
+        rtrim(rtrim(number_format($item['pieces_total'], 2, '.', ''), '0'), '.'),
         $item['price'],
         $item['line_total']
     );

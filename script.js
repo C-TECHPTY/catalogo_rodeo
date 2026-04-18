@@ -434,7 +434,8 @@ const relativePath = `media/video/${exportBaseName}${ext}`;
 assets.push({ sourcePath:extras.videoPath, relativePath });
 video = `./${relativePath}`;
 }
-mediaCatalog[record.item] = { item:record.item, description:record.description, shortDescription:record.shortDescription, price:record.price, available:record.available, mainImage:exportImageMap.get(normalizedItem) || "", gallery, video };
+const packageQty = parsePackageQty(record.package);
+mediaCatalog[record.item] = { item:record.item, description:record.description, shortDescription:record.shortDescription, price:record.price, available:record.available, package:record.package, empaque:record.package, packageQty, mainImage:exportImageMap.get(normalizedItem) || "", gallery, video };
 });
 const coverRelative = state.coverImagePath ? `media/brand/cover${getWebImageExtension(state.coverImagePath)}` : "";
 const logoRelative = state.pageLogoPath ? `media/brand/logo${getWebImageExtension(state.pageLogoPath)}` : "";
@@ -471,7 +472,7 @@ snapshotHtml,
   expiresAt: expiresAt.toISOString(),
 expiryDays: state.webExport.expiryDays || 30,
 expiryLabel: `${state.webExport.expiryDays || 30} dias`,
-catalog: records.map((record) => ({ item:record.item, description:record.description, shortDescription:record.shortDescription, price:record.price, available:record.available, media:mediaCatalog[record.item] || { gallery:[], video:"" } })),
+catalog: records.map((record) => ({ item:record.item, description:record.description, shortDescription:record.shortDescription, price:record.price, available:record.available, package:record.package, empaque:record.package, packageQty:parsePackageQty(record.package), media:mediaCatalog[record.item] || { gallery:[], video:"" } })),
 },
 assets: dedupeAssets(assets),
 };
@@ -486,6 +487,13 @@ function parseExtraMediaStem(fileName, knownItems = new Set()) { const rawStem =
 function getPathExtension(filePath) { return String(filePath || "").match(/\.[^.]+$/)?.[0]?.toLowerCase() || ""; }
 function getWebImageExtension(filePath) { const ext = getPathExtension(filePath); return ext === ".svg" ? ".svg" : ".jpg"; }
 function isVideoExtension(ext) { return [".mp4",".webm",".mov"].includes(String(ext || "").toLowerCase()); }
+function parsePackageQty(value) {
+const text = String(value || "").trim();
+if (!text) return 1;
+const normalized = text.replace(/[^0-9.,-]/g, "").replace(/,/g, ".");
+const parsed = Number(normalized);
+return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
 function reindexExtraMedia() { state.extraMediaMap = buildExtraMediaMapFromFiles(state.extraMediaFiles || []); const itemsWithExtras = Array.from(state.extraMediaMap.values()).filter((entry) => entry.gallery.length || entry.videoPath).length; setWebExportStatus(`Multimedia extra indexada para ${itemsWithExtras} ITEM(s).`); }
 function sanitizeSlug(value) { return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); }
 function buildExportAssetBaseName(rawItem, normalizedItem, index) { const safeBase = normalizeIdentifier(rawItem) || normalizeIdentifier(normalizedItem) || sanitizeFileName(rawItem || "item") || "item"; return `${safeBase}-${index + 1}`; }

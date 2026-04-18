@@ -43,9 +43,9 @@ if ($orderId > 0) {
                     <tr>
                         <th>ITEM</th>
                         <th>Descripcion</th>
-                        <th>Cantidad</th>
-                        <th>Precio</th>
-                        <th>Total</th>
+                        <th>Vultos</th>
+                        <th>Precio Unitario</th>
+                        <th>Total Linea</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -60,7 +60,11 @@ if ($orderId > 0) {
                 <?php endforeach; ?>
                 </tbody>
             </table>
-            <p><a href="../catalogos_api/export_order.php?id=<?= (int) $order['id'] ?>">Descargar CSV</a></p>
+            <p>
+                <a href="../catalogos_api/export_order.php?id=<?= (int) $order['id'] ?>">Descargar CSV</a>
+                |
+                <a href="../catalogos_api/export_order.php?id=<?= (int) $order['id'] ?>&format=xlsx">Descargar XLSX</a>
+            </p>
         <?php endif; ?>
     </div>
     <?php
@@ -91,7 +95,7 @@ admin_header('Pedidos');
                 <th>Total</th>
                 <th>Estado</th>
                 <th>Fecha</th>
-                <th>Acciones</th>
+                <th>Exportar</th>
             </tr>
         </thead>
         <tbody>
@@ -104,7 +108,11 @@ admin_header('Pedidos');
                 <td><?= htmlspecialchars((string) $order['total'], ENT_QUOTES, 'UTF-8') ?></td>
                 <td><span class="badge badge--new"><?= htmlspecialchars($order['status'], ENT_QUOTES, 'UTF-8') ?></span></td>
                 <td><?= htmlspecialchars((string) $order['created_at'], ENT_QUOTES, 'UTF-8') ?></td>
-                <td><a href="../catalogos_api/export_order.php?id=<?= (int) $order['id'] ?>">Descargar CSV</a></td>
+                <td>
+                    <a href="../catalogos_api/export_order.php?id=<?= (int) $order['id'] ?>">CSV</a>
+                    |
+                    <a href="../catalogos_api/export_order.php?id=<?= (int) $order['id'] ?>&format=xlsx">XLSX</a>
+                </td>
             </tr>
         <?php endforeach; ?>
         </tbody>
