@@ -3,18 +3,84 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/catalogos_api/bootstrap.php';
 
+function admin_table_exists(string $tableName): bool
+{
+    static $cache = [];
+    if (array_key_exists($tableName, $cache)) {
+        return $cache[$tableName];
+    }
+
+    $statement = db()->prepare(
+        'SELECT COUNT(*)
+         FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name'
+    );
+    $statement->execute(['table_name' => $tableName]);
+    $cache[$tableName] = ((int) $statement->fetchColumn()) > 0;
+    return $cache[$tableName];
+}
+
+function admin_column_exists(string $tableName, string $columnName): bool
+{
+    static $cache = [];
+    $key = $tableName . '.' . $columnName;
+    if (array_key_exists($key, $cache)) {
+        return $cache[$key];
+    }
+
+    $statement = db()->prepare(
+        'SELECT COUNT(*)
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name'
+    );
+    $statement->execute([
+        'table_name' => $tableName,
+        'column_name' => $columnName,
+    ]);
+    $cache[$key] = ((int) $statement->fetchColumn()) > 0;
+    return $cache[$key];
+}
+
+function admin_b2b_schema_ready(): bool
+{
+    return admin_table_exists('sellers')
+        && admin_table_exists('catalog_share_links')
+        && admin_table_exists('orders')
+        && admin_column_exists('catalog_users', 'seller_id');
+}
+
 function admin_menu_items(): array
 {
-    return [
+    $items = [
         'dashboard.php' => 'Dashboard',
         'catalogos.php' => 'Catalogos',
         'pedidos.php' => 'Pedidos',
-        'sellers.php' => 'Vendedores',
-        'links.php' => 'Links / Enlaces',
-        'clients.php' => 'Clientes',
-        'configuracion.php' => 'Configuracion',
         'exportaciones.php' => 'Exportaciones',
     ];
+
+    if (admin_b2b_schema_ready()) {
+        $items = [
+            'dashboard.php' => 'Dashboard',
+            'catalogos.php' => 'Catalogos',
+            'pedidos.php' => 'Pedidos',
+            'sellers.php' => 'Vendedores',
+            'links.php' => 'Links / Enlaces',
+            'clients.php' => 'Clientes',
+            'configuracion.php' => 'Configuracion',
+            'exportaciones.php' => 'Exportaciones',
+        ];
+    }
+
+    return array_filter($items, static fn(string $file): bool => is_file(__DIR__ . '/' . $file), ARRAY_FILTER_USE_KEY);
+}
+
+function admin_post_login_target(array $user): string
+{
+    if (($user['role'] ?? '') === 'vendor' && admin_b2b_schema_ready() && is_file(dirname(__DIR__) . '/catalogos_vendedor/index.php')) {
+        return '../catalogos_vendedor/index.php';
+    }
+
+    return is_file(__DIR__ . '/dashboard.php') ? 'dashboard.php' : 'index.php';
 }
 
 function admin_authenticate(string $username, string $password): array
@@ -24,12 +90,21 @@ function admin_authenticate(string $username, string $password): array
         return ['ok' => false, 'reason' => 'user', 'message' => 'Escribe tu usuario para continuar.'];
     }
 
+    if (!admin_table_exists('catalog_users')) {
+        return ['ok' => false, 'reason' => 'schema', 'message' => 'La tabla de usuarios no existe. Revisa la instalacion SQL.'];
+    }
+
+    $hasSellerId = admin_column_exists('catalog_users', 'seller_id');
+    $hasSellers = admin_table_exists('sellers');
+    $hasLastLogin = admin_column_exists('catalog_users', 'last_login_at');
+    $sellerSelect = $hasSellerId && $hasSellers ? ', s.name AS seller_display_name' : ", '' AS seller_display_name";
+    $sellerJoin = $hasSellerId && $hasSellers ? ' LEFT JOIN sellers s ON s.id = u.seller_id' : '';
     $statement = db()->prepare(
-        'SELECT u.*, s.name AS seller_display_name
+        "SELECT u.*{$sellerSelect}
          FROM catalog_users u
-         LEFT JOIN sellers s ON s.id = u.seller_id
+         {$sellerJoin}
          WHERE u.username = :username
-         LIMIT 1'
+         LIMIT 1"
     );
     $statement->execute(['username' => $username]);
     $user = $statement->fetch();
@@ -62,13 +137,15 @@ function admin_authenticate(string $username, string $password): array
         'full_name' => $user['full_name'],
         'email' => $user['email'],
         'role' => $user['role'],
-        'seller_id' => $user['seller_id'] ? (int) $user['seller_id'] : null,
+        'seller_id' => $hasSellerId && !empty($user['seller_id']) ? (int) $user['seller_id'] : null,
         'seller_display_name' => $user['seller_display_name'] ?? '',
     ];
 
-    db()->prepare('UPDATE catalog_users SET last_login_at = NOW() WHERE id = :id')->execute([
-        'id' => (int) $user['id'],
-    ]);
+    if ($hasLastLogin) {
+        db()->prepare('UPDATE catalog_users SET last_login_at = NOW() WHERE id = :id')->execute([
+            'id' => (int) $user['id'],
+        ]);
+    }
     audit_log('auth.login', 'catalog_users', (int) $user['id'], [
         'username' => $user['username'],
         'role' => $user['role'],

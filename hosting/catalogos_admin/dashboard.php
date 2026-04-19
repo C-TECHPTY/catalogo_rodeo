@@ -4,33 +4,69 @@ declare(strict_types=1);
 require __DIR__ . '/_bootstrap.php';
 admin_require_login();
 
+$hasSellers = admin_table_exists('sellers');
+$hasLinks = admin_table_exists('catalog_share_links');
+$hasAccessLogs = admin_table_exists('catalog_access_logs');
+$hasOrders = admin_table_exists('orders');
+$hasCatalogs = admin_table_exists('catalogs');
+$ordersHasSeller = $hasOrders && admin_column_exists('orders', 'seller_id');
+$ordersHasCreatedAt = $hasOrders && admin_column_exists('orders', 'created_at');
+$ordersHasStatus = $hasOrders && admin_column_exists('orders', 'status');
+$ordersHasTotal = $hasOrders && admin_column_exists('orders', 'total');
+$ordersHasCompany = $hasOrders && admin_column_exists('orders', 'company_name');
+$ordersHasContact = $hasOrders && admin_column_exists('orders', 'contact_name');
+$catalogsHasStatus = $hasCatalogs && admin_column_exists('catalogs', 'status');
+$catalogsHasTitle = $hasCatalogs && admin_column_exists('catalogs', 'title');
+
 $stats = [
-    'orders_recent' => (int) db()->query("SELECT COUNT(*) FROM orders WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)")->fetchColumn(),
-    'catalogs_active' => (int) db()->query("SELECT COUNT(*) FROM catalogs WHERE status = 'active'")->fetchColumn(),
-    'sellers_active' => (int) db()->query("SELECT COUNT(*) FROM sellers WHERE is_active = 1")->fetchColumn(),
-    'access_today' => (int) db()->query("SELECT COUNT(*) FROM catalog_access_logs WHERE DATE(visited_at) = CURDATE()")->fetchColumn(),
-    'links_active' => (int) db()->query("SELECT COUNT(*) FROM catalog_share_links WHERE is_active = 1")->fetchColumn(),
+    'orders_recent' => $hasOrders ? (int) db()->query($ordersHasCreatedAt ? "SELECT COUNT(*) FROM orders WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)" : "SELECT COUNT(*) FROM orders")->fetchColumn() : 0,
+    'catalogs_active' => $hasCatalogs ? (int) db()->query($catalogsHasStatus ? "SELECT COUNT(*) FROM catalogs WHERE status = 'active'" : "SELECT COUNT(*) FROM catalogs")->fetchColumn() : 0,
+    'sellers_active' => $hasSellers ? (int) db()->query("SELECT COUNT(*) FROM sellers WHERE is_active = 1")->fetchColumn() : 0,
+    'access_today' => $hasAccessLogs ? (int) db()->query("SELECT COUNT(*) FROM catalog_access_logs WHERE DATE(visited_at) = CURDATE()")->fetchColumn() : 0,
+    'links_active' => $hasLinks ? (int) db()->query("SELECT COUNT(*) FROM catalog_share_links WHERE is_active = 1")->fetchColumn() : 0,
 ];
 
-$recentOrders = db()->query(
-    'SELECT o.id, o.order_number, o.company_name, o.contact_name, o.total, o.status, o.created_at,
-            c.title AS catalog_title, s.name AS seller_name
-     FROM orders o
-     INNER JOIN catalogs c ON c.id = o.catalog_id
-     LEFT JOIN sellers s ON s.id = o.seller_id
-     ORDER BY o.created_at DESC
-     LIMIT 8'
-)->fetchAll();
+$recentOrders = [];
+if ($hasOrders) {
+    $companyExpr = $ordersHasCompany ? 'o.company_name' : "''";
+    $contactExpr = $ordersHasContact ? 'o.contact_name' : (admin_column_exists('orders', 'customer_name') ? 'o.customer_name' : "''");
+    $totalExpr = $ordersHasTotal ? 'o.total' : '0';
+    $statusExpr = $ordersHasStatus ? 'o.status' : "'new'";
+    $createdExpr = $ordersHasCreatedAt ? 'o.created_at' : "''";
+    $catalogTitleExpr = $hasCatalogs && $catalogsHasTitle ? 'c.title' : "''";
+    $catalogJoin = $hasCatalogs && admin_column_exists('orders', 'catalog_id') ? 'LEFT JOIN catalogs c ON c.id = o.catalog_id' : '';
+    $sellerExpr = $hasSellers && $ordersHasSeller ? 's.name' : "''";
+    $sellerJoin = $hasSellers && $ordersHasSeller ? 'LEFT JOIN sellers s ON s.id = o.seller_id' : '';
+    $orderBy = $ordersHasCreatedAt ? 'o.created_at DESC' : 'o.id DESC';
+    $recentOrders = db()->query(
+        "SELECT o.id, o.order_number, {$companyExpr} AS company_name, {$contactExpr} AS contact_name,
+                {$totalExpr} AS total, {$statusExpr} AS status, {$createdExpr} AS created_at,
+                {$catalogTitleExpr} AS catalog_title, {$sellerExpr} AS seller_name
+         FROM orders o
+         {$catalogJoin}
+         {$sellerJoin}
+         ORDER BY {$orderBy}
+         LIMIT 8"
+    )->fetchAll();
+}
 
-$recentAccess = db()->query(
-    'SELECT l.visited_at, c.title, s.name AS seller_name, cl.business_name AS client_name
-     FROM catalog_access_logs l
-     INNER JOIN catalogs c ON c.id = l.catalog_id
-     LEFT JOIN sellers s ON s.id = l.seller_id
-     LEFT JOIN clients cl ON cl.id = l.client_id
-     ORDER BY l.visited_at DESC
-     LIMIT 8'
-)->fetchAll();
+$recentAccess = [];
+if ($hasAccessLogs && $hasCatalogs) {
+    $accessSellerJoin = $hasSellers && admin_column_exists('catalog_access_logs', 'seller_id') ? 'LEFT JOIN sellers s ON s.id = l.seller_id' : '';
+    $accessSellerExpr = $hasSellers && admin_column_exists('catalog_access_logs', 'seller_id') ? 's.name' : "''";
+    $clientsReady = admin_table_exists('clients') && admin_column_exists('catalog_access_logs', 'client_id');
+    $clientJoin = $clientsReady ? 'LEFT JOIN clients cl ON cl.id = l.client_id' : '';
+    $clientExpr = $clientsReady ? 'cl.business_name' : "''";
+    $recentAccess = db()->query(
+        "SELECT l.visited_at, c.title, {$accessSellerExpr} AS seller_name, {$clientExpr} AS client_name
+         FROM catalog_access_logs l
+         INNER JOIN catalogs c ON c.id = l.catalog_id
+         {$accessSellerJoin}
+         {$clientJoin}
+         ORDER BY l.visited_at DESC
+         LIMIT 8"
+    )->fetchAll();
+}
 
 admin_header('Dashboard', 'dashboard.php');
 ?>

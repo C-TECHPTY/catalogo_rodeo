@@ -165,11 +165,38 @@ function vendor_require_login(): void
 
 function admin_login(string $username, string $password): bool
 {
-    $sql = 'SELECT u.*, s.name AS seller_display_name
+    $tableExists = static function (string $tableName): bool {
+        $statement = db()->prepare(
+            'SELECT COUNT(*)
+             FROM INFORMATION_SCHEMA.TABLES
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name'
+        );
+        $statement->execute(['table_name' => $tableName]);
+        return ((int) $statement->fetchColumn()) > 0;
+    };
+    $columnExists = static function (string $tableName, string $columnName): bool {
+        $statement = db()->prepare(
+            'SELECT COUNT(*)
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name'
+        );
+        $statement->execute([
+            'table_name' => $tableName,
+            'column_name' => $columnName,
+        ]);
+        return ((int) $statement->fetchColumn()) > 0;
+    };
+
+    $hasSellerId = $columnExists('catalog_users', 'seller_id');
+    $hasSellers = $tableExists('sellers');
+    $hasLastLogin = $columnExists('catalog_users', 'last_login_at');
+    $sellerSelect = $hasSellerId && $hasSellers ? ', s.name AS seller_display_name' : ", '' AS seller_display_name";
+    $sellerJoin = $hasSellerId && $hasSellers ? ' LEFT JOIN sellers s ON s.id = u.seller_id' : '';
+    $sql = "SELECT u.*{$sellerSelect}
             FROM catalog_users u
-            LEFT JOIN sellers s ON s.id = u.seller_id
+            {$sellerJoin}
             WHERE u.username = :username AND u.is_active = 1
-            LIMIT 1';
+            LIMIT 1";
     $statement = db()->prepare($sql);
     $statement->execute(['username' => $username]);
     $user = $statement->fetch();
@@ -187,13 +214,15 @@ function admin_login(string $username, string $password): bool
         'full_name' => $user['full_name'],
         'email' => $user['email'],
         'role' => $user['role'],
-        'seller_id' => $user['seller_id'] ? (int) $user['seller_id'] : null,
+        'seller_id' => $hasSellerId && !empty($user['seller_id']) ? (int) $user['seller_id'] : null,
         'seller_display_name' => $user['seller_display_name'] ?? '',
     ];
 
-    db()->prepare('UPDATE catalog_users SET last_login_at = NOW() WHERE id = :id')->execute([
-        'id' => $user['id'],
-    ]);
+    if ($hasLastLogin) {
+        db()->prepare('UPDATE catalog_users SET last_login_at = NOW() WHERE id = :id')->execute([
+            'id' => $user['id'],
+        ]);
+    }
 
     audit_log('auth.login', 'catalog_users', (int) $user['id'], [
         'username' => $user['username'],

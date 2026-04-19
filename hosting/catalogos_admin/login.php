@@ -22,7 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         : ['ok' => admin_login($username, $password), 'message' => 'Usuario o contrasena invalidos.'];
     if ($auth['ok'] ?? false) {
         $user = $auth['user'] ?? current_user();
-        header('Location: ' . (($user['role'] ?? '') === 'vendor' ? '../catalogos_vendedor/index.php' : 'dashboard.php'));
+        $target = function_exists('admin_post_login_target') ? admin_post_login_target($user) : 'dashboard.php';
+        header('Location: ' . $target);
         exit;
     }
     $error = (string) ($auth['message'] ?? 'Acceso denegado.');
