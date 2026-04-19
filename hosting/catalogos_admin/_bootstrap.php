@@ -64,6 +64,7 @@ function admin_menu_items(): array
             'catalogos.php' => 'Catalogos',
             'pedidos.php' => 'Pedidos',
             'sellers.php' => 'Vendedores',
+            'usuarios.php' => 'Usuarios',
             'links.php' => 'Links / Enlaces',
             'clients.php' => 'Clientes',
             'configuracion.php' => 'Configuracion',

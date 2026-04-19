@@ -161,7 +161,7 @@ button.button--danger {
   font-size: 34px;
   font-weight: 800;
 }
-.table-wrap { overflow: auto; }
+.table-wrap { overflow: auto; max-width: 100%; }
 table {
   width: 100%;
   border-collapse: collapse;
@@ -240,6 +240,20 @@ textarea { min-height: 92px; resize: vertical; }
   gap: 18px;
   grid-template-columns: 1.25fr 1fr;
 }
+.links-layout {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
+  align-items: start;
+}
+.links-layout > .card { min-width: 0; }
+.links-layout .form-grid { grid-template-columns: 1fr; }
+.link-url {
+  min-width: 260px;
+  max-width: 420px;
+  margin: 0 8px 8px 0;
+  font-size: 12px;
+}
 .list {
   display: grid;
   gap: 12px;
@@ -263,6 +277,25 @@ textarea { min-height: 92px; resize: vertical; }
   gap: 8px;
   flex-wrap: wrap;
 }
+.catalog-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 280px;
+  max-width: 340px;
+}
+.catalog-actions .button,
+.catalog-actions button {
+  min-width: auto;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.catalog-actions form { margin: 0; }
+.optional-col { display: table-cell; }
 .login-shell {
   min-height: 100vh;
   display: grid;
@@ -338,7 +371,13 @@ code {
 }
 @media (max-width: 1180px) {
   .grid--cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .split { grid-template-columns: 1fr; }
+  .split,
+  .links-layout { grid-template-columns: 1fr; }
+  .optional-col { display: none; }
+  .catalog-actions {
+    min-width: 220px;
+    max-width: 260px;
+  }
 }
 @media (max-width: 900px) {
   .shell { grid-template-columns: 1fr; }

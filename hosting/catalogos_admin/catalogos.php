@@ -89,6 +89,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: catalogos.php');
         exit;
     }
+
+    if ($action === 'delete' && $catalogId > 0) {
+        admin_delete_catalog($catalogId);
+        header('Location: catalogos.php');
+        exit;
+    }
 }
 
 $catalogs = [];
@@ -159,21 +165,22 @@ admin_header('Catalogos', 'catalogos.php');
     <div class="toolbar"><strong>Catalogos publicados</strong><span class="pill"><?= count($catalogs) ?> registros</span></div>
     <div class="table-wrap">
         <table>
-            <thead><tr><th>Slug</th><th>Titulo</th><th>Vendedor</th><th>Estado</th><th>Creado</th><th>Expira</th><th>Links</th><th>Pedidos</th><th>Acciones</th></tr></thead>
+            <thead><tr><th class="optional-col">Slug</th><th>Titulo</th><th>Vendedor</th><th>Estado</th><th class="optional-col">Creado</th><th>Expira</th><th>Links</th><th>Pedidos</th><th>Acciones</th></tr></thead>
             <tbody>
             <?php foreach ($catalogs as $catalog): ?>
                 <tr>
-                    <td><?= html_escape($catalog['slug'] ?? '') ?></td>
+                    <td class="optional-col"><?= html_escape($catalog['slug'] ?? '') ?></td>
                     <td><strong><?= html_escape($catalog['title'] ?? '') ?></strong><div class="muted"><?= html_escape($catalog['public_url'] ?? '') ?></div></td>
                     <td><?= html_escape(($catalog['seller_display_name'] ?? '') ?: ($catalog['seller_name'] ?? '') ?: 'Sin vendedor') ?></td>
                     <td><?= admin_status_badge(resolve_catalog_status($catalog)) ?></td>
-                    <td><?= html_escape(($catalog['created_at'] ?? '') ?: ($catalog['generated_at'] ?? '')) ?></td>
+                    <td class="optional-col"><?= html_escape(($catalog['created_at'] ?? '') ?: ($catalog['generated_at'] ?? '')) ?></td>
                     <td><?= html_escape(($catalog['expires_at'] ?? '') ?: 'Sin vencimiento') ?></td>
                     <td><?= (int) $catalog['links_count'] ?></td>
                     <td><?= (int) $catalog['orders_count'] ?></td>
                     <td>
-                        <div class="toolbar__actions">
+                        <div class="toolbar__actions catalog-actions">
                             <a class="button" href="catalogos.php?edit=<?= (int) $catalog['id'] ?>">Editar</a>
+                            <a class="button" href="links.php?catalog_id=<?= (int) $catalog['id'] ?>">Crear link</a>
                             <?php if (!empty($catalog['public_url'])): ?><a class="button" href="<?= html_escape($catalog['public_url']) ?>" target="_blank">Abrir</a><?php endif; ?>
                             <?php if ($catalogColumns['status']): ?><form method="post">
                                 <?= csrf_field() ?>
@@ -181,6 +188,12 @@ admin_header('Catalogos', 'catalogos.php');
                                 <input type="hidden" name="catalog_id" value="<?= (int) $catalog['id'] ?>">
                                 <button type="submit"><?= ($catalog['status'] ?? '') === 'active' ? 'Archivar' : 'Activar' ?></button>
                             </form><?php endif; ?>
+                            <form method="post" onsubmit="return confirm('Eliminar este catalogo y sus links/pedidos asociados? Esta accion no se puede deshacer.');">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="catalog_id" value="<?= (int) $catalog['id'] ?>">
+                                <button class="button--danger" type="submit">Eliminar</button>
+                            </form>
                         </div>
                     </td>
                 </tr>
@@ -190,3 +203,77 @@ admin_header('Catalogos', 'catalogos.php');
     </div>
 </section>
 <?php admin_footer(); ?>
+
+<?php
+function admin_delete_catalog(int $catalogId): void
+{
+    $stmt = db()->prepare('SELECT id, slug, title FROM catalogs WHERE id = :id LIMIT 1');
+    $stmt->execute(['id' => $catalogId]);
+    $catalog = $stmt->fetch();
+    if (!$catalog) {
+        flash_set('error', 'Catalogo no encontrado.');
+        return;
+    }
+
+    if (admin_table_exists('order_items') && admin_table_exists('orders') && admin_column_exists('orders', 'catalog_id')) {
+        db()->prepare('DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE catalog_id = :id)')->execute(['id' => $catalogId]);
+    }
+    if (admin_table_exists('order_status_history') && admin_table_exists('orders') && admin_column_exists('orders', 'catalog_id')) {
+        db()->prepare('DELETE FROM order_status_history WHERE order_id IN (SELECT id FROM orders WHERE catalog_id = :id)')->execute(['id' => $catalogId]);
+    }
+    if (admin_table_exists('notifications_log') && admin_table_exists('orders') && admin_column_exists('orders', 'catalog_id')) {
+        db()->prepare('DELETE FROM notifications_log WHERE order_id IN (SELECT id FROM orders WHERE catalog_id = :id)')->execute(['id' => $catalogId]);
+    }
+    if (admin_table_exists('orders') && admin_column_exists('orders', 'catalog_id')) {
+        db()->prepare('DELETE FROM orders WHERE catalog_id = :id')->execute(['id' => $catalogId]);
+    }
+    if (admin_table_exists('catalog_access_logs') && admin_column_exists('catalog_access_logs', 'catalog_id')) {
+        db()->prepare('DELETE FROM catalog_access_logs WHERE catalog_id = :id')->execute(['id' => $catalogId]);
+    }
+    if (admin_table_exists('catalog_share_links') && admin_column_exists('catalog_share_links', 'catalog_id')) {
+        db()->prepare('DELETE FROM catalog_share_links WHERE catalog_id = :id')->execute(['id' => $catalogId]);
+    }
+
+    db()->prepare('DELETE FROM catalogs WHERE id = :id')->execute(['id' => $catalogId]);
+    admin_delete_catalog_directory((string) ($catalog['slug'] ?? ''));
+    audit_log('catalog.deleted', 'catalogs', $catalogId, [
+        'slug' => $catalog['slug'] ?? '',
+        'title' => $catalog['title'] ?? '',
+    ]);
+    flash_set('success', 'Catalogo eliminado correctamente.');
+}
+
+function admin_delete_catalog_directory(string $slug): void
+{
+    $safeSlug = basename(trim($slug));
+    if ($safeSlug === '' || $safeSlug === '.' || $safeSlug === '..') {
+        return;
+    }
+    $baseDir = rtrim((string) catalog_config('paths.public_catalogs_dir', dirname(__DIR__) . '/catalogos'), DIRECTORY_SEPARATOR);
+    $targetDir = $baseDir . DIRECTORY_SEPARATOR . $safeSlug;
+    if (!is_dir($targetDir)) {
+        return;
+    }
+    admin_delete_directory_recursive($targetDir);
+}
+
+function admin_delete_directory_recursive(string $dirPath): void
+{
+    $items = scandir($dirPath);
+    if ($items === false) {
+        return;
+    }
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') {
+            continue;
+        }
+        $path = $dirPath . DIRECTORY_SEPARATOR . $item;
+        if (is_dir($path)) {
+            admin_delete_directory_recursive($path);
+            continue;
+        }
+        @unlink($path);
+    }
+    @rmdir($dirPath);
+}
+?>

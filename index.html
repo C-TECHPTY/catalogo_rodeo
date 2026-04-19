@@ -68,12 +68,12 @@
                     <h2>Diseno</h2>
                     <div class="controls-grid">
                         <label class="control-field">
-                            <span>Color principal</span>
+                            <span>Color principal PDF/web</span>
                             <input id="primaryColor" type="color" value="#b7192e">
                         </label>
 
                         <label class="control-field">
-                            <span>Color secundario</span>
+                            <span>Color secundario PDF/web</span>
                             <input id="secondaryColor" type="color" value="#1d1d1b">
                         </label>
 
@@ -184,6 +184,11 @@
                 <section class="controls-section manual-only">
                     <h2>Promocion visual</h2>
                     <div class="controls-grid">
+                        <label class="control-field control-field--wide">
+                            <span>Imagen fondo hero B2B</span>
+                            <input id="heroImageFile" type="file" accept=".jpg,.jpeg,.png,.webp,.JPG,.JPEG,.PNG,.WEBP">
+                        </label>
+
                         <label class="control-field control-field--wide">
                             <span>Titulo promocional</span>
                             <input id="promoTitleInput" type="text" value="Oferta destacada para compras mayoristas">
@@ -310,14 +315,14 @@
                         </label>
 
                         <label class="control-field control-field--wide">
-                            <span>Link generado</span>
+                            <span>URL base del catalogo</span>
                             <div class="path-picker">
-                                <input id="generatedWebLink" type="text" readonly placeholder="Exporta el paquete web para generar un link listo para copiar">
+                                <input id="generatedWebLink" type="text" readonly placeholder="URL base. Para clientes crea un link seguro en el panel admin">
                                 <button id="copyWebLinkButton" type="button">Copiar</button>
                             </div>
                         </label>
                     </div>
-                    <p id="webExportStatus" class="status-message">La exportacion web generara HTML, JSON, multimedia y metadata listos para subir al hosting.</p>
+                    <p id="webExportStatus" class="status-message">La exportacion web generara HTML, JSON, multimedia y metadata. Para compartir con clientes usa Links / Enlaces en el panel admin.</p>
                     <div id="webPublishProgressPanel" class="batch-progress-panel" hidden>
                         <div class="batch-progress-bar">
                             <span id="webPublishProgressBarFill" class="batch-progress-bar__fill" style="width: 0%;"></span>
@@ -331,8 +336,8 @@
                     <div class="panel-actions">
                         <button id="renderButton" type="button">Generar catalogo</button>
                         <button id="printButton" type="button">Imprimir / Exportar PDF</button>
-                        <button id="exportWebButton" type="button">Exportar paquete web</button>
-                        <button id="publishHostingButton" type="button">Publicar al hosting</button>
+                        <button id="exportWebButton" type="button">Guardar paquete local</button>
+                        <button id="publishHostingButton" type="button">Subir al hosting</button>
                         <button id="testHostingButton" type="button">Probar FTP</button>
                     </div>
                     <p id="statusMessage" class="status-message">Carga un Excel y tus imagenes para comenzar.</p>

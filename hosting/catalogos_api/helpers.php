@@ -163,6 +163,31 @@ function vendor_require_login(): void
     }
 }
 
+function catalog_table_exists(string $tableName): bool
+{
+    $statement = db()->prepare(
+        'SELECT COUNT(*)
+         FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name'
+    );
+    $statement->execute(['table_name' => $tableName]);
+    return ((int) $statement->fetchColumn()) > 0;
+}
+
+function catalog_column_exists(string $tableName, string $columnName): bool
+{
+    $statement = db()->prepare(
+        'SELECT COUNT(*)
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name'
+    );
+    $statement->execute([
+        'table_name' => $tableName,
+        'column_name' => $columnName,
+    ]);
+    return ((int) $statement->fetchColumn()) > 0;
+}
+
 function admin_login(string $username, string $password): bool
 {
     $tableExists = static function (string $tableName): bool {
@@ -449,6 +474,9 @@ function resolve_public_catalog_context(string $slug, string $token = ''): array
             json_response([
                 'ok' => false,
                 'error' => 'El enlace compartido no es valido para este catalogo.',
+                'share_link' => [
+                    'status' => 'invalid',
+                ],
             ], 404);
         }
 
@@ -536,6 +564,13 @@ function build_public_catalog_payload(array $context): array
 {
     $catalog = $context['catalog'];
     $json = catalog_json_data((string) ($catalog['catalog_json_path'] ?? ''));
+    $apiPayload = json_decode((string) ($catalog['api_payload'] ?? ''), true);
+    if (!is_array($apiPayload)) {
+        $apiPayload = [];
+    }
+    if (empty($json['theme']) && !empty($apiPayload['theme']) && is_array($apiPayload['theme'])) {
+        $json['theme'] = $apiPayload['theme'];
+    }
 
     $promotion = [
         'title' => (string) ($catalog['promo_title'] ?? ''),

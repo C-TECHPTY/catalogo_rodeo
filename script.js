@@ -19,7 +19,7 @@ settingsPath:""
 };
 const LAYOUT_BLOCKS = { coverTitle:"Portada titulo", pageHeader:"Encabezado", pageLogo:"Logo pagina", productsGrid:"Bloque productos", productImage:"Imagen producto", productCode:"Codigo producto", productPrice:"Precio", productDescription:"Descripcion", productMeta:"Datos tecnicos", pageFooter:"Footer" };
 const initialHostingSettings = loadHostingSettings();
-const state = { mode:"manual", previewMode:"web", records:[], sourceExcelName:"", imageFiles:[], imageMap:new Map(), imageUrls:[], imageSourceMap:new Map(), extraMediaFiles:[], extraMediaMap:new Map(), title:"Acenox Catalogo Comercial", footerText:"Catalogo comercial interno Acenox", includeCover:true, template:"classic", productsPerPage:6, primaryColor:"#b7192e", secondaryColor:"#1d1d1b", coverImageUrl:"", coverImagePath:"", pageLogoUrl:"", pageLogoPath:"", pageLogoPosition:"right", pageBackgroundUrl:"", pageBackgroundPath:"", pageBackgroundOpacity:0.12, promotion:{ title:"Oferta destacada para compras mayoristas", text:"Configura una imagen liviana o video opcional sin afectar la carga movil.", imageUrl:"", imagePath:"", videoUrl:"", videoPath:"", linkLabel:"Consultar promocion", linkUrl:"" }, webExport:{ slug:"catalogo-publicable", slugEdited:false, expiryDays:30, outputDir:"", baseUrl:initialHostingSettings.publicBaseUrl, apiBaseUrl:initialHostingSettings.apiBaseUrl, generatedLink:"", hosting:initialHostingSettings }, layoutPresets:loadLayoutPresets(), activeLayoutPresetId:"default", layoutEditor:{ enabled:false, selectedBlock:"coverTitle", drag:null }, batch:{ excelPath:"", imagesRoot:"", outputRoot:"", template:"editorial", quality:0.72, primaryColor:"#b7192e", secondaryColor:"#1d1d1b", logoPosition:"right", categories:[], previewIndex:-1, progress:{ completed:0, total:0 } } };
+const state = { mode:"manual", previewMode:"web", records:[], sourceExcelName:"", imageFiles:[], imageMap:new Map(), imageUrls:[], imageSourceMap:new Map(), extraMediaFiles:[], extraMediaMap:new Map(), title:"Acenox Catalogo Comercial", footerText:"Catalogo comercial interno Acenox", includeCover:true, template:"classic", productsPerPage:6, primaryColor:"#b7192e", secondaryColor:"#1d1d1b", coverImageUrl:"", coverImagePath:"", pageLogoUrl:"", pageLogoPath:"", pageLogoPosition:"right", pageBackgroundUrl:"", pageBackgroundPath:"", pageBackgroundOpacity:0.12, heroImageUrl:"", heroImagePath:"", promotion:{ title:"Oferta destacada para compras mayoristas", text:"Configura una imagen liviana o video opcional sin afectar la carga movil.", imageUrl:"", imagePath:"", videoUrl:"", videoPath:"", linkLabel:"Consultar promocion", linkUrl:"" }, webExport:{ slug:"catalogo-publicable", slugEdited:false, expiryDays:30, outputDir:"", baseUrl:initialHostingSettings.publicBaseUrl, apiBaseUrl:initialHostingSettings.apiBaseUrl, generatedLink:"", hosting:initialHostingSettings }, layoutPresets:loadLayoutPresets(), activeLayoutPresetId:"default", layoutEditor:{ enabled:false, selectedBlock:"coverTitle", drag:null }, batch:{ excelPath:"", imagesRoot:"", outputRoot:"", template:"editorial", quality:0.72, primaryColor:"#b7192e", secondaryColor:"#1d1d1b", logoPosition:"right", categories:[], previewIndex:-1, progress:{ completed:0, total:0 } } };
 const REQUIRED_ALIASES = { item:["ITEM"], description:["DESCRIPCION","DESCRIPCION ","NOMBRE","PRODUCTO"], price:["PRECIO","PRICE","PVP"], available:["DISPONIBLE","DISP.","DISP","STOCK","EXISTENCIA"], barcode:["CBARRA","CB","CODIGOBARRAS","CODIGO DE BARRAS"], package:["EMPAQUE","PACK","PAQUETE"], um:["UM"], ctn:["CTN"], cub:["CUB.","CUB","CUBICAJE"] };
 const TEMPLATE_DEFS = {
 classic: templateDef("catalog-page--classic","cover-page--classic","Clasica original","Catalogo comercial","Coleccion general",renderClassicCard),
@@ -58,6 +58,7 @@ const pageBackgroundOpacityInput = byId("pageBackgroundOpacity");
 const excelInput = byId("excelFile");
 const imageInput = byId("imageFiles");
 const extraMediaInput = byId("extraMediaFiles");
+const heroImageFileInput = byId("heroImageFile");
 const promoTitleInput = byId("promoTitleInput");
 const promoTextInput = byId("promoTextInput");
 const promoImageFileInput = byId("promoImageFile");
@@ -151,8 +152,8 @@ webPreviewModeButton?.addEventListener("click", () => setPreviewMode("web"));
 pdfPreviewModeButton?.addEventListener("click", () => setPreviewMode("pdf"));
 titleInput?.addEventListener("input", () => { state.title = titleInput.value.trim() || "Acenox Catalogo Comercial"; if (!state.webExport.slugEdited && webCatalogSlugInput) { const nextSlug = sanitizeSlug(state.title) || "catalogo-publicable"; state.webExport.slug = nextSlug; webCatalogSlugInput.value = nextSlug; updateGeneratedLinkPreview(); } refreshCatalogIfReady(); });
 footerInput?.addEventListener("input", () => { state.footerText = footerInput.value.trim() || "Catalogo comercial interno Acenox"; refreshCatalogIfReady(); });
-primaryColorInput?.addEventListener("input", () => { state.primaryColor = primaryColorInput.value || "#b7192e"; applyThemeVariables(); refreshCatalogIfReady(); });
-secondaryColorInput?.addEventListener("input", () => { state.secondaryColor = secondaryColorInput.value || "#1d1d1b"; applyThemeVariables(); refreshCatalogIfReady(); });
+primaryColorInput?.addEventListener("input", () => { state.primaryColor = primaryColorInput.value || "#b7192e"; applyThemeVariables(); refreshCatalogIfReady(); renderWebPreview(); });
+secondaryColorInput?.addEventListener("input", () => { state.secondaryColor = secondaryColorInput.value || "#1d1d1b"; applyThemeVariables(); refreshCatalogIfReady(); renderWebPreview(); });
 includeCoverInput?.addEventListener("change", () => { state.includeCover = includeCoverInput.checked; refreshCatalogIfReady(); });
 templateSelect?.addEventListener("change", () => { state.template = templateSelect.value || "classic"; if (state.template === "campin1" && Number(productsPerPageInput.value) > 5) productsPerPageInput.value = "5"; if (isHorizontalTemplate(state.template) && Number(productsPerPageInput.value) > 4) productsPerPageInput.value = "4"; refreshCatalogIfReady(); });
 productsPerPageInput?.addEventListener("input", () => { const value = Number(productsPerPageInput.value); state.productsPerPage = Number.isFinite(value) && value > 0 ? value : 6; refreshCatalogIfReady(); });
@@ -164,6 +165,7 @@ pageBackgroundOpacityInput?.addEventListener("input", () => { state.pageBackgrou
 excelInput?.addEventListener("change", async () => { const file = excelInput.files?.[0]; if (file) await loadRecordsFromFile(file); });
 imageInput?.addEventListener("change", () => { state.imageFiles = Array.from(imageInput.files || []); reindexMainImages(); refreshCatalogIfReady(); });
 extraMediaInput?.addEventListener("change", () => { state.extraMediaFiles = Array.from(extraMediaInput.files || []); reindexExtraMedia(); });
+heroImageFileInput?.addEventListener("change", () => { const file = heroImageFileInput.files?.[0]; state.heroImageUrl = replaceObjectUrl(state.heroImageUrl, file); state.heroImagePath = file?.path || ""; renderWebPreview(); });
 promoTitleInput?.addEventListener("input", () => { state.promotion.title = promoTitleInput.value.trim(); renderWebPreview(); });
 promoTextInput?.addEventListener("input", () => { state.promotion.text = promoTextInput.value.trim(); renderWebPreview(); });
 promoLinkLabelInput?.addEventListener("input", () => { state.promotion.linkLabel = promoLinkLabelInput.value.trim(); renderWebPreview(); });
@@ -187,7 +189,7 @@ hostingAutoSaveInput?.addEventListener("change", () => { state.webExport.hosting
 saveHostingSettingsButton?.addEventListener("click", async () => { await saveHostingSettings({ force:true, showStatus:true }); });
 clearHostingSettingsButton?.addEventListener("click", async () => { await clearHostingSettings(); });
 pickWebOutputButton?.addEventListener("click", async () => { if (!isDesktop) return setWebExportStatus("La exportacion web requiere la app de escritorio.", true); const dir = await desktopApi.chooseDirectory({ title: "Selecciona la carpeta de salida web" }); if (!dir) return; state.webExport.outputDir = dir; if (webOutputPathInput) webOutputPathInput.value = dir; setWebExportStatus("Carpeta de salida web seleccionada."); });
-copyWebLinkButton?.addEventListener("click", async () => { if (!state.webExport.generatedLink) return setWebExportStatus("Aun no hay link generado para copiar.", true); try { await navigator.clipboard.writeText(state.webExport.generatedLink); setWebExportStatus("Link copiado al portapapeles."); } catch (error) { console.error(error); setWebExportStatus("No se pudo copiar el link automaticamente.", true); } });
+copyWebLinkButton?.addEventListener("click", async () => { if (!state.webExport.generatedLink) return setWebExportStatus("Aun no hay URL base para copiar.", true); try { await navigator.clipboard.writeText(state.webExport.generatedLink); setWebExportStatus("URL base copiada. Para clientes, crea un link seguro en el panel admin."); } catch (error) { console.error(error); setWebExportStatus("No se pudo copiar la URL automaticamente.", true); } });
 layoutPresetSelect?.addEventListener("change", () => { state.activeLayoutPresetId = layoutPresetSelect.value || "default"; syncLayoutEditorControls(); Object.keys(LAYOUT_BLOCKS).forEach(applyLayoutStyleToDom); refreshCatalogIfReady(); refreshLayoutEditorOverlay(); setLayoutEditorStatus(`Plantilla editable activa: ${getActiveLayoutPreset().name}.`); });
 layoutBlockSelect?.addEventListener("change", () => { state.layoutEditor.selectedBlock = layoutBlockSelect.value || "coverTitle"; syncLayoutEditorControls(); refreshLayoutEditorOverlay(); });
 toggleLayoutEditorButton?.addEventListener("click", () => toggleLayoutEditor());
@@ -286,8 +288,9 @@ function renderWebPreview() {
 if (!webPreviewRoot) return;
 const products = (state.records.length ? state.records : createPreviewProducts()).slice(0, 8);
 const promoImage = state.promotion.imageUrl || state.coverImageUrl || "";
+const heroStyle = state.heroImageUrl ? ` style="background-image:linear-gradient(132deg, rgba(0,0,0,.62), rgba(0,0,0,.34)), url(&quot;${escapeHtml(state.heroImageUrl)}&quot;);"` : "";
 webPreviewRoot.innerHTML = `
-<div class="web-preview-shell">
+<div class="web-preview-shell" style="--web-primary:${escapeHtml(sanitizeHexColor(state.primaryColor, "#2d6b4f"))}; --web-secondary:${escapeHtml(sanitizeHexColor(state.secondaryColor, "#174531"))};">
   <header class="web-preview-header">
     <div class="web-preview-brand">
       <div class="web-preview-logo">${state.pageLogoUrl ? `<img src="${escapeHtml(state.pageLogoUrl)}" alt="">` : "R"}</div>
@@ -296,7 +299,7 @@ webPreviewRoot.innerHTML = `
     <div class="web-preview-search">Buscar SKU, marca o categoria</div>
     <button type="button">Carrito</button>
   </header>
-  <section class="web-preview-hero">
+  <section class="web-preview-hero"${heroStyle}>
     <div><p>Catalogo comercial B2B</p><h2>${escapeHtml(state.title)}</h2><span>Pedidos por empaque, link trazable y salida operativa en Excel/CSV/XLSX.</span></div>
     <div class="web-preview-filter"><strong>Categorias</strong><span>Todos</span><span>General</span><span>Mayorista</span></div>
   </section>
@@ -422,14 +425,16 @@ async function exportWebPackage() {
 if (!isDesktop) return setWebExportStatus("La exportacion web requiere la app de escritorio.", true);
 if (!state.records.length) return setWebExportStatus("Primero carga un Excel y las imagenes del catalogo.", true);
 if (!state.webExport.outputDir) return setWebExportStatus("Selecciona una carpeta de salida para el paquete web.", true);
+if (!confirmMissingMainImages()) return;
 const slug = sanitizeSlug(state.webExport.slug || state.title) || "catalogo-publicable";
+hideHostingProgressUi();
 setWebExportStatus("Preparando paquete web publicable...");
 try {
 const payload = buildWebExportPayload(slug);
 const result = await desktopApi.exportWebPackage(payload);
 state.webExport.generatedLink = buildGeneratedLink(slug);
 updateGeneratedLinkPreview();
-setWebExportStatus(`Paquete web listo en ${result.outputDir}. Vigencia: ${payload.metadata.expiryLabel}.${state.webExport.generatedLink ? ` Link: ${state.webExport.generatedLink}` : " Configura una URL base publica para obtener el link final."}`);
+setWebExportStatus(`Paquete local listo en ${result.outputDir}. Esto NO subio al hosting. Para subirlo usa el boton "Subir al hosting". Vigencia: ${payload.metadata.expiryLabel}.${state.webExport.generatedLink ? ` URL base: ${state.webExport.generatedLink}` : " Configura una URL base publica."}`);
 } catch (error) {
 console.error(error);
 setWebExportStatus(`No se pudo exportar el paquete web: ${error.message}`, true);
@@ -443,9 +448,10 @@ if (!state.webExport.outputDir) return setWebExportStatus("Selecciona una carpet
 const hosting = state.webExport.hosting || {};
 if (!hosting.ftpHost || !hosting.ftpUser || !hosting.ftpPassword) return setWebExportStatus("Completa FTP host, usuario y clave.", true);
 if (!state.webExport.apiBaseUrl || !hosting.apiKey) return setWebExportStatus("Completa la API base publica y la API key privada.", true);
+if (!confirmMissingMainImages()) return;
 const slug = sanitizeSlug(state.webExport.slug || state.title) || "catalogo-publicable";
 const remoteCatalogDir = buildRemoteCatalogDir(hosting.remoteDir, slug);
-setWebExportStatus("Preparando publicacion al hosting...");
+setWebExportStatus("Preparando subida al hosting...");
 setHostingPublishBusy(true);
 resetHostingProgressUi();
 try {
@@ -478,13 +484,14 @@ const result = await desktopApi.publishCatalogPackage({
         promoVideoUrl: payload.metadata.promotion.videoUrl,
         promoLinkUrl: payload.metadata.promotion.linkUrl,
         promoLinkLabel: payload.metadata.promotion.linkLabel,
+        theme: payload.metadata.theme,
         notes: `Catalogo generado desde app local. Plantilla ${state.template}.`,
         catalogJsonPath: `${remoteCatalogDir}/catalog.json`
     }
 });
 state.webExport.generatedLink = result.publicUrl || buildGeneratedLink(slug);
 updateGeneratedLinkPreview();
-setWebExportStatus(`Catalogo publicado correctamente. Link: ${state.webExport.generatedLink || "(sin URL publica)"}`);
+setWebExportStatus(`Catalogo subido al hosting correctamente. URL base: ${state.webExport.generatedLink || "(sin URL publica)"}. Ahora crea un link seguro en el panel admin antes de compartirlo.`);
 } catch (error) {
 console.error(error);
 setWebExportStatus(`No se pudo publicar al hosting: ${error.message}`, true);
@@ -500,6 +507,7 @@ imageMap: state.imageMap,
 coverImageUrl: state.coverImageUrl,
 pageLogoUrl: state.pageLogoUrl,
 pageBackgroundUrl: state.pageBackgroundUrl,
+heroImageUrl: state.heroImageUrl,
 template: state.template,
 title: state.title,
 footerText: state.footerText,
@@ -545,13 +553,15 @@ const packageQty = parsePackageQty(record.package);
 mediaCatalog[record.item] = { item:record.item, description:record.description, shortDescription:record.shortDescription, price:record.price, available:record.available, package:record.package, empaque:record.package, packageQty, mainImage:exportImageMap.get(normalizedItem) || "", gallery, video };
 });
 const coverRelative = state.coverImagePath ? `media/brand/cover${getWebImageExtension(state.coverImagePath)}` : "";
-const logoRelative = state.pageLogoPath ? `media/brand/logo${getWebImageExtension(state.pageLogoPath)}` : "";
+const logoRelative = state.pageLogoPath ? `media/brand/logo${getWebLogoExtension(state.pageLogoPath)}` : "";
 const backgroundRelative = state.pageBackgroundPath ? `media/brand/background${getWebImageExtension(state.pageBackgroundPath)}` : "";
+const heroRelative = state.heroImagePath ? `media/brand/hero${getWebImageExtension(state.heroImagePath)}` : "";
 const promoImageRelative = state.promotion.imagePath ? `media/promo/promo${getWebImageExtension(state.promotion.imagePath)}` : "";
 const promoVideoRelative = state.promotion.videoPath ? `media/promo/promo${getPathExtension(state.promotion.videoPath) || ".mp4"}` : "";
 if (state.coverImagePath) assets.push({ sourcePath:state.coverImagePath, relativePath:coverRelative });
 if (state.pageLogoPath) assets.push({ sourcePath:state.pageLogoPath, relativePath:logoRelative });
 if (state.pageBackgroundPath) assets.push({ sourcePath:state.pageBackgroundPath, relativePath:backgroundRelative });
+if (state.heroImagePath) assets.push({ sourcePath:state.heroImagePath, relativePath:heroRelative });
 if (state.promotion.imagePath) assets.push({ sourcePath:state.promotion.imagePath, relativePath:promoImageRelative });
 if (state.promotion.videoPath) assets.push({ sourcePath:state.promotion.videoPath, relativePath:promoVideoRelative });
 state.records = records;
@@ -559,6 +569,7 @@ state.imageMap = exportImageMap;
 state.coverImageUrl = coverRelative ? `./${coverRelative}` : "";
 state.pageLogoUrl = logoRelative ? `./${logoRelative}` : "";
 state.pageBackgroundUrl = backgroundRelative ? `./${backgroundRelative}` : "";
+state.heroImageUrl = "";
 renderCatalog({ syncInputs:false });
 const snapshotHtml = catalogRoot.innerHTML;
 state.records = currentState.records;
@@ -566,6 +577,7 @@ state.imageMap = currentState.imageMap;
 state.coverImageUrl = currentState.coverImageUrl;
 state.pageLogoUrl = currentState.pageLogoUrl;
 state.pageBackgroundUrl = currentState.pageBackgroundUrl;
+state.heroImageUrl = currentState.heroImageUrl;
 state.promotion = currentState.promotion;
 renderCatalog({ syncInputs:false });
 return {
@@ -577,8 +589,13 @@ snapshotHtml,
   footerText: state.footerText,
   slug,
   template: state.template,
+  theme: {
+    primaryColor: sanitizeHexColor(state.primaryColor, "#2d6b4f"),
+    secondaryColor: sanitizeHexColor(state.secondaryColor, "#174531")
+  },
   heroTitle: state.title,
   heroSubtitle: "Catalogo comercial B2B con pedido mayorista y trazabilidad por enlace.",
+  heroImage: heroRelative ? `./${heroRelative}` : "",
   publicBaseUrl: state.webExport.baseUrl,
   apiBaseUrl: state.webExport.apiBaseUrl,
   publicUrl: buildGeneratedLink(slug),
@@ -606,13 +623,32 @@ assets: dedupeAssets(assets),
 }
 
 function dedupeAssets(assets) { const seen = new Set(); return assets.filter((asset) => { const key = `${asset.sourcePath}|${asset.relativePath}`; if (!asset.sourcePath || seen.has(key)) return false; seen.add(key); return true; }); }
+function confirmMissingMainImages() {
+const total = state.records.length;
+const indexed = state.imageSourceMap.size;
+if (!total || indexed >= total) return true;
+const missingItems = state.records
+.filter((record) => !state.imageSourceMap.has(normalizeIdentifier(record.item)))
+.map((record) => record.item)
+.filter(Boolean);
+const missing = missingItems.length || (total - indexed);
+const sample = missingItems.slice(0, 12).join(", ");
+const more = missingItems.length > 12 ? ` y ${missingItems.length - 12} mas` : "";
+const message = `Hay ${missing} producto(s) sin imagen principal indexada de ${total}. ${sample ? `ITEM sin imagen: ${sample}${more}. ` : ""}Revisa que los nombres de archivo coincidan con el ITEM antes de publicar.`;
+setWebExportStatus(message, true);
+return window.confirm(`${message}\n\nQuieres continuar de todos modos?`);
+}
 function reindexMainImages() { revokeObjectUrls(state.imageUrls); state.imageMap = buildImageMapFromFiles(state.imageFiles || []); state.imageUrls = Array.from(state.imageMap.values()); state.imageSourceMap = buildImageSourceMapFromFiles(state.imageFiles || []); if (state.imageFiles?.length) setStatus(`Imagenes principales indexadas: ${state.imageMap.size} de ${state.imageFiles.length}.`); }
 function buildImageSourceMapFromFiles(files) { const map = new Map(); const knownItems = new Set(state.records.map((record) => normalizeIdentifier(record.item)).filter(Boolean)); files.forEach((file) => { const stem = resolveMainMediaItemKey(file.name || "", knownItems); if (!stem || map.has(stem) || !file.path) return; map.set(stem, file.path); }); return map; }
 function buildExtraMediaMapFromFiles(files) { const map = new Map(); const knownItems = new Set(state.records.map((record) => normalizeIdentifier(record.item)).filter(Boolean)); files.forEach((file) => { const path = file.path || ""; if (!path) return; const ext = getPathExtension(file.name || path); const parsed = parseExtraMediaStem(file.name || path, knownItems); if (!parsed.itemKey) return; if (!map.has(parsed.itemKey)) map.set(parsed.itemKey, { gallery:[], videoPath:"" }); const bucket = map.get(parsed.itemKey); if (isVideoExtension(ext)) { if (!bucket.videoPath) bucket.videoPath = path; return; } bucket.gallery.push(path); }); return map; }
 function resolveMainMediaItemKey(fileName, knownItems = new Set()) { const parsed = parseExtraMediaStem(fileName, knownItems); return parsed.itemKey || normalizeIdentifier(String(fileName || "").replace(/\.[^.]+$/, "")); }
-function parseExtraMediaStem(fileName, knownItems = new Set()) { const rawStem = String(fileName || "").replace(/\.[^.]+$/, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim(); const cleanedStem = rawStem.replace(/(?:[_\-\s](?:main|principal|gallery|galeria|extra|image|img|foto|video|vid))(?:[_\-\s]?\d+)?$/i, "").replace(/(?:[_\-\s]\d+)$/i, "").trim(); const candidates = [ normalizeIdentifier(rawStem), normalizeIdentifier(cleanedStem), normalizeIdentifier(rawStem.split(/[_\s]+/)[0]), normalizeIdentifier(cleanedStem.split(/[_\s]+/)[0]), normalizeIdentifier((rawStem.match(/^(.+?)(?:[_\s]+(?:\d+|main|principal|gallery|galeria|extra|image|img|foto|video|vid).*)$/i) || [])[1] || "") ].filter(Boolean); const itemKey = candidates.find((candidate) => knownItems.has(candidate)) || candidates[0] || ""; return { itemKey }; }
+function parseExtraMediaStem(fileName, knownItems = new Set()) { const rawStem = String(fileName || "").replace(/\.[^.]+$/, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim(); const copyCleanStem = rawStem.replace(/\s*\(\d+\)\s*$/i, "").trim(); const cleanedStem = copyCleanStem.replace(/(?:[_\-\s](?:main|principal|gallery|galeria|extra|image|img|foto|video|vid))(?:[_\-\s]?\d+)?$/i, "").replace(/(?:[_\-\s]\d+)$/i, "").trim(); const normalizedRaw = normalizeIdentifier(rawStem); const knownPrefix = Array.from(knownItems).filter((item) => normalizedRaw.startsWith(item)).sort((a, b) => b.length - a.length)[0] || ""; const candidates = [ knownPrefix, normalizedRaw, normalizeIdentifier(copyCleanStem), normalizeIdentifier(cleanedStem), normalizeIdentifier(rawStem.split(/[_\s]+/)[0]), normalizeIdentifier(cleanedStem.split(/[_\s]+/)[0]), normalizeIdentifier((rawStem.match(/^(.+?)(?:[_\s]+(?:\d+|main|principal|gallery|galeria|extra|image|img|foto|video|vid).*)$/i) || [])[1] || "") ].filter(Boolean); const itemKey = candidates.find((candidate) => knownItems.has(candidate)) || candidates[0] || ""; return { itemKey }; }
 function getPathExtension(filePath) { return String(filePath || "").match(/\.[^.]+$/)?.[0]?.toLowerCase() || ""; }
 function getWebImageExtension(filePath) { const ext = getPathExtension(filePath); return ext === ".svg" ? ".svg" : ".jpg"; }
+function getWebLogoExtension(filePath) {
+const ext = getPathExtension(filePath);
+return [".png", ".webp", ".svg"].includes(ext) ? ext : getWebImageExtension(filePath);
+}
 function isVideoExtension(ext) { return [".mp4",".webm",".mov"].includes(String(ext || "").toLowerCase()); }
 function parsePackageQty(value) {
 const text = String(value || "").trim();
@@ -623,14 +659,19 @@ return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 function reindexExtraMedia() { state.extraMediaMap = buildExtraMediaMapFromFiles(state.extraMediaFiles || []); const itemsWithExtras = Array.from(state.extraMediaMap.values()).filter((entry) => entry.gallery.length || entry.videoPath).length; setWebExportStatus(`Multimedia extra indexada para ${itemsWithExtras} ITEM(s).`); }
 function sanitizeSlug(value) { return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); }
+function sanitizeHexColor(value, fallback) {
+const normalized = String(value || "").trim();
+return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : fallback;
+}
 function buildExportAssetBaseName(rawItem, normalizedItem, index) { const safeBase = normalizeIdentifier(rawItem) || normalizeIdentifier(normalizedItem) || sanitizeFileName(rawItem || "item") || "item"; return `${safeBase}-${index + 1}`; }
 function setWebExportStatus(message, isError = false) { if (!webExportStatus) return; webExportStatus.textContent = message; webExportStatus.style.color = isError ? "#ffd6d6" : "rgba(255,255,255,0.82)"; }
 function sanitizeBaseUrl(value) { return String(value || "").trim().replace(/\/+$/, ""); }
 function buildGeneratedLink(slug) { return state.webExport.baseUrl ? `${sanitizeBaseUrl(state.webExport.baseUrl)}/${slug}/` : ""; }
 function updateGeneratedLinkPreview() { state.webExport.generatedLink = buildGeneratedLink(state.webExport.slug || "catalogo-publicable"); if (generatedWebLinkInput) generatedWebLinkInput.value = state.webExport.generatedLink; }
-function setHostingPublishBusy(isBusy) { if (!publishHostingButton) return; publishHostingButton.disabled = isBusy; publishHostingButton.classList.toggle("publish-button--working", isBusy); publishHostingButton.textContent = isBusy ? "Publicando..." : "Publicar al hosting"; }
+function setHostingPublishBusy(isBusy) { if (publishHostingButton) { publishHostingButton.disabled = isBusy; publishHostingButton.classList.toggle("publish-button--working", isBusy); publishHostingButton.textContent = isBusy ? "Subiendo..." : "Subir al hosting"; } if (exportWebButton) exportWebButton.disabled = isBusy; }
+function hideHostingProgressUi() { if (webPublishProgressPanel) webPublishProgressPanel.hidden = true; if (webPublishProgressBarFill) webPublishProgressBarFill.style.width = "0%"; if (webPublishProgressText) webPublishProgressText.textContent = "Esperando publicacion al hosting."; }
 function resetHostingProgressUi() { if (webPublishProgressPanel) webPublishProgressPanel.hidden = false; if (webPublishProgressBarFill) webPublishProgressBarFill.style.width = "0%"; if (webPublishProgressText) webPublishProgressText.textContent = "Preparando publicacion al hosting..."; }
-function updateHostingProgressUi(payload = {}) { if (webPublishProgressPanel) webPublishProgressPanel.hidden = false; const phase = String(payload.phase || ""); const completed = Number(payload.completed || 0); const total = Number(payload.total || 0); let percent = Number(payload.percent || 0); if ((!percent || !Number.isFinite(percent)) && total > 0) percent = Math.round((completed / total) * 100); percent = Math.max(0, Math.min(100, percent || 0)); if (webPublishProgressBarFill) webPublishProgressBarFill.style.width = `${percent}%`; if (webPublishProgressText) { const label = payload.label ? ` ${payload.label}` : ""; const text = phase === "exporting" ? "Preparando paquete web..." : phase === "compressing" ? `Comprimiendo ZIP${label}...` : phase === "uploading" ? `Subiendo ZIP${label}... ${completed}/${total}` : phase === "registering" ? "Registrando catalogo en el panel..." : phase === "completed" ? "Publicacion completada." : "Publicando al hosting..."; webPublishProgressText.textContent = text; } }
+function updateHostingProgressUi(payload = {}) { if (webPublishProgressPanel) webPublishProgressPanel.hidden = false; const phase = String(payload.phase || ""); const completed = Number(payload.completed || 0); const total = Number(payload.total || 0); let percent = Number(payload.percent || 0); if ((!percent || !Number.isFinite(percent)) && total > 0) percent = Math.round((completed / total) * 100); percent = Math.max(0, Math.min(100, percent || 0)); if (webPublishProgressBarFill) webPublishProgressBarFill.style.width = `${percent}%`; if (webPublishProgressText) { const label = payload.label ? ` ${payload.label}` : ""; const text = phase === "exporting" ? "Preparando paquete web..." : phase === "compressing" ? `Comprimiendo ZIP${label}...` : phase === "uploading" ? `Subiendo ZIP${label}... ${completed}/${total}` : phase === "registering" ? "Registrando catalogo en el panel..." : phase === "completed" ? "Publicacion completada." : "Subiendo al hosting..."; webPublishProgressText.textContent = text; if (phase !== "completed") setWebExportStatus(text); } }
 async function testHostingConnection() {
 if (!isDesktop || !desktopApi?.testHostingConnection) return setWebExportStatus("La prueba FTP requiere la app de escritorio.", true);
 const hosting = state.webExport.hosting || {};
@@ -970,5 +1011,5 @@ function byId(id) { return document.getElementById(id); }
 function pathToFileUrl(filePath) { return `file:///${String(filePath).replace(/\\/g, "/")}`; }
 function createPlaceholderDataUri() { const svg = ["<svg xmlns='http://www.w3.org/2000/svg' width='420' height='280'>", "<rect width='100%' height='100%' rx='18' fill='#f6f4ef' stroke='#ddd8d0' stroke-width='2'/>", "<text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='#8d8b85' font-family='Arial, Helvetica, sans-serif' font-size='22'>Imagen no disponible</text>", "</svg>"].join(""); return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`; }
 async function waitForImagesToLoad(container) { const images = Array.from(container.querySelectorAll("img")); await Promise.all(images.map((img) => { if (img.complete) return Promise.resolve(); return new Promise((resolve) => { img.addEventListener("load", resolve, { once: true }); img.addEventListener("error", resolve, { once: true }); }); })); }
-window.addEventListener("beforeunload", () => { if (state.coverImageUrl?.startsWith("blob:")) URL.revokeObjectURL(state.coverImageUrl); if (state.pageLogoUrl?.startsWith("blob:")) URL.revokeObjectURL(state.pageLogoUrl); if (state.pageBackgroundUrl?.startsWith("blob:")) URL.revokeObjectURL(state.pageBackgroundUrl); revokeObjectUrls(state.imageUrls); });
+window.addEventListener("beforeunload", () => { if (state.coverImageUrl?.startsWith("blob:")) URL.revokeObjectURL(state.coverImageUrl); if (state.pageLogoUrl?.startsWith("blob:")) URL.revokeObjectURL(state.pageLogoUrl); if (state.pageBackgroundUrl?.startsWith("blob:")) URL.revokeObjectURL(state.pageBackgroundUrl); if (state.heroImageUrl?.startsWith("blob:")) URL.revokeObjectURL(state.heroImageUrl); revokeObjectUrls(state.imageUrls); });
 })();

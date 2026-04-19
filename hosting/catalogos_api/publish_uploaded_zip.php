@@ -102,6 +102,17 @@ if (!is_file($indexPath) || !is_file($jsonPath)) {
     ], 422);
 }
 
+$catalogJsonPayload = json_decode((string) file_get_contents($jsonPath), true);
+if (!is_array($catalogJsonPayload)) {
+    $catalogJsonPayload = [];
+}
+$storedPayload = array_replace_recursive($catalogJsonPayload, $payload);
+
+file_put_contents(
+    $targetDir . DIRECTORY_SEPARATOR . '.htaccess',
+    "<Files \"catalog.json\">\n    Require all denied\n</Files>\n"
+);
+
 $sql = <<<SQL
 INSERT INTO catalogs (
     slug, title, template, public_url, pdf_url, generated_at, expires_at, status,
@@ -164,7 +175,7 @@ $statement->execute([
     'modern_pdf_url' => $modernPdfUrl,
     'notes' => $notes,
     'catalog_json_path' => $catalogJsonPath,
-    'api_payload' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+    'api_payload' => json_encode($storedPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
 ]);
 
 $catalog = fetch_catalog_by_slug($slug);

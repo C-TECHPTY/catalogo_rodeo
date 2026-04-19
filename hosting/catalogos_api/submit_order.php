@@ -68,74 +68,71 @@ $pdo = db();
 $pdo->beginTransaction();
 
 try {
-    $insertOrder = $pdo->prepare(
-        'INSERT INTO orders (
-            catalog_id, share_link_id, seller_id, client_id, order_number, catalog_slug, company_name,
-            contact_name, contact_email, contact_phone, address_zone, seller_name, comments,
-            subtotal, total, currency, status
-         ) VALUES (
-            :catalog_id, :share_link_id, :seller_id, :client_id, :order_number, :catalog_slug, :company_name,
-            :contact_name, :contact_email, :contact_phone, :address_zone, :seller_name, :comments,
-            :subtotal, :total, :currency, :status
-         )'
-    );
-    $insertOrder->execute([
+    $orderData = [
         'catalog_id' => $catalog['id'],
-        'share_link_id' => $context['share_link']['id'] ?? null,
-        'seller_id' => $context['seller_id'] ?: null,
-        'client_id' => $context['client_id'] ?: null,
         'order_number' => $orderNumber,
-        'catalog_slug' => $catalog['slug'],
-        'company_name' => $companyName,
-        'contact_name' => $contactName,
-        'contact_email' => $contactEmail,
-        'contact_phone' => $contactPhone,
-        'address_zone' => $addressZone,
-        'seller_name' => $context['seller_name'],
         'comments' => $comments,
         'subtotal' => $subtotal,
         'total' => $subtotal,
         'currency' => $catalog['currency'] ?: 'USD',
         'status' => 'new',
-    ]);
+    ];
+    $optionalOrderData = [
+        'share_link_id' => $context['share_link']['id'] ?? null,
+        'seller_id' => $context['seller_id'] ?: null,
+        'client_id' => $context['client_id'] ?: null,
+        'catalog_slug' => $catalog['slug'],
+        'company_name' => $companyName,
+        'customer_name' => $companyName !== '' ? $companyName : $contactName,
+        'contact_name' => $contactName,
+        'customer_email' => $contactEmail,
+        'contact_email' => $contactEmail,
+        'customer_phone' => $contactPhone,
+        'contact_phone' => $contactPhone,
+        'address_zone' => $addressZone,
+        'seller_name' => $context['seller_name'],
+        'source_channel' => $sourceChannel === 'offline-sync' ? 'offline-sync' : 'web',
+    ];
+    foreach ($optionalOrderData as $column => $value) {
+        if (catalog_column_exists('orders', $column)) {
+            $orderData[$column] = $value;
+        }
+    }
+    $orderColumns = array_keys($orderData);
+    $insertOrder = $pdo->prepare(
+        'INSERT INTO orders (`' . implode('`, `', $orderColumns) . '`) VALUES (:' . implode(', :', $orderColumns) . ')'
+    );
+    $insertOrder->execute($orderData);
 
     $orderId = (int) $pdo->lastInsertId();
 
-    $insertItem = $pdo->prepare(
-        'INSERT INTO order_items (
-            order_id, item_code, description, quantity, sale_unit, package_label,
-            package_qty, pieces_total, unit_price, line_total
-         ) VALUES (
-            :order_id, :item_code, :description, :quantity, :sale_unit, :package_label,
-            :package_qty, :pieces_total, :unit_price, :line_total
-         )'
-    );
-
     foreach ($normalizedItems as $item) {
-        $insertItem->execute([
+        $itemData = [
             'order_id' => $orderId,
             'item_code' => $item['item_code'],
             'description' => $item['description'],
             'quantity' => $item['quantity'],
+        ];
+        $optionalItemData = [
             'sale_unit' => $item['sale_unit'],
             'package_label' => $item['package_label'],
             'package_qty' => $item['package_qty'],
             'pieces_total' => $item['pieces_total'],
             'unit_price' => $item['unit_price'],
+            'price' => $item['unit_price'],
             'line_total' => $item['line_total'],
-        ]);
+        ];
+        foreach ($optionalItemData as $column => $value) {
+            if (catalog_column_exists('order_items', $column)) {
+                $itemData[$column] = $value;
+            }
+        }
+        $itemColumns = array_keys($itemData);
+        $insertItem = $pdo->prepare(
+            'INSERT INTO order_items (`' . implode('`, `', $itemColumns) . '`) VALUES (:' . implode(', :', $itemColumns) . ')'
+        );
+        $insertItem->execute($itemData);
     }
-
-    $pdo->prepare(
-        'INSERT INTO order_status_history (order_id, from_status, to_status, changed_by_user_id, notes)
-         VALUES (:order_id, :from_status, :to_status, :changed_by_user_id, :notes)'
-    )->execute([
-        'order_id' => $orderId,
-        'from_status' => '',
-        'to_status' => 'new',
-        'changed_by_user_id' => null,
-        'notes' => 'Pedido registrado desde catalogo publico.',
-    ]);
 
     if (!empty($context['share_link']['id'])) {
         $pdo->prepare(
@@ -157,6 +154,36 @@ try {
     ], 500);
 }
 
+if (
+    catalog_table_exists('order_status_history')
+    && catalog_column_exists('order_status_history', 'order_id')
+    && catalog_column_exists('order_status_history', 'to_status')
+) {
+    try {
+        $historyData = [
+            'order_id' => $orderId,
+            'to_status' => 'new',
+        ];
+        foreach ([
+            'from_status' => '',
+            'changed_by_user_id' => null,
+            'notes' => 'Pedido registrado desde catalogo publico.',
+        ] as $column => $value) {
+            if (catalog_column_exists('order_status_history', $column)) {
+                $historyData[$column] = $value;
+            }
+        }
+        $historyColumns = array_keys($historyData);
+        db()->prepare(
+            'INSERT INTO order_status_history (`' . implode('`, `', $historyColumns) . '`) VALUES (:' . implode(', :', $historyColumns) . ')'
+        )->execute($historyData);
+    } catch (Throwable $exception) {
+        audit_log('order.history_failed', 'orders', $orderId, [
+            'error' => $exception->getMessage(),
+        ]);
+    }
+}
+
 $seller = fetch_seller($context['seller_id'] ? (int) $context['seller_id'] : null);
 $orderForExport = [
     'id' => $orderId,
@@ -176,30 +203,16 @@ $exportFiles = null;
 
 try {
     $exportFiles = generate_order_export_files($orderForExport, $normalizedItems);
-    db()->prepare(
-        'UPDATE orders
-         SET source_channel = :source_channel,
-             export_csv_path = :export_csv_path,
-             export_xlsx_path = :export_xlsx_path,
-             export_generated_at = :export_generated_at,
-             updated_at = NOW()
-         WHERE id = :id'
-    )->execute([
+    update_order_columns($orderId, [
         'source_channel' => $sourceChannel === 'offline-sync' ? 'offline-sync' : 'web',
         'export_csv_path' => $exportFiles['csv_path'] ?? '',
         'export_xlsx_path' => $exportFiles['xlsx_path'] ?? '',
         'export_generated_at' => $exportFiles['generated_at'] ?? null,
-        'id' => $orderId,
     ]);
 } catch (Throwable $exception) {
-    db()->prepare(
-        'UPDATE orders
-         SET source_channel = :source_channel, email_status = :email_status, updated_at = NOW()
-         WHERE id = :id'
-    )->execute([
+    update_order_columns($orderId, [
         'source_channel' => $sourceChannel === 'offline-sync' ? 'offline-sync' : 'web',
         'email_status' => 'failed',
-        'id' => $orderId,
     ]);
     audit_log('order.export_generation_failed', 'orders', $orderId, [
         'error' => $exception->getMessage(),
@@ -279,14 +292,9 @@ try {
     ]);
 }
 
-db()->prepare(
-    'UPDATE orders
-     SET email_status = :email_status, email_sent_at = :email_sent_at, updated_at = NOW()
-     WHERE id = :id'
-)->execute([
+update_order_columns($orderId, [
     'email_status' => $mailStatus,
     'email_sent_at' => $mailStatus === 'sent' ? date('Y-m-d H:i:s') : null,
-    'id' => $orderId,
 ]);
 
 audit_log('order.created_from_public_catalog', 'orders', $orderId, [
@@ -306,3 +314,24 @@ json_response([
         'status' => 'new',
     ],
 ]);
+
+function update_order_columns(int $orderId, array $values): void
+{
+    $sets = [];
+    $params = ['id' => $orderId];
+    foreach ($values as $column => $value) {
+        if (!catalog_column_exists('orders', (string) $column)) {
+            continue;
+        }
+        $placeholder = 'v_' . preg_replace('/[^a-z0-9_]+/i', '_', (string) $column);
+        $sets[] = '`' . $column . '` = :' . $placeholder;
+        $params[$placeholder] = $value;
+    }
+    if (catalog_column_exists('orders', 'updated_at')) {
+        $sets[] = 'updated_at = NOW()';
+    }
+    if (!$sets) {
+        return;
+    }
+    db()->prepare('UPDATE orders SET ' . implode(', ', $sets) . ' WHERE id = :id')->execute($params);
+}

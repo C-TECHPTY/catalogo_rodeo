@@ -3,7 +3,17 @@ declare(strict_types=1);
 
 require __DIR__ . '/bootstrap.php';
 
-admin_require_login(['admin', 'sales', 'billing', 'operator', 'vendor']);
+$user = current_user();
+if (!$user) {
+    header('Location: ../catalogos_admin/login.php');
+    exit;
+}
+
+if (!in_array((string) ($user['role'] ?? ''), ['admin', 'sales', 'billing', 'operator', 'vendor'], true)) {
+    http_response_code(403);
+    echo 'No tienes permisos para exportar pedidos.';
+    exit;
+}
 
 $orderId = (int) ($_GET['id'] ?? 0);
 $format = strtolower(trim((string) ($_GET['format'] ?? 'csv')));
@@ -18,7 +28,7 @@ if ($orderId <= 0) {
 $orderStmt = db()->prepare(
     'SELECT o.*, c.slug AS catalog_slug_ref, c.title AS catalog_title
      FROM orders o
-     INNER JOIN catalogs c ON c.id = o.catalog_id
+     LEFT JOIN catalogs c ON c.id = o.catalog_id
      WHERE o.id = :id
      LIMIT 1'
 );
@@ -30,6 +40,12 @@ if (!$order) {
         'ok' => false,
         'error' => 'Pedido no encontrado.',
     ], 404);
+}
+
+if (($user['role'] ?? '') === 'vendor' && !empty($user['seller_id']) && (int) ($order['seller_id'] ?? 0) !== (int) $user['seller_id']) {
+    http_response_code(403);
+    echo 'No tienes permisos para exportar este pedido.';
+    exit;
 }
 
 $itemsStmt = db()->prepare('SELECT * FROM order_items WHERE order_id = :order_id ORDER BY id ASC');
@@ -51,34 +67,34 @@ exit;
 
 function output_order_csv(array $order, array $rows): void
 {
-    $filename = sprintf('pedido-%s.csv', $order['order_number']);
+    $filename = sprintf('pedido-%s.csv', safe_filename_part((string) ($order['order_number'] ?? ('PED-' . ($order['id'] ?? 'pedido')))));
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
 
     $output = fopen('php://output', 'wb');
-    fputcsv($output, ['Pedido', $order['order_number']]);
-    fputcsv($output, ['Catalogo', $order['catalog_title']]);
-    fputcsv($output, ['Empresa', $order['company_name']]);
-    fputcsv($output, ['Contacto', $order['contact_name']]);
-    fputcsv($output, ['Correo', $order['contact_email']]);
-    fputcsv($output, ['Telefono', $order['contact_phone']]);
-    fputcsv($output, ['Zona / Direccion', $order['address_zone']]);
-    fputcsv($output, ['Estado', $order['status']]);
-    fputcsv($output, ['Fecha', $order['created_at']]);
-    fputcsv($output, ['Total', number_format((float) $order['total'], 2, '.', '')]);
+    fputcsv($output, ['Pedido', order_number_label($order)]);
+    fputcsv($output, ['Catalogo', order_catalog_title($order)]);
+    fputcsv($output, ['Empresa', order_company_name($order)]);
+    fputcsv($output, ['Contacto', order_contact_name($order)]);
+    fputcsv($output, ['Correo', $order['contact_email'] ?? $order['customer_email'] ?? '']);
+    fputcsv($output, ['Telefono', $order['contact_phone'] ?? $order['customer_phone'] ?? '']);
+    fputcsv($output, ['Zona / Direccion', $order['address_zone'] ?? '']);
+    fputcsv($output, ['Estado', $order['status'] ?? 'new']);
+    fputcsv($output, ['Fecha', $order['created_at'] ?? '']);
+    fputcsv($output, ['Total', number_format((float) ($order['total'] ?? 0), 2, '.', '')]);
     fputcsv($output, []);
     fputcsv($output, ['ITEM', 'Descripcion', 'Cantidad', 'Unidad de venta', 'Empaque', 'Piezas', 'Precio unitario', 'Total linea']);
 
     foreach ($rows as $row) {
         fputcsv($output, [
-            $row['item_code'],
-            $row['description'],
-            format_plain_number((float) $row['quantity']),
-            $row['sale_unit'],
-            trim((string) $row['package_label'] . ' ' . format_plain_number((float) $row['package_qty'])),
-            format_plain_number((float) $row['pieces_total']),
-            number_format((float) $row['unit_price'], 2, '.', ''),
-            number_format((float) $row['line_total'], 2, '.', ''),
+            $row['item_code'] ?? '',
+            $row['description'] ?? '',
+            format_plain_number((float) ($row['quantity'] ?? 0)),
+            $row['sale_unit'] ?? 'unidad',
+            trim((string) (($row['package_label'] ?? '') . ' ' . format_plain_number((float) ($row['package_qty'] ?? 0)))),
+            format_plain_number((float) ($row['pieces_total'] ?? $row['quantity'] ?? 0)),
+            number_format((float) ($row['unit_price'] ?? $row['price'] ?? 0), 2, '.', ''),
+            number_format((float) ($row['line_total'] ?? $row['total'] ?? $row['price'] ?? 0), 2, '.', ''),
         ]);
     }
 
@@ -93,7 +109,7 @@ function output_order_printable_html(array $order, array $rows): void
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <title><?= html_escape('Pedido ' . $order['order_number']) ?></title>
+        <title><?= html_escape('Pedido ' . order_number_label($order)) ?></title>
         <style>
             body { font-family: Arial, Helvetica, sans-serif; margin: 24px; color: #1d1d1d; }
             h1 { margin-bottom: 8px; }
@@ -105,16 +121,16 @@ function output_order_printable_html(array $order, array $rows): void
         </style>
     </head>
     <body>
-        <h1>Pedido <?= html_escape($order['order_number']) ?></h1>
+        <h1>Pedido <?= html_escape(order_number_label($order)) ?></h1>
         <div class="meta">
-            <div><strong>Catalogo:</strong> <?= html_escape($order['catalog_title']) ?></div>
-            <div><strong>Estado:</strong> <?= html_escape($order['status']) ?></div>
-            <div><strong>Empresa:</strong> <?= html_escape($order['company_name']) ?></div>
-            <div><strong>Contacto:</strong> <?= html_escape($order['contact_name']) ?></div>
-            <div><strong>Correo:</strong> <?= html_escape($order['contact_email']) ?></div>
-            <div><strong>Telefono:</strong> <?= html_escape($order['contact_phone']) ?></div>
-            <div><strong>Zona:</strong> <?= html_escape($order['address_zone']) ?></div>
-            <div><strong>Fecha:</strong> <?= html_escape($order['created_at']) ?></div>
+            <div><strong>Catalogo:</strong> <?= html_escape(order_catalog_title($order)) ?></div>
+            <div><strong>Estado:</strong> <?= html_escape($order['status'] ?? 'new') ?></div>
+            <div><strong>Empresa:</strong> <?= html_escape(order_company_name($order)) ?></div>
+            <div><strong>Contacto:</strong> <?= html_escape(order_contact_name($order)) ?></div>
+            <div><strong>Correo:</strong> <?= html_escape($order['contact_email'] ?? $order['customer_email'] ?? '') ?></div>
+            <div><strong>Telefono:</strong> <?= html_escape($order['contact_phone'] ?? $order['customer_phone'] ?? '') ?></div>
+            <div><strong>Zona:</strong> <?= html_escape($order['address_zone'] ?? '') ?></div>
+            <div><strong>Fecha:</strong> <?= html_escape($order['created_at'] ?? '') ?></div>
         </div>
         <table>
             <thead>
@@ -132,19 +148,19 @@ function output_order_printable_html(array $order, array $rows): void
             <tbody>
             <?php foreach ($rows as $row): ?>
                 <tr>
-                    <td><?= html_escape($row['item_code']) ?></td>
-                    <td><?= html_escape($row['description']) ?></td>
-                    <td><?= html_escape(format_plain_number((float) $row['quantity'])) ?></td>
-                    <td><?= html_escape($row['sale_unit']) ?></td>
-                    <td><?= html_escape(trim((string) $row['package_label'] . ' ' . format_plain_number((float) $row['package_qty']))) ?></td>
-                    <td><?= html_escape(format_plain_number((float) $row['pieces_total'])) ?></td>
-                    <td><?= html_escape(number_format((float) $row['unit_price'], 2, '.', '')) ?></td>
-                    <td><?= html_escape(number_format((float) $row['line_total'], 2, '.', '')) ?></td>
+                    <td><?= html_escape($row['item_code'] ?? '') ?></td>
+                    <td><?= html_escape($row['description'] ?? '') ?></td>
+                    <td><?= html_escape(format_plain_number((float) ($row['quantity'] ?? 0))) ?></td>
+                    <td><?= html_escape($row['sale_unit'] ?? 'unidad') ?></td>
+                    <td><?= html_escape(trim((string) (($row['package_label'] ?? '') . ' ' . format_plain_number((float) ($row['package_qty'] ?? 0))))) ?></td>
+                    <td><?= html_escape(format_plain_number((float) ($row['pieces_total'] ?? $row['quantity'] ?? 0))) ?></td>
+                    <td><?= html_escape(number_format((float) ($row['unit_price'] ?? $row['price'] ?? 0), 2, '.', '')) ?></td>
+                    <td><?= html_escape(number_format((float) ($row['line_total'] ?? $row['total'] ?? $row['price'] ?? 0), 2, '.', '')) ?></td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
         </table>
-        <div class="total">Total general: <?= html_escape(number_format((float) $order['total'], 2, '.', '')) ?></div>
+        <div class="total">Total general: <?= html_escape(number_format((float) ($order['total'] ?? 0), 2, '.', '')) ?></div>
     </body>
     </html>
     <?php
@@ -157,7 +173,7 @@ function output_order_xlsx(array $order, array $rows): void
         return;
     }
 
-    $filename = sprintf('pedido-%s.xlsx', $order['order_number']);
+    $filename = sprintf('pedido-%s.xlsx', safe_filename_part(order_number_label($order)));
     $tempFile = tempnam(sys_get_temp_dir(), 'order_xlsx_');
     if ($tempFile === false) {
         output_order_csv($order, $rows);
@@ -199,15 +215,15 @@ function build_sheet_xml(array $order, array $rows, int $headerRow, int $dataEnd
 {
     $cells = [];
     $metaRows = [
-        ['A1', 'Pedido', 'B1', (string) $order['order_number']],
-        ['A2', 'Catalogo', 'B2', (string) $order['catalog_title']],
-        ['A3', 'Empresa', 'B3', (string) $order['company_name']],
-        ['A4', 'Contacto', 'B4', (string) $order['contact_name']],
-        ['A5', 'Correo', 'B5', (string) $order['contact_email']],
-        ['A6', 'Telefono', 'B6', (string) $order['contact_phone']],
-        ['A7', 'Zona', 'B7', (string) $order['address_zone']],
-        ['A8', 'Estado', 'B8', (string) $order['status']],
-        ['A9', 'Fecha', 'B9', (string) $order['created_at']],
+        ['A1', 'Pedido', 'B1', order_number_label($order)],
+        ['A2', 'Catalogo', 'B2', order_catalog_title($order)],
+        ['A3', 'Empresa', 'B3', order_company_name($order)],
+        ['A4', 'Contacto', 'B4', order_contact_name($order)],
+        ['A5', 'Correo', 'B5', (string) ($order['contact_email'] ?? $order['customer_email'] ?? '')],
+        ['A6', 'Telefono', 'B6', (string) ($order['contact_phone'] ?? $order['customer_phone'] ?? '')],
+        ['A7', 'Zona', 'B7', (string) ($order['address_zone'] ?? '')],
+        ['A8', 'Estado', 'B8', (string) ($order['status'] ?? 'new')],
+        ['A9', 'Fecha', 'B9', (string) ($order['created_at'] ?? '')],
     ];
 
     foreach ($metaRows as $index => $meta) {
@@ -227,21 +243,21 @@ function build_sheet_xml(array $order, array $rows, int $headerRow, int $dataEnd
     $rowNumber = $headerRow + 1;
     foreach ($rows as $row) {
         $cells[] = sheet_row($rowNumber, [
-            text_cell('A' . $rowNumber, (string) $row['item_code'], 2),
-            text_cell('B' . $rowNumber, (string) $row['description'], 2),
-            number_cell('C' . $rowNumber, (float) $row['quantity'], 3),
-            text_cell('D' . $rowNumber, (string) $row['sale_unit'], 2),
-            text_cell('E' . $rowNumber, trim((string) $row['package_label'] . ' ' . format_plain_number((float) $row['package_qty'])), 2),
-            number_cell('F' . $rowNumber, (float) $row['pieces_total'], 3),
-            number_cell('G' . $rowNumber, (float) $row['unit_price'], 4),
-            number_cell('H' . $rowNumber, (float) $row['line_total'], 4),
+            text_cell('A' . $rowNumber, (string) ($row['item_code'] ?? ''), 2),
+            text_cell('B' . $rowNumber, (string) ($row['description'] ?? ''), 2),
+            number_cell('C' . $rowNumber, (float) ($row['quantity'] ?? 0), 3),
+            text_cell('D' . $rowNumber, (string) ($row['sale_unit'] ?? 'unidad'), 2),
+            text_cell('E' . $rowNumber, trim((string) (($row['package_label'] ?? '') . ' ' . format_plain_number((float) ($row['package_qty'] ?? 0)))), 2),
+            number_cell('F' . $rowNumber, (float) ($row['pieces_total'] ?? $row['quantity'] ?? 0), 3),
+            number_cell('G' . $rowNumber, (float) ($row['unit_price'] ?? $row['price'] ?? 0), 4),
+            number_cell('H' . $rowNumber, (float) ($row['line_total'] ?? $row['total'] ?? $row['price'] ?? 0), 4),
         ]);
         $rowNumber++;
     }
 
     $cells[] = sheet_row($totalRow, [
         text_cell('G' . $totalRow, 'Total General', 5),
-        number_cell('H' . $totalRow, (float) $order['total'], 6),
+        number_cell('H' . $totalRow, (float) ($order['total'] ?? 0), 6),
     ]);
 
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -349,7 +365,28 @@ function xml_escape(string $value): string
     return htmlspecialchars($value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
 }
 
-function format_plain_number(float $value): string
+function order_number_label(array $order): string
 {
-    return rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.');
+    return (string) ($order['order_number'] ?? ('PED-' . ($order['id'] ?? 'pedido')));
+}
+
+function order_catalog_title(array $order): string
+{
+    return (string) (($order['catalog_title'] ?? '') ?: ($order['catalog_slug'] ?? $order['catalog_slug_ref'] ?? ''));
+}
+
+function order_company_name(array $order): string
+{
+    return (string) (($order['company_name'] ?? '') ?: ($order['customer_name'] ?? ''));
+}
+
+function order_contact_name(array $order): string
+{
+    return (string) (($order['contact_name'] ?? '') ?: ($order['customer_name'] ?? ''));
+}
+
+function safe_filename_part(string $value): string
+{
+    $safe = preg_replace('/[^A-Za-z0-9_-]+/', '-', $value) ?: 'pedido';
+    return trim($safe, '-') ?: 'pedido';
 }

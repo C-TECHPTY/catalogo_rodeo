@@ -5,7 +5,7 @@
   const metadata = JSON.parse(metaNode.textContent || "{}");
   const queueKey = `catalog-offline-queue:${metadata.slug || "catalog"}`;
   const state = {
-    products: Array.isArray(metadata.catalog) ? metadata.catalog : [],
+    products: [],
     filtered: [],
     cart: new Map(),
     activeProduct: null,
@@ -20,6 +20,7 @@
     brandSubtitle: byId("catalogBrandSubtitle"),
     sellerRef: byId("sellerReference"),
     clientRef: byId("clientReference"),
+    heroCard: document.querySelector(".hero-card"),
     heroTitle: byId("heroTitle"),
     heroSubtitle: byId("heroSubtitle"),
     promoBlock: byId("promoBlock"),
@@ -62,12 +63,21 @@
   init();
 
   async function init() {
+    applyTheme(metadata.theme);
+    document.body.classList.add("catalog-locked");
+    document.querySelector(".catalog-shell")?.setAttribute("hidden", "");
     hydrateHeader();
-    hydratePromotion();
-    hydrateExports();
     bindEvents();
     updateOfflineUi();
-    await loadPublicContext();
+    const hasAccess = await loadPublicContext();
+    if (!hasAccess) {
+      lockCatalog();
+      return;
+    }
+    document.body.classList.remove("catalog-locked");
+    document.querySelector(".catalog-shell")?.removeAttribute("hidden");
+    hydratePromotion();
+    hydrateExports();
     renderFilters();
     applyFilters();
     renderCart();
@@ -77,11 +87,25 @@
   function hydrateHeader() {
     const logo = byId("catalogLogo");
     const coverLogo = metadata.logoUrl || metadata.coverImage || "";
-    if (logo && coverLogo) logo.src = coverLogo;
+    if (logo && coverLogo) {
+      logo.src = coverLogo;
+      logo.hidden = false;
+      logo.onerror = () => {
+        logo.hidden = true;
+      };
+    } else if (logo) {
+      logo.hidden = true;
+    }
     if (els.brandTitle) els.brandTitle.textContent = metadata.title || "Catalogo comercial";
     if (els.brandSubtitle) els.brandSubtitle.textContent = metadata.footerText || "Experiencia mayorista B2B";
     if (els.heroTitle) els.heroTitle.textContent = metadata.heroTitle || metadata.title || "Catalogo comercial";
     if (els.heroSubtitle) els.heroSubtitle.textContent = metadata.heroSubtitle || "Compra mayorista con pedidos trazables y exportables.";
+    applyHeroBackground(metadata.heroImage || metadata.hero_image || "");
+  }
+
+  function applyHeroBackground(imageUrl) {
+    if (!els.heroCard || !imageUrl) return;
+    els.heroCard.style.backgroundImage = `linear-gradient(132deg, rgba(0,0,0,.66), rgba(0,0,0,.36)), url("${cssUrlEscape(imageUrl)}")`;
   }
 
   function hydratePromotion() {
@@ -139,7 +163,7 @@
   async function loadPublicContext() {
     const apiBaseUrl = sanitizeBaseUrl(metadata.apiBaseUrl);
     const token = getShareToken();
-    if (!apiBaseUrl || !metadata.slug) return;
+    if (!apiBaseUrl || !metadata.slug) return false;
 
     try {
       const response = await fetch(`${apiBaseUrl}/public_catalog.php?slug=${encodeURIComponent(metadata.slug)}&token=${encodeURIComponent(token)}`);
@@ -155,7 +179,13 @@
       if (els.sellerRef) els.sellerRef.textContent = `Vendedor: ${result.catalog.seller && result.catalog.seller.name ? result.catalog.seller.name : "Asignacion general"}`;
       if (els.clientRef) els.clientRef.textContent = `Cliente: ${result.catalog.client && result.catalog.client.name ? result.catalog.client.name : "Acceso libre"}`;
       if (result.catalog.metadata && Array.isArray(result.catalog.metadata.catalog)) {
+        Object.assign(metadata, result.catalog.metadata);
         state.products = result.catalog.metadata.catalog;
+        hydrateHeader();
+        applyHeroBackground(metadata.heroImage || metadata.hero_image || "");
+      }
+      if (result.catalog.metadata && result.catalog.metadata.theme) {
+        applyTheme(result.catalog.metadata.theme);
       }
       if (result.catalog.promotion) {
         metadata.promotion = normalizePromotion(result.catalog.promotion);
@@ -163,18 +193,57 @@
       }
       metadata.legacyPdfUrl = result.catalog.legacy_pdf_url || metadata.legacyPdfUrl || "";
       metadata.modernPdfUrl = result.catalog.modern_pdf_url || metadata.modernPdfUrl || "";
-      hydrateExports();
+      return true;
     } catch (error) {
-      const unavailableStatus = error.status === 410 || error.payload?.catalog?.status === "expired" || error.payload?.catalog?.status === "archived" || error.payload?.catalog?.status === "draft" || error.payload?.share_link?.status === "expired" || error.payload?.share_link?.status === "inactive";
-      if (!state.isOffline && unavailableStatus) {
-        els.expiredOverlay?.classList.add("open");
-        if (els.checkoutStatus) els.checkoutStatus.textContent = error.message;
-        const submit = byId("checkoutButton");
-        if (submit) submit.disabled = true;
-      } else if (els.checkoutStatus) {
-        els.checkoutStatus.textContent = "Catalogo cargado. No se pudo sincronizar el contexto del vendedor, pero puedes registrar el pedido.";
-      }
+      lockCatalog(error.message || "Este catalogo requiere un enlace seguro vigente.");
+      return false;
     }
+  }
+
+  function applyTheme(theme) {
+    const primary = sanitizeHexColor(theme && theme.primaryColor);
+    const secondary = sanitizeHexColor(theme && theme.secondaryColor);
+    const root = document.documentElement;
+    if (primary) {
+      root.style.setProperty("--primary", primary);
+      root.style.setProperty("--accent", primary);
+      root.style.setProperty("--primary-rgb", hexToRgbString(primary));
+    }
+    if (secondary) {
+      root.style.setProperty("--primary-strong", secondary);
+      root.style.setProperty("--accent-strong", secondary);
+      root.style.setProperty("--text", secondary);
+      root.style.setProperty("--primary-strong-rgb", hexToRgbString(secondary));
+    }
+  }
+
+  function hexToRgbString(hex) {
+    const normalized = sanitizeHexColor(hex);
+    if (!normalized) return "";
+    const value = normalized.slice(1);
+    return [
+      parseInt(value.slice(0, 2), 16),
+      parseInt(value.slice(2, 4), 16),
+      parseInt(value.slice(4, 6), 16),
+    ].join(", ");
+  }
+
+  function lockCatalog(message) {
+    document.body.classList.add("catalog-locked");
+    document.querySelector(".catalog-shell")?.setAttribute("hidden", "");
+    state.products = [];
+    state.filtered = [];
+    state.cart.clear();
+    renderProducts();
+    renderCart();
+    if (els.expiredOverlay) {
+      const text = els.expiredOverlay.querySelector("p");
+      if (text && message) text.textContent = message;
+      els.expiredOverlay.classList.add("open");
+    }
+    if (els.checkoutStatus) els.checkoutStatus.textContent = message || "Catalogo no disponible.";
+    const submit = byId("checkoutButton");
+    if (submit) submit.disabled = true;
   }
 
   function bindEvents() {
@@ -494,8 +563,13 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      const result = await response.json();
-      if (!response.ok || !result.ok) throw new Error(result && result.error ? result.error : "No se pudo registrar el pedido.");
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok) {
+        const error = new Error(result && result.error ? result.error : "No se pudo registrar el pedido.");
+        error.serverResponse = true;
+        error.details = result && result.details ? result.details : "";
+        throw error;
+      }
 
       if (!forcedPayload) {
         state.cart.clear();
@@ -506,6 +580,12 @@
       return result;
     } catch (error) {
       if (forcedPayload) throw error;
+      if (error.serverResponse) {
+        if (els.checkoutStatus) {
+          els.checkoutStatus.textContent = error.details ? `${error.message}: ${error.details}` : error.message;
+        }
+        return;
+      }
       enqueueOfflineOrder({ ...payload, source_channel: "offline-sync" });
       state.cart.clear();
       renderCart();
@@ -663,6 +743,11 @@
     return String(value || "").trim().replace(/\/+$/, "");
   }
 
+  function sanitizeHexColor(value) {
+    const normalized = String(value || "").trim();
+    return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : "";
+  }
+
   function normalizePromotion(promotion) {
     return {
       title: promotion.title || "",
@@ -685,5 +770,9 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function cssUrlEscape(value) {
+    return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   }
 })();

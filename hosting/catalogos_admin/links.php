@@ -32,6 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $catalogs = db()->query("SELECT id, title, slug FROM catalogs WHERE status = 'active' ORDER BY updated_at DESC")->fetchAll();
 $sellers = db()->query("SELECT id, name FROM sellers WHERE is_active = 1 ORDER BY name ASC")->fetchAll();
 $clients = db()->query("SELECT id, business_name FROM clients WHERE is_active = 1 ORDER BY business_name ASC")->fetchAll();
+$selectedCatalogId = (int) ($_GET['catalog_id'] ?? 0);
 $sellerFilter = (int) ($_GET['seller_id'] ?? 0);
 $where = $sellerFilter > 0 ? 'WHERE l.seller_id = :seller_id' : '';
 $linksStmt = db()->prepare(
@@ -50,18 +51,18 @@ $links = $linksStmt->fetchAll();
 
 admin_header('Links compartidos', 'links.php');
 ?>
-<div class="split">
+<div class="links-layout">
     <section class="card">
         <div class="toolbar"><strong>Generar link seguro</strong></div>
         <form class="form-grid" method="post">
             <?= csrf_field() ?>
             <input type="hidden" name="action" value="create">
-            <label class="wide"><span>Catalogo</span><select name="catalog_id" required><?php foreach ($catalogs as $catalog): ?><option value="<?= (int) $catalog['id'] ?>"><?= html_escape($catalog['title']) ?> (<?= html_escape($catalog['slug']) ?>)</option><?php endforeach; ?></select></label>
+            <label class="wide"><span>Catalogo</span><select name="catalog_id" required><?php foreach ($catalogs as $catalog): ?><option value="<?= (int) $catalog['id'] ?>" <?= $selectedCatalogId === (int) $catalog['id'] ? 'selected' : '' ?>><?= html_escape($catalog['title']) ?> (<?= html_escape($catalog['slug']) ?>)</option><?php endforeach; ?></select></label>
             <label><span>Vendedor</span><select name="seller_id"><option value="">Sin asignar</option><?php foreach ($sellers as $seller): ?><option value="<?= (int) $seller['id'] ?>"><?= html_escape($seller['name']) ?></option><?php endforeach; ?></select></label>
             <label><span>Cliente</span><select name="client_id"><option value="">Sin asignar</option><?php foreach ($clients as $client): ?><option value="<?= (int) $client['id'] ?>"><?= html_escape($client['business_name']) ?></option><?php endforeach; ?></select></label>
             <label class="wide"><span>Etiqueta</span><input type="text" name="label" value="Link comercial" required></label>
             <label><span>Expira</span><input type="datetime-local" name="expires_at"></label>
-            <label><span>Notas</span><input type="text" name="notes"></label>
+            <label><span>Notas</span><textarea name="notes"></textarea></label>
             <div class="wide"><button class="button--primary" type="submit">Crear link</button></div>
         </form>
     </section>
@@ -87,7 +88,7 @@ admin_header('Links compartidos', 'links.php');
                         <td><a href="pedidos.php?link_id=<?= (int) $link['id'] ?>"><?= (int) $link['orders_count'] ?></a></td>
                         <td><?= html_escape($link['last_opened_at']) ?></td>
                         <td><?= admin_status_badge(resolve_share_link_status($link)) ?></td>
-                        <td><?php if ($shareUrl !== ''): ?><a href="<?= html_escape($shareUrl) ?>" target="_blank">Abrir</a><?php endif; ?></td>
+                        <td><?php if ($shareUrl !== ''): ?><input class="link-url" type="text" value="<?= html_escape($shareUrl) ?>" readonly><a class="button" href="<?= html_escape($shareUrl) ?>" target="_blank">Abrir</a><?php endif; ?></td>
                         <td>
                             <form method="post">
                                 <?= csrf_field() ?>

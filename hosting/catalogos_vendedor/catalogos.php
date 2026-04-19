@@ -10,12 +10,17 @@ $schemaReady = vendor_table_exists('catalogs');
 if ($schemaReady) {
     $hasSellerId = vendor_column_exists('catalogs', 'seller_id');
     $hasSellerName = vendor_column_exists('catalogs', 'seller_name');
-    $hasLinks = vendor_table_exists('catalog_share_links');
-    $linksSelect = $hasLinks ? '(SELECT COUNT(*) FROM catalog_share_links l WHERE l.catalog_id = c.id AND l.seller_id = :seller_id) AS links_count' : '0 AS links_count';
+    $hasLinks = vendor_table_exists('catalog_share_links') && vendor_column_exists('catalog_share_links', 'catalog_id');
+    $hasLinkSellerId = $hasLinks && vendor_column_exists('catalog_share_links', 'seller_id');
+    $linksWhere = $hasLinkSellerId ? ' AND l.seller_id = :link_seller_id' : '';
+    $linksSelect = $hasLinks ? "(SELECT COUNT(*) FROM catalog_share_links l WHERE l.catalog_id = c.id{$linksWhere}) AS links_count" : '0 AS links_count';
     $conditions = [];
     $params = [];
-    if ($hasLinks || $hasSellerId) $params['seller_id'] = $sellerId;
-    if ($hasSellerId) $conditions[] = 'c.seller_id = :seller_id';
+    if ($hasLinkSellerId) $params['link_seller_id'] = $sellerId;
+    if ($hasSellerId) {
+        $conditions[] = 'c.seller_id = :catalog_seller_id';
+        $params['catalog_seller_id'] = $sellerId;
+    }
     if ($hasSellerName) {
         $conditions[] = 'c.seller_name = :seller_name';
         $params['seller_name'] = current_user()['seller_display_name'] ?? '';

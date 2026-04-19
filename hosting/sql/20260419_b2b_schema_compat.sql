@@ -1,4 +1,6 @@
-USE `catalog_platform`;
+-- Ejecuta este archivo desde phpMyAdmin despues de seleccionar la base de datos real
+-- del hosting en el panel izquierdo. No usamos USE aqui porque en cPanel el nombre
+-- de la base cambia segun la cuenta, por ejemplo usuario_catalogs.
 
 DELIMITER $$
 
@@ -104,6 +106,7 @@ CALL add_column_if_missing('orders', 'contact_name', 'VARCHAR(190) NOT NULL DEFA
 CALL add_column_if_missing('orders', 'contact_email', 'VARCHAR(190) NOT NULL DEFAULT ''''', 'contact_name');
 CALL add_column_if_missing('orders', 'contact_phone', 'VARCHAR(80) NOT NULL DEFAULT ''''', 'contact_email');
 CALL add_column_if_missing('orders', 'address_zone', 'VARCHAR(255) NOT NULL DEFAULT ''''', 'contact_phone');
+CALL add_column_if_missing('orders', 'seller_name', 'VARCHAR(140) NOT NULL DEFAULT ''''', 'address_zone');
 CALL add_column_if_missing('orders', 'admin_notes', 'TEXT NULL', 'comments');
 CALL add_column_if_missing('orders', 'source_channel', 'ENUM(''web'',''offline-sync'',''admin'') NOT NULL DEFAULT ''web''', 'status');
 CALL add_column_if_missing('orders', 'export_csv_path', 'VARCHAR(255) NOT NULL DEFAULT ''''', 'source_channel');

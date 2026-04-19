@@ -464,6 +464,7 @@ async function publishCatalogPackage(payload, onProgress = () => {}) {
         promo_link_url: publish.promoLinkUrl || "",
         promo_link_label: publish.promoLinkLabel || "",
         currency: "USD",
+        theme: publish.theme || {},
         legacy_pdf_url: publish.legacyPdfUrl || publish.pdfUrl || "",
         modern_pdf_url: publish.modernPdfUrl || "",
         notes: publish.notes || "",
@@ -888,7 +889,8 @@ function sanitizeArchiveName(value) {
 }
 
 function buildWebExportHtml(snapshotHtml, metadata) {
-    const safeMetadata = JSON.stringify(metadata || {});
+    const safeMetadata = JSON.stringify({ ...(metadata || {}), catalog: [] });
+    const themeStyle = buildPublicCatalogThemeStyle(metadata?.theme);
     return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -899,8 +901,9 @@ function buildWebExportHtml(snapshotHtml, metadata) {
     <meta http-equiv="Expires" content="0">
     <title>${escapeHtml(metadata?.title || "Catalogo publicable")}</title>
     <link rel="stylesheet" href="./assets/public-catalog.css">
+    ${themeStyle ? `<style>${themeStyle}</style>` : ""}
 </head>
-<body>
+<body class="catalog-locked">
     <div class="network-banner" id="networkBanner" hidden></div>
     <div class="expired" id="expiredOverlay"><div class="expired__card"><h1>Este catalogo ya no esta disponible</h1><p>Solicita a tu vendedor un enlace actualizado para continuar comprando.</p></div></div>
     <div class="catalog-shell">
@@ -915,7 +918,7 @@ function buildWebExportHtml(snapshotHtml, metadata) {
                 </div>
                 <div class="catalog-meta">
                     <span class="catalog-chip" id="sellerReference">Vendedor: General</span>
-                    <span class="catalog-chip" id="clientReference">Cliente: Acceso libre</span>
+                    <span class="catalog-chip" id="clientReference">Cliente: enlace seguro requerido</span>
                     <span class="catalog-chip" id="queueIndicator">Sin pedidos pendientes</span>
                 </div>
             </div>
@@ -982,6 +985,41 @@ function buildWebExportHtml(snapshotHtml, metadata) {
     <script src="./assets/public-catalog.js"></script>
 </body>
 </html>`;
+}
+
+function buildPublicCatalogThemeStyle(theme) {
+    const primary = sanitizeHexColor(theme?.primaryColor, "");
+    const secondary = sanitizeHexColor(theme?.secondaryColor, "");
+    if (!primary && !secondary) return "";
+    const values = [];
+    if (primary) {
+        values.push(`--primary:${primary}`);
+        values.push(`--accent:${primary}`);
+        values.push(`--primary-rgb:${hexToRgbString(primary)}`);
+    }
+    if (secondary) {
+        values.push(`--primary-strong:${secondary}`);
+        values.push(`--accent-strong:${secondary}`);
+        values.push(`--text:${secondary}`);
+        values.push(`--primary-strong-rgb:${hexToRgbString(secondary)}`);
+    }
+    return `:root{${values.join(";")};}`;
+}
+
+function sanitizeHexColor(value, fallback) {
+    const normalized = String(value || "").trim();
+    return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : fallback;
+}
+
+function hexToRgbString(hex) {
+    const normalized = sanitizeHexColor(hex, "");
+    if (!normalized) return "";
+    const value = normalized.slice(1);
+    return [
+        parseInt(value.slice(0, 2), 16),
+        parseInt(value.slice(2, 4), 16),
+        parseInt(value.slice(4, 6), 16),
+    ].join(", ");
 }
 
 function sanitizeSlug(value) {
