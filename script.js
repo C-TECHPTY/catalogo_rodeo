@@ -5,17 +5,21 @@ const isDesktop = Boolean(desktopApi?.isDesktop);
 const LAYOUT_STORAGE_KEY = "catalogLayoutPresetsV1";
 const HOSTING_SETTINGS_STORAGE_KEY = "catalogHostingSettingsV1";
 const DEFAULT_HOSTING_SETTINGS = {
-ftpHost:"rodeoimportzl.com",
-ftpUser:"catalogos@rodeoimportzl.com",
-ftpPassword:"me$)Yh^.;Jx(oQwe",
+autoSave:true,
+protocol:"ftp",
+ftpHost:"",
+ftpPort:21,
+ftpUser:"",
+ftpPassword:"",
 remoteDir:"",
-apiKey:"RodeoCatalogos2026SecureKey!",
-publicBaseUrl:"https://rodeoimportzl.com/catalogos",
-apiBaseUrl:"https://rodeoimportzl.com/catalogos_api"
+apiKey:"",
+publicBaseUrl:"",
+apiBaseUrl:"",
+settingsPath:""
 };
 const LAYOUT_BLOCKS = { coverTitle:"Portada titulo", pageHeader:"Encabezado", pageLogo:"Logo pagina", productsGrid:"Bloque productos", productImage:"Imagen producto", productCode:"Codigo producto", productPrice:"Precio", productDescription:"Descripcion", productMeta:"Datos tecnicos", pageFooter:"Footer" };
 const initialHostingSettings = loadHostingSettings();
-const state = { mode:"manual", records:[], sourceExcelName:"", imageFiles:[], imageMap:new Map(), imageUrls:[], imageSourceMap:new Map(), extraMediaFiles:[], extraMediaMap:new Map(), title:"Acenox Catalogo Comercial", footerText:"Catalogo comercial interno Acenox", includeCover:true, template:"classic", productsPerPage:6, primaryColor:"#b7192e", secondaryColor:"#1d1d1b", coverImageUrl:"", coverImagePath:"", pageLogoUrl:"", pageLogoPath:"", pageLogoPosition:"right", pageBackgroundUrl:"", pageBackgroundPath:"", pageBackgroundOpacity:0.12, webExport:{ slug:"catalogo-publicable", slugEdited:false, expiryDays:30, outputDir:"", baseUrl:initialHostingSettings.publicBaseUrl, apiBaseUrl:initialHostingSettings.apiBaseUrl, generatedLink:"", hosting:initialHostingSettings }, layoutPresets:loadLayoutPresets(), activeLayoutPresetId:"default", layoutEditor:{ enabled:false, selectedBlock:"coverTitle", drag:null }, batch:{ excelPath:"", imagesRoot:"", outputRoot:"", template:"editorial", quality:0.72, primaryColor:"#b7192e", secondaryColor:"#1d1d1b", logoPosition:"right", categories:[], previewIndex:-1, progress:{ completed:0, total:0 } } };
+const state = { mode:"manual", previewMode:"web", records:[], sourceExcelName:"", imageFiles:[], imageMap:new Map(), imageUrls:[], imageSourceMap:new Map(), extraMediaFiles:[], extraMediaMap:new Map(), title:"Acenox Catalogo Comercial", footerText:"Catalogo comercial interno Acenox", includeCover:true, template:"classic", productsPerPage:6, primaryColor:"#b7192e", secondaryColor:"#1d1d1b", coverImageUrl:"", coverImagePath:"", pageLogoUrl:"", pageLogoPath:"", pageLogoPosition:"right", pageBackgroundUrl:"", pageBackgroundPath:"", pageBackgroundOpacity:0.12, promotion:{ title:"Oferta destacada para compras mayoristas", text:"Configura una imagen liviana o video opcional sin afectar la carga movil.", imageUrl:"", imagePath:"", videoUrl:"", videoPath:"", linkLabel:"Consultar promocion", linkUrl:"" }, webExport:{ slug:"catalogo-publicable", slugEdited:false, expiryDays:30, outputDir:"", baseUrl:initialHostingSettings.publicBaseUrl, apiBaseUrl:initialHostingSettings.apiBaseUrl, generatedLink:"", hosting:initialHostingSettings }, layoutPresets:loadLayoutPresets(), activeLayoutPresetId:"default", layoutEditor:{ enabled:false, selectedBlock:"coverTitle", drag:null }, batch:{ excelPath:"", imagesRoot:"", outputRoot:"", template:"editorial", quality:0.72, primaryColor:"#b7192e", secondaryColor:"#1d1d1b", logoPosition:"right", categories:[], previewIndex:-1, progress:{ completed:0, total:0 } } };
 const REQUIRED_ALIASES = { item:["ITEM"], description:["DESCRIPCION","DESCRIPCION ","NOMBRE","PRODUCTO"], price:["PRECIO","PRICE","PVP"], available:["DISPONIBLE","DISP.","DISP","STOCK","EXISTENCIA"], barcode:["CBARRA","CB","CODIGOBARRAS","CODIGO DE BARRAS"], package:["EMPAQUE","PACK","PAQUETE"], um:["UM"], ctn:["CTN"], cub:["CUB.","CUB","CUBICAJE"] };
 const TEMPLATE_DEFS = {
 classic: templateDef("catalog-page--classic","cover-page--classic","Clasica original","Catalogo comercial","Coleccion general",renderClassicCard),
@@ -36,6 +40,9 @@ const batchModeButton = byId("batchModeButton");
 const manualPanels = Array.from(document.querySelectorAll(".manual-only"));
 const batchPanels = Array.from(document.querySelectorAll(".batch-only"));
 const catalogRoot = byId("catalogRoot");
+const webPreviewRoot = byId("webPreviewRoot");
+const webPreviewModeButton = byId("webPreviewModeButton");
+const pdfPreviewModeButton = byId("pdfPreviewModeButton");
 const titleInput = byId("catalogTitle");
 const footerInput = byId("footerText");
 const primaryColorInput = byId("primaryColor");
@@ -51,6 +58,12 @@ const pageBackgroundOpacityInput = byId("pageBackgroundOpacity");
 const excelInput = byId("excelFile");
 const imageInput = byId("imageFiles");
 const extraMediaInput = byId("extraMediaFiles");
+const promoTitleInput = byId("promoTitleInput");
+const promoTextInput = byId("promoTextInput");
+const promoImageFileInput = byId("promoImageFile");
+const promoVideoFileInput = byId("promoVideoFile");
+const promoLinkLabelInput = byId("promoLinkLabelInput");
+const promoLinkUrlInput = byId("promoLinkUrlInput");
 const renderButton = byId("renderButton");
 const printButton = byId("printButton");
 const exportWebButton = byId("exportWebButton");
@@ -59,11 +72,19 @@ const webCatalogSlugInput = byId("webCatalogSlug");
 const webExpiryDaysInput = byId("webExpiryDays");
 const webBaseUrlInput = byId("webBaseUrl");
 const webApiBaseUrlInput = byId("webApiBaseUrl");
+const hostingFtpProtocolInput = byId("hostingFtpProtocol");
 const hostingFtpHostInput = byId("hostingFtpHost");
+const hostingFtpPortInput = byId("hostingFtpPort");
 const hostingFtpUserInput = byId("hostingFtpUser");
 const hostingFtpPasswordInput = byId("hostingFtpPassword");
+const toggleFtpPasswordButton = byId("toggleFtpPasswordButton");
 const hostingRemoteDirInput = byId("hostingRemoteDir");
 const hostingApiKeyInput = byId("hostingApiKey");
+const toggleApiKeyButton = byId("toggleApiKeyButton");
+const saveHostingSettingsButton = byId("saveHostingSettingsButton");
+const clearHostingSettingsButton = byId("clearHostingSettingsButton");
+const hostingAutoSaveInput = byId("hostingAutoSave");
+const hostingSettingsPath = byId("hostingSettingsPath");
 const webOutputPathInput = byId("webOutputPath");
 const pickWebOutputButton = byId("pickWebOutputButton");
 const generatedWebLinkInput = byId("generatedWebLink");
@@ -73,6 +94,7 @@ const webPublishProgressPanel = byId("webPublishProgressPanel");
 const webPublishProgressBarFill = byId("webPublishProgressBarFill");
 const webPublishProgressText = byId("webPublishProgressText");
 const publishHostingButton = byId("publishHostingButton");
+const testHostingButton = byId("testHostingButton");
 const batchExcelPathInput = byId("batchExcelPath");
 const batchImagesRootInput = byId("batchImagesRoot");
 const batchOutputRootInput = byId("batchOutputRoot");
@@ -115,13 +137,18 @@ renderLayoutPresetOptions();
 syncLayoutEditorControls();
 Object.keys(LAYOUT_BLOCKS).forEach(applyLayoutStyleToDom);
 syncHostingInputs();
+initializePublicationSettings();
 updateGeneratedLinkPreview();
 renderBatchCategoryList();
+setPreviewMode("web");
+renderWebPreview();
 
 function bindManualEvents() {
 toggleSidebarButton?.addEventListener("click", () => body.classList.toggle("sidebar-collapsed"));
 manualModeButton?.addEventListener("click", () => setMode("manual"));
 batchModeButton?.addEventListener("click", () => setMode("batch"));
+webPreviewModeButton?.addEventListener("click", () => setPreviewMode("web"));
+pdfPreviewModeButton?.addEventListener("click", () => setPreviewMode("pdf"));
 titleInput?.addEventListener("input", () => { state.title = titleInput.value.trim() || "Acenox Catalogo Comercial"; if (!state.webExport.slugEdited && webCatalogSlugInput) { const nextSlug = sanitizeSlug(state.title) || "catalogo-publicable"; state.webExport.slug = nextSlug; webCatalogSlugInput.value = nextSlug; updateGeneratedLinkPreview(); } refreshCatalogIfReady(); });
 footerInput?.addEventListener("input", () => { state.footerText = footerInput.value.trim() || "Catalogo comercial interno Acenox"; refreshCatalogIfReady(); });
 primaryColorInput?.addEventListener("input", () => { state.primaryColor = primaryColorInput.value || "#b7192e"; applyThemeVariables(); refreshCatalogIfReady(); });
@@ -137,15 +164,28 @@ pageBackgroundOpacityInput?.addEventListener("input", () => { state.pageBackgrou
 excelInput?.addEventListener("change", async () => { const file = excelInput.files?.[0]; if (file) await loadRecordsFromFile(file); });
 imageInput?.addEventListener("change", () => { state.imageFiles = Array.from(imageInput.files || []); reindexMainImages(); refreshCatalogIfReady(); });
 extraMediaInput?.addEventListener("change", () => { state.extraMediaFiles = Array.from(extraMediaInput.files || []); reindexExtraMedia(); });
+promoTitleInput?.addEventListener("input", () => { state.promotion.title = promoTitleInput.value.trim(); renderWebPreview(); });
+promoTextInput?.addEventListener("input", () => { state.promotion.text = promoTextInput.value.trim(); renderWebPreview(); });
+promoLinkLabelInput?.addEventListener("input", () => { state.promotion.linkLabel = promoLinkLabelInput.value.trim(); renderWebPreview(); });
+promoLinkUrlInput?.addEventListener("input", () => { state.promotion.linkUrl = promoLinkUrlInput.value.trim(); renderWebPreview(); });
+promoImageFileInput?.addEventListener("change", () => { const file = promoImageFileInput.files?.[0]; state.promotion.imageUrl = replaceObjectUrl(state.promotion.imageUrl, file); state.promotion.imagePath = file?.path || ""; renderWebPreview(); });
+promoVideoFileInput?.addEventListener("change", () => { const file = promoVideoFileInput.files?.[0]; state.promotion.videoUrl = replaceObjectUrl(state.promotion.videoUrl, file); state.promotion.videoPath = file?.path || ""; renderWebPreview(); });
 webCatalogSlugInput?.addEventListener("input", () => { const nextSlug = sanitizeSlug(webCatalogSlugInput.value); state.webExport.slugEdited = Boolean(nextSlug); state.webExport.slug = nextSlug || sanitizeSlug(state.title) || "catalogo-publicable"; webCatalogSlugInput.value = state.webExport.slug; updateGeneratedLinkPreview(); });
 webExpiryDaysInput?.addEventListener("change", () => { state.webExport.expiryDays = Number(webExpiryDaysInput.value) || 30; });
 webBaseUrlInput?.addEventListener("input", () => { const value = sanitizeBaseUrl(webBaseUrlInput.value); state.webExport.baseUrl = value; updateHostingSettings({ publicBaseUrl:value }); updateGeneratedLinkPreview(); });
 webApiBaseUrlInput?.addEventListener("input", () => { const value = sanitizeBaseUrl(webApiBaseUrlInput.value); state.webExport.apiBaseUrl = value; updateHostingSettings({ apiBaseUrl:value }); });
+hostingFtpProtocolInput?.addEventListener("change", () => updateHostingSettings({ protocol:hostingFtpProtocolInput.value || "ftp" }));
 hostingFtpHostInput?.addEventListener("input", () => updateHostingSettings({ ftpHost:hostingFtpHostInput.value.trim() }));
+hostingFtpPortInput?.addEventListener("input", () => updateHostingSettings({ ftpPort:Number(hostingFtpPortInput.value) || 21 }));
 hostingFtpUserInput?.addEventListener("input", () => updateHostingSettings({ ftpUser:hostingFtpUserInput.value.trim() }));
 hostingFtpPasswordInput?.addEventListener("input", () => updateHostingSettings({ ftpPassword:hostingFtpPasswordInput.value }));
 hostingRemoteDirInput?.addEventListener("input", () => updateHostingSettings({ remoteDir:hostingRemoteDirInput.value.trim() }));
 hostingApiKeyInput?.addEventListener("input", () => updateHostingSettings({ apiKey:hostingApiKeyInput.value.trim() }));
+toggleFtpPasswordButton?.addEventListener("click", () => toggleSecretInput(hostingFtpPasswordInput, toggleFtpPasswordButton, "clave FTP"));
+toggleApiKeyButton?.addEventListener("click", () => toggleSecretInput(hostingApiKeyInput, toggleApiKeyButton, "API key privada"));
+hostingAutoSaveInput?.addEventListener("change", () => { state.webExport.hosting.autoSave = Boolean(hostingAutoSaveInput.checked); saveHostingSettings({ force:true, showStatus:true }); });
+saveHostingSettingsButton?.addEventListener("click", async () => { await saveHostingSettings({ force:true, showStatus:true }); });
+clearHostingSettingsButton?.addEventListener("click", async () => { await clearHostingSettings(); });
 pickWebOutputButton?.addEventListener("click", async () => { if (!isDesktop) return setWebExportStatus("La exportacion web requiere la app de escritorio.", true); const dir = await desktopApi.chooseDirectory({ title: "Selecciona la carpeta de salida web" }); if (!dir) return; state.webExport.outputDir = dir; if (webOutputPathInput) webOutputPathInput.value = dir; setWebExportStatus("Carpeta de salida web seleccionada."); });
 copyWebLinkButton?.addEventListener("click", async () => { if (!state.webExport.generatedLink) return setWebExportStatus("Aun no hay link generado para copiar.", true); try { await navigator.clipboard.writeText(state.webExport.generatedLink); setWebExportStatus("Link copiado al portapapeles."); } catch (error) { console.error(error); setWebExportStatus("No se pudo copiar el link automaticamente.", true); } });
 layoutPresetSelect?.addEventListener("change", () => { state.activeLayoutPresetId = layoutPresetSelect.value || "default"; syncLayoutEditorControls(); Object.keys(LAYOUT_BLOCKS).forEach(applyLayoutStyleToDom); refreshCatalogIfReady(); refreshLayoutEditorOverlay(); setLayoutEditorStatus(`Plantilla editable activa: ${getActiveLayoutPreset().name}.`); });
@@ -157,9 +197,10 @@ layoutScaleInput?.addEventListener("input", () => updateActiveBlockLayout({ scal
 saveLayoutPresetButton?.addEventListener("click", () => saveCurrentLayoutAsPreset());
 resetLayoutBlockButton?.addEventListener("click", () => { resetActiveBlockLayout(); refreshCatalogIfReady(); setLayoutEditorStatus(`Bloque restaurado: ${LAYOUT_BLOCKS[state.layoutEditor.selectedBlock]}.`); });
 resetLayoutPresetButton?.addEventListener("click", () => { resetCurrentLayoutPreset(); refreshCatalogIfReady(); setLayoutEditorStatus(`Plantilla restaurada: ${getActiveLayoutPreset().name}.`); });
-renderButton?.addEventListener("click", () => { if (!state.records.length) return setStatus("Primero debes cargar un Excel valido.", true); try { renderCatalog(); setStatus(`Catalogo generado con la plantilla ${getCurrentTemplate().name}. Productos: ${state.records.length}.`); } catch (error) { console.error(error); setStatus(`No se pudo generar el catalogo: ${error.message}`, true); } });
+renderButton?.addEventListener("click", () => { if (!state.records.length) return setStatus("Primero debes cargar un Excel valido.", true); try { renderCatalog(); renderWebPreview(); setPreviewMode("web"); setStatus(`Catalogo generado con la plantilla ${getCurrentTemplate().name}. Productos: ${state.records.length}.`); } catch (error) { console.error(error); setStatus(`No se pudo generar el catalogo: ${error.message}`, true); } });
 printButton?.addEventListener("click", async () => {
 if (!state.records.length) return setStatus("Carga el Excel antes de imprimir.", true);
+setPreviewMode("pdf");
 renderCatalog();
 await waitForImagesToLoad(catalogRoot);
 if (isDesktop && desktopApi?.exportCurrentPdf) {
@@ -177,6 +218,7 @@ setTimeout(() => window.print(), 250);
 });
 exportWebButton?.addEventListener("click", async () => { await exportWebPackage(); });
 publishHostingButton?.addEventListener("click", async () => { await publishCatalogToHosting(); });
+testHostingButton?.addEventListener("click", async () => { await testHostingConnection(); });
 window.addEventListener("resize", refreshLayoutEditorOverlay);
 window.addEventListener("scroll", refreshLayoutEditorOverlay, true);
 }
@@ -230,6 +272,61 @@ appendBatchResult(payload);
 function bindHostingProgressReceiver() {
 if (!isDesktop || !desktopApi.onHostingProgress) return;
 desktopApi.onHostingProgress((payload) => { updateHostingProgressUi(payload); });
+}
+
+function setPreviewMode(mode) {
+state.previewMode = mode === "pdf" ? "pdf" : "web";
+webPreviewModeButton?.classList.toggle("preview-tabs__button--active", state.previewMode === "web");
+pdfPreviewModeButton?.classList.toggle("preview-tabs__button--active", state.previewMode === "pdf");
+if (webPreviewRoot) webPreviewRoot.hidden = state.previewMode !== "web";
+if (catalogRoot) catalogRoot.hidden = state.previewMode !== "pdf";
+}
+
+function renderWebPreview() {
+if (!webPreviewRoot) return;
+const products = (state.records.length ? state.records : createPreviewProducts()).slice(0, 8);
+const promoImage = state.promotion.imageUrl || state.coverImageUrl || "";
+webPreviewRoot.innerHTML = `
+<div class="web-preview-shell">
+  <header class="web-preview-header">
+    <div class="web-preview-brand">
+      <div class="web-preview-logo">${state.pageLogoUrl ? `<img src="${escapeHtml(state.pageLogoUrl)}" alt="">` : "R"}</div>
+      <div><strong>${escapeHtml(state.title)}</strong><span>${escapeHtml(state.footerText || "Catalogo mayorista B2B")}</span></div>
+    </div>
+    <div class="web-preview-search">Buscar SKU, marca o categoria</div>
+    <button type="button">Carrito</button>
+  </header>
+  <section class="web-preview-hero">
+    <div><p>Catalogo comercial B2B</p><h2>${escapeHtml(state.title)}</h2><span>Pedidos por empaque, link trazable y salida operativa en Excel/CSV/XLSX.</span></div>
+    <div class="web-preview-filter"><strong>Categorias</strong><span>Todos</span><span>General</span><span>Mayorista</span></div>
+  </section>
+  <section class="web-preview-promo">
+    <div><p>Promocion configurable</p><h3>${escapeHtml(state.promotion.title || "Oferta destacada")}</h3><span>${escapeHtml(state.promotion.text || "Imagen o video opcional con fallback movil.")}</span></div>
+    <div class="web-preview-promo__media">${promoImage ? `<img src="${escapeHtml(promoImage)}" alt="">` : "Imagen / video promo"}</div>
+  </section>
+  <section class="web-preview-grid">${products.map(renderWebPreviewCard).join("")}</section>
+</div>`;
+}
+
+function renderWebPreviewCard(product) {
+const image = state.imageMap.get(normalizeIdentifier(product.item)) || "";
+return `<article class="web-preview-card">
+  <div class="web-preview-card__media">${image ? `<img src="${escapeHtml(image)}" alt="">` : "Sin imagen"}</div>
+  <div class="web-preview-card__body">
+    <span>${escapeHtml(product.item || "SKU")}</span>
+    <strong>${escapeHtml(product.shortDescription || product.description || "Producto")}</strong>
+    <div><small>Empaque</small><b>${escapeHtml(product.package || "Unidad")}</b></div>
+    <p>${escapeHtml(product.price || "$0.00")}</p>
+  </div>
+</article>`;
+}
+
+function createPreviewProducts() {
+return [
+{ item:"SKU-001", description:"Producto mayorista de muestra", shortDescription:"Producto mayorista de muestra", package:"Caja x 12", price:"$0.00" },
+{ item:"SKU-002", description:"Linea comercial B2B", shortDescription:"Linea comercial B2B", package:"Bulto x 24", price:"$0.00" },
+{ item:"SKU-003", description:"Referencia para preventa", shortDescription:"Referencia para preventa", package:"Set x 6", price:"$0.00" }
+];
 }
 
 async function previewBatchCategory(index) {
@@ -317,6 +414,7 @@ state.coverImageUrl = payload.category.coverPath ? await compressImagePath(paylo
 state.pageBackgroundUrl = "";
 applyThemeVariables();
 state.pageLogoUrl = payload.category.logoPath ? pathToFileUrl(payload.category.logoPath) : "";
+setPreviewMode("pdf");
 renderCatalog({ syncInputs: false });
 }
 
@@ -355,7 +453,9 @@ const payload = buildWebExportPayload(slug);
 const result = await desktopApi.publishCatalogPackage({
     exportPayload: payload,
     hosting: {
+        protocol: hosting.protocol || "ftp",
         ftpHost: hosting.ftpHost,
+        ftpPort: hosting.ftpPort || 21,
         ftpUser: hosting.ftpUser,
         ftpPassword: hosting.ftpPassword,
         remoteDir: hosting.remoteDir,
@@ -372,6 +472,12 @@ const result = await desktopApi.publishCatalogPackage({
         expiresAt: payload.metadata.expiresAt,
         sellerName: "",
         clientName: "",
+        promoTitle: payload.metadata.promotion.title,
+        promoText: payload.metadata.promotion.text,
+        promoImageUrl: payload.metadata.promotion.imageUrl,
+        promoVideoUrl: payload.metadata.promotion.videoUrl,
+        promoLinkUrl: payload.metadata.promotion.linkUrl,
+        promoLinkLabel: payload.metadata.promotion.linkLabel,
         notes: `Catalogo generado desde app local. Plantilla ${state.template}.`,
         catalogJsonPath: `${remoteCatalogDir}/catalog.json`
     }
@@ -403,6 +509,7 @@ primaryColor: state.primaryColor,
 secondaryColor: state.secondaryColor,
 pageLogoPosition: state.pageLogoPosition,
 pageBackgroundOpacity: state.pageBackgroundOpacity,
+promotion: { ...state.promotion },
 };
 const records = state.records.slice();
 const assets = [];
@@ -440,9 +547,13 @@ mediaCatalog[record.item] = { item:record.item, description:record.description, 
 const coverRelative = state.coverImagePath ? `media/brand/cover${getWebImageExtension(state.coverImagePath)}` : "";
 const logoRelative = state.pageLogoPath ? `media/brand/logo${getWebImageExtension(state.pageLogoPath)}` : "";
 const backgroundRelative = state.pageBackgroundPath ? `media/brand/background${getWebImageExtension(state.pageBackgroundPath)}` : "";
+const promoImageRelative = state.promotion.imagePath ? `media/promo/promo${getWebImageExtension(state.promotion.imagePath)}` : "";
+const promoVideoRelative = state.promotion.videoPath ? `media/promo/promo${getPathExtension(state.promotion.videoPath) || ".mp4"}` : "";
 if (state.coverImagePath) assets.push({ sourcePath:state.coverImagePath, relativePath:coverRelative });
 if (state.pageLogoPath) assets.push({ sourcePath:state.pageLogoPath, relativePath:logoRelative });
 if (state.pageBackgroundPath) assets.push({ sourcePath:state.pageBackgroundPath, relativePath:backgroundRelative });
+if (state.promotion.imagePath) assets.push({ sourcePath:state.promotion.imagePath, relativePath:promoImageRelative });
+if (state.promotion.videoPath) assets.push({ sourcePath:state.promotion.videoPath, relativePath:promoVideoRelative });
 state.records = records;
 state.imageMap = exportImageMap;
 state.coverImageUrl = coverRelative ? `./${coverRelative}` : "";
@@ -455,6 +566,7 @@ state.imageMap = currentState.imageMap;
 state.coverImageUrl = currentState.coverImageUrl;
 state.pageLogoUrl = currentState.pageLogoUrl;
 state.pageBackgroundUrl = currentState.pageBackgroundUrl;
+state.promotion = currentState.promotion;
 renderCatalog({ syncInputs:false });
 return {
 outputDir: state.webExport.outputDir,
@@ -465,14 +577,29 @@ snapshotHtml,
   footerText: state.footerText,
   slug,
   template: state.template,
+  heroTitle: state.title,
+  heroSubtitle: "Catalogo comercial B2B con pedido mayorista y trazabilidad por enlace.",
   publicBaseUrl: state.webExport.baseUrl,
   apiBaseUrl: state.webExport.apiBaseUrl,
   publicUrl: buildGeneratedLink(slug),
+  currency: "USD",
+  promotion: {
+    title: state.promotion.title,
+    text: state.promotion.text,
+    imageUrl: promoImageRelative ? `./${promoImageRelative}` : "",
+    videoUrl: promoVideoRelative ? `./${promoVideoRelative}` : "",
+    linkLabel: state.promotion.linkLabel,
+    linkUrl: state.promotion.linkUrl
+  },
+  legacyPdfUrl: "",
+  modernPdfUrl: "",
   generatedAt: now.toISOString(),
   expiresAt: expiresAt.toISOString(),
 expiryDays: state.webExport.expiryDays || 30,
 expiryLabel: `${state.webExport.expiryDays || 30} dias`,
-catalog: records.map((record) => ({ item:record.item, description:record.description, shortDescription:record.shortDescription, price:record.price, available:record.available, package:record.package, empaque:record.package, packageQty:parsePackageQty(record.package), media:mediaCatalog[record.item] || { gallery:[], video:"" } })),
+  coverImage: coverRelative ? `./${coverRelative}` : "",
+  logoUrl: logoRelative ? `./${logoRelative}` : "",
+catalog: records.map((record) => ({ item:record.item, description:record.description, shortDescription:record.shortDescription, price:record.price, available:record.available, package:record.package, empaque:record.package, packageQty:parsePackageQty(record.package), packageLabel:record.package, saleUnit:record.saleUnit || record.um || "bulto", minimumOrder:record.minimumOrder || 1, multipleQty:record.multipleQty || 1, brand:record.brand || "", material:record.material || "", size:record.size || record.measureBadge || "", category:record.category || "General", media:mediaCatalog[record.item] || { gallery:[], video:"" } })),
 },
 assets: dedupeAssets(assets),
 };
@@ -504,12 +631,114 @@ function updateGeneratedLinkPreview() { state.webExport.generatedLink = buildGen
 function setHostingPublishBusy(isBusy) { if (!publishHostingButton) return; publishHostingButton.disabled = isBusy; publishHostingButton.classList.toggle("publish-button--working", isBusy); publishHostingButton.textContent = isBusy ? "Publicando..." : "Publicar al hosting"; }
 function resetHostingProgressUi() { if (webPublishProgressPanel) webPublishProgressPanel.hidden = false; if (webPublishProgressBarFill) webPublishProgressBarFill.style.width = "0%"; if (webPublishProgressText) webPublishProgressText.textContent = "Preparando publicacion al hosting..."; }
 function updateHostingProgressUi(payload = {}) { if (webPublishProgressPanel) webPublishProgressPanel.hidden = false; const phase = String(payload.phase || ""); const completed = Number(payload.completed || 0); const total = Number(payload.total || 0); let percent = Number(payload.percent || 0); if ((!percent || !Number.isFinite(percent)) && total > 0) percent = Math.round((completed / total) * 100); percent = Math.max(0, Math.min(100, percent || 0)); if (webPublishProgressBarFill) webPublishProgressBarFill.style.width = `${percent}%`; if (webPublishProgressText) { const label = payload.label ? ` ${payload.label}` : ""; const text = phase === "exporting" ? "Preparando paquete web..." : phase === "compressing" ? `Comprimiendo ZIP${label}...` : phase === "uploading" ? `Subiendo ZIP${label}... ${completed}/${total}` : phase === "registering" ? "Registrando catalogo en el panel..." : phase === "completed" ? "Publicacion completada." : "Publicando al hosting..."; webPublishProgressText.textContent = text; } }
+async function testHostingConnection() {
+if (!isDesktop || !desktopApi?.testHostingConnection) return setWebExportStatus("La prueba FTP requiere la app de escritorio.", true);
+const hosting = state.webExport.hosting || {};
+if (!hosting.ftpHost || !hosting.ftpUser || !hosting.ftpPassword) return setWebExportStatus("Completa host, usuario y clave antes de probar FTP.", true);
+setWebExportStatus("Probando conexion FTP...");
+if (testHostingButton) testHostingButton.disabled = true;
+try {
+const result = await desktopApi.testHostingConnection({ protocol:hosting.protocol || "ftp", ftpHost:hosting.ftpHost, ftpPort:hosting.ftpPort || 21, ftpUser:hosting.ftpUser, ftpPassword:hosting.ftpPassword, remoteDir:hosting.remoteDir });
+setWebExportStatus(result?.ok ? "Conexion FTP validada correctamente." : `No se pudo validar FTP: ${result?.error || "Error desconocido"}`, !result?.ok);
+} catch (error) {
+console.error(error);
+setWebExportStatus(`No se pudo validar FTP: ${error.message}`, true);
+} finally {
+if (testHostingButton) testHostingButton.disabled = false;
+}
+}
 function sanitizeRemoteDir(value) { const raw = String(value ?? "").trim().replace(/\\/g, "/"); if (!raw || raw === "." || raw === "/") return ""; const normalized = raw.replace(/\/+$/, ""); return normalized === "." ? "" : normalized; }
 function buildRemoteCatalogDir(remoteDir, slug) { const baseDir = sanitizeRemoteDir(remoteDir); return baseDir ? `${baseDir}/${slug}` : slug; }
-function loadHostingSettings() { try { const raw = window.localStorage?.getItem(HOSTING_SETTINGS_STORAGE_KEY); if (!raw) return { ...DEFAULT_HOSTING_SETTINGS }; const parsed = JSON.parse(raw); return { ftpHost:String(parsed.ftpHost || DEFAULT_HOSTING_SETTINGS.ftpHost), ftpUser:String(parsed.ftpUser || DEFAULT_HOSTING_SETTINGS.ftpUser), ftpPassword:String(parsed.ftpPassword || DEFAULT_HOSTING_SETTINGS.ftpPassword), remoteDir:String(parsed.remoteDir ?? DEFAULT_HOSTING_SETTINGS.remoteDir), apiKey:String(parsed.apiKey || DEFAULT_HOSTING_SETTINGS.apiKey), publicBaseUrl:sanitizeBaseUrl(parsed.publicBaseUrl || DEFAULT_HOSTING_SETTINGS.publicBaseUrl), apiBaseUrl:sanitizeBaseUrl(parsed.apiBaseUrl || DEFAULT_HOSTING_SETTINGS.apiBaseUrl) }; } catch (error) { console.error(error); return { ...DEFAULT_HOSTING_SETTINGS }; } }
-function saveHostingSettings() { try { window.localStorage?.setItem(HOSTING_SETTINGS_STORAGE_KEY, JSON.stringify(state.webExport.hosting)); } catch (error) { console.error(error); } }
-function updateHostingSettings(changes) { state.webExport.hosting = { ...state.webExport.hosting, ...changes }; saveHostingSettings(); }
-function syncHostingInputs() { if (webBaseUrlInput) webBaseUrlInput.value = state.webExport.baseUrl || ""; if (webApiBaseUrlInput) webApiBaseUrlInput.value = state.webExport.apiBaseUrl || ""; if (hostingFtpHostInput) hostingFtpHostInput.value = state.webExport.hosting.ftpHost || ""; if (hostingFtpUserInput) hostingFtpUserInput.value = state.webExport.hosting.ftpUser || ""; if (hostingFtpPasswordInput) hostingFtpPasswordInput.value = state.webExport.hosting.ftpPassword || ""; if (hostingRemoteDirInput) hostingRemoteDirInput.value = state.webExport.hosting.remoteDir || ""; if (hostingApiKeyInput) hostingApiKeyInput.value = state.webExport.hosting.apiKey || ""; }
+function loadHostingSettings() { try { const raw = window.localStorage?.getItem(HOSTING_SETTINGS_STORAGE_KEY); if (!raw) return { ...DEFAULT_HOSTING_SETTINGS }; return normalizeHostingSettings(JSON.parse(raw)); } catch (error) { console.error(error); return { ...DEFAULT_HOSTING_SETTINGS }; } }
+async function initializePublicationSettings() {
+if (!isDesktop || !desktopApi?.loadPublicationSettings) return updateSettingsPathLabel();
+try {
+const result = await desktopApi.loadPublicationSettings();
+if (!hasHostingSettingValues(result?.settings) && hasHostingSettingValues(state.webExport.hosting)) {
+await saveHostingSettings({ force:true });
+return;
+}
+applyHostingSettings(result?.settings || DEFAULT_HOSTING_SETTINGS, result?.path || "");
+if (result?.error) setWebExportStatus(`No se pudo leer settings.json. Se cargaron valores vacios: ${result.error}`, true);
+} catch (error) {
+console.error(error);
+setWebExportStatus(`No se pudo cargar la configuracion local: ${error.message}`, true);
+}
+}
+function normalizeHostingSettings(value = {}) {
+const source = value && typeof value === "object" ? value : {};
+return {
+autoSave:source.autoSave !== false,
+protocol:source.protocol === "ftps" ? "ftps" : "ftp",
+ftpHost:String(source.ftpHost || DEFAULT_HOSTING_SETTINGS.ftpHost),
+ftpPort:Number(source.ftpPort || DEFAULT_HOSTING_SETTINGS.ftpPort) || 21,
+ftpUser:String(source.ftpUser || DEFAULT_HOSTING_SETTINGS.ftpUser),
+ftpPassword:String(source.ftpPassword || DEFAULT_HOSTING_SETTINGS.ftpPassword),
+remoteDir:String(source.remoteDir ?? DEFAULT_HOSTING_SETTINGS.remoteDir),
+apiKey:String(source.apiKey || DEFAULT_HOSTING_SETTINGS.apiKey),
+publicBaseUrl:sanitizeBaseUrl(source.publicBaseUrl || DEFAULT_HOSTING_SETTINGS.publicBaseUrl),
+apiBaseUrl:sanitizeBaseUrl(source.apiBaseUrl || DEFAULT_HOSTING_SETTINGS.apiBaseUrl),
+settingsPath:String(source.settingsPath || DEFAULT_HOSTING_SETTINGS.settingsPath)
+};
+}
+function applyHostingSettings(settings, settingsPath = "") {
+const normalized = normalizeHostingSettings({ ...settings, settingsPath:settingsPath || settings.settingsPath });
+state.webExport.hosting = normalized;
+state.webExport.baseUrl = normalized.publicBaseUrl;
+state.webExport.apiBaseUrl = normalized.apiBaseUrl;
+syncHostingInputs();
+updateGeneratedLinkPreview();
+updateSettingsPathLabel();
+}
+function collectHostingSettings() {
+return normalizeHostingSettings({
+...state.webExport.hosting,
+publicBaseUrl:state.webExport.baseUrl,
+apiBaseUrl:state.webExport.apiBaseUrl
+});
+}
+function hasHostingSettingValues(settings = {}) {
+return Boolean(settings.ftpHost || settings.ftpUser || settings.ftpPassword || settings.remoteDir || settings.apiKey || settings.publicBaseUrl || settings.apiBaseUrl);
+}
+async function saveHostingSettings({ force = false, showStatus = false } = {}) {
+const settings = collectHostingSettings();
+state.webExport.hosting = settings;
+if (!force && !settings.autoSave) return;
+try {
+if (isDesktop && desktopApi?.savePublicationSettings) {
+const result = await desktopApi.savePublicationSettings(settings);
+applyHostingSettings(result?.settings || settings, result?.path || settings.settingsPath);
+} else {
+window.localStorage?.setItem(HOSTING_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+}
+if (showStatus) setWebExportStatus("Configuracion de publicacion guardada en esta PC.");
+} catch (error) {
+console.error(error);
+if (showStatus) setWebExportStatus(`No se pudo guardar la configuracion: ${error.message}`, true);
+}
+}
+function updateHostingSettings(changes) {
+state.webExport.hosting = normalizeHostingSettings({ ...state.webExport.hosting, ...changes });
+saveHostingSettings();
+}
+async function clearHostingSettings() {
+try {
+let result = null;
+if (isDesktop && desktopApi?.clearPublicationSettings) {
+result = await desktopApi.clearPublicationSettings();
+} else {
+window.localStorage?.removeItem(HOSTING_SETTINGS_STORAGE_KEY);
+}
+applyHostingSettings(result?.settings || DEFAULT_HOSTING_SETTINGS, result?.path || "");
+setWebExportStatus("Configuracion local limpiada.");
+} catch (error) {
+console.error(error);
+setWebExportStatus(`No se pudo limpiar la configuracion: ${error.message}`, true);
+}
+}
+function syncHostingInputs() { if (webBaseUrlInput) webBaseUrlInput.value = state.webExport.baseUrl || ""; if (webApiBaseUrlInput) webApiBaseUrlInput.value = state.webExport.apiBaseUrl || ""; if (hostingFtpProtocolInput) hostingFtpProtocolInput.value = state.webExport.hosting.protocol || "ftp"; if (hostingFtpHostInput) hostingFtpHostInput.value = state.webExport.hosting.ftpHost || ""; if (hostingFtpPortInput) hostingFtpPortInput.value = String(state.webExport.hosting.ftpPort || 21); if (hostingFtpUserInput) hostingFtpUserInput.value = state.webExport.hosting.ftpUser || ""; if (hostingFtpPasswordInput) hostingFtpPasswordInput.value = state.webExport.hosting.ftpPassword || ""; if (hostingRemoteDirInput) hostingRemoteDirInput.value = state.webExport.hosting.remoteDir || ""; if (hostingApiKeyInput) hostingApiKeyInput.value = state.webExport.hosting.apiKey || ""; if (hostingAutoSaveInput) hostingAutoSaveInput.checked = state.webExport.hosting.autoSave !== false; }
+function updateSettingsPathLabel() { if (!hostingSettingsPath) return; const settingsPath = state.webExport.hosting?.settingsPath || ""; hostingSettingsPath.textContent = settingsPath ? `Archivo local: ${settingsPath}` : "La configuracion se guarda solo en esta PC."; }
+function toggleSecretInput(input, button, label) { if (!input || !button) return; const isHidden = input.type === "password"; input.type = isHidden ? "text" : "password"; button.textContent = isHidden ? "Ocultar" : "Mostrar"; button.setAttribute("aria-label", `${isHidden ? "Ocultar" : "Mostrar"} ${label}`); }
 
 function createDefaultLayoutBlocks() { return { coverTitle:{ x:0, y:0, scale:1 }, pageHeader:{ x:0, y:0, scale:1 }, pageLogo:{ x:0, y:0, scale:1 }, productsGrid:{ x:0, y:0, scale:1 }, productImage:{ x:0, y:0, scale:1 }, productCode:{ x:0, y:0, scale:1 }, productPrice:{ x:0, y:0, scale:1 }, productDescription:{ x:0, y:0, scale:1 }, productMeta:{ x:0, y:0, scale:1 }, pageFooter:{ x:0, y:0, scale:1 } }; }
 function createDefaultLayoutPreset() { return { id:"default", name:"Predeterminada", blocks:createDefaultLayoutBlocks() }; }
@@ -584,7 +813,14 @@ return resolved;
 
 function normalizeRecord(row, columnMap) {
 const description = safeText(row[columnMap.description]);
-return { item:safeText(row[columnMap.item]), description, shortTitle:summarizeTitle(description), shortDescription:summarizeDescription(description), price:formatPrice(row[columnMap.price]), available:safeText(row[columnMap.available]), barcode:safeText(row[columnMap.barcode]), package:safeText(row[columnMap.package]), um:safeText(row[columnMap.um]), ctn:safeText(row[columnMap.ctn]), cub:safeText(row[columnMap.cub]), measureBadge:extractMeasureBadge(description) };
+const category = safeText(row.CATEGORIA || row.CATEGORY || row.LINEA || row.LINE || row.FAMILIA);
+const brand = safeText(row.MARCA || row.BRAND);
+const material = safeText(row.MATERIAL);
+const size = safeText(row.TAMANO || row['TAMAÑO'] || row.SIZE);
+const saleUnit = safeText(row['UNIDAD_VENTA'] || row['UNIDAD DE VENTA'] || row.VENTA || row.UM) || "bulto";
+const minimumOrder = parsePackageQty(row.MINIMO || row['MINIMO PEDIDO'] || 1);
+const multipleQty = parsePackageQty(row.MULTIPLO || row['MULTIPLO'] || 1);
+return { item:safeText(row[columnMap.item]), description, shortTitle:summarizeTitle(description), shortDescription:summarizeDescription(description), price:formatPrice(row[columnMap.price]), available:safeText(row[columnMap.available]), barcode:safeText(row[columnMap.barcode]), package:safeText(row[columnMap.package]), um:safeText(row[columnMap.um]), ctn:safeText(row[columnMap.ctn]), cub:safeText(row[columnMap.cub]), measureBadge:extractMeasureBadge(description), category, brand, material, size, saleUnit, minimumOrder, multipleQty };
 }
 
 function renderCatalog(options = {}) {
@@ -701,7 +937,7 @@ batchCategoryList.innerHTML = state.batch.categories.map((category, index) => `
 }
 function renderTemplateOptions(selectedValue) { return Object.entries(TEMPLATE_DEFS).map(([value, template]) => `<option value="${value}" ${value === selectedValue ? "selected" : ""}>${escapeHtml(template.name)}</option>`).join(""); }
 function setMode(mode) { state.mode = mode; const isManual = mode === "manual"; manualModeButton?.classList.toggle("mode-switch__button--active", isManual); batchModeButton?.classList.toggle("mode-switch__button--active", !isManual); manualPanels.forEach((panel) => { panel.hidden = !isManual; }); batchPanels.forEach((panel) => { panel.hidden = isManual; }); if (!isManual && state.layoutEditor.enabled) toggleLayoutEditor(false); refreshLayoutEditorOverlay(); }
-function refreshCatalogIfReady() { if (state.records.length) renderCatalog(); }
+function refreshCatalogIfReady() { if (state.records.length) renderCatalog(); renderWebPreview(); }
 function syncStateFromManualInputs() { state.title = titleInput?.value.trim() || state.title; state.footerText = footerInput?.value.trim() || state.footerText; state.includeCover = Boolean(includeCoverInput?.checked); state.template = templateSelect?.value || state.template; state.primaryColor = primaryColorInput?.value || state.primaryColor; state.secondaryColor = secondaryColorInput?.value || state.secondaryColor; state.pageLogoPosition = pageLogoPositionInput?.value || state.pageLogoPosition; state.pageBackgroundOpacity = readBackgroundOpacity(pageBackgroundOpacityInput); const perPage = Number(productsPerPageInput?.value); state.productsPerPage = Number.isFinite(perPage) && perPage > 0 ? perPage : state.productsPerPage; }
 function applyThemeVariables() { document.documentElement.style.setProperty("--red-primary", state.primaryColor); document.documentElement.style.setProperty("--red-dark", state.primaryColor); document.documentElement.style.setProperty("--footer-black", state.secondaryColor); }
 function setStatus(message, isError = false) { if (!statusMessage) return; statusMessage.textContent = message; statusMessage.style.color = isError ? "#ffd6d6" : "rgba(255,255,255,0.82)"; }

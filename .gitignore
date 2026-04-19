@@ -4,3 +4,11 @@ dist/
 build/
 .DS_Store
 Thumbs.db
+settings.json
+hosting/catalogos_api/config.php
+hosting/hosting.zip
+*.zip
+web/
+*.xlsx
+*.xlsm
+*.xls

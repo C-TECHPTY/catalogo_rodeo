@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld("catalogDesktop", {
     generateBatchPdfs: (payload) => ipcRenderer.invoke("batch:generate-pdfs", payload),
     exportWebPackage: (payload) => ipcRenderer.invoke("web:export-package", payload),
     publishCatalogPackage: (payload) => ipcRenderer.invoke("hosting:publish-catalog", payload),
+    testHostingConnection: (payload) => ipcRenderer.invoke("hosting:test-connection", payload),
+    loadPublicationSettings: () => ipcRenderer.invoke("settings:load-publication"),
+    savePublicationSettings: (payload) => ipcRenderer.invoke("settings:save-publication", payload),
+    clearPublicationSettings: () => ipcRenderer.invoke("settings:clear-publication"),
     exportCurrentPdf: (payload) => ipcRenderer.invoke("window:export-current-pdf", payload),
     onExportPayload: (callback) => {
         ipcRenderer.on("export-payload", (_, payload) => callback(payload));

@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
 
 $slug = slugify((string) ($_GET['slug'] ?? ''));
+$token = trim((string) ($_GET['token'] ?? ''));
 if ($slug === '') {
     json_response([
         'ok' => false,
@@ -11,25 +12,10 @@ if ($slug === '') {
     ], 422);
 }
 
-$catalog = fetch_catalog_by_slug($slug);
-if (!$catalog) {
-    json_response([
-        'ok' => false,
-        'error' => 'Catalogo no encontrado.',
-    ], 404);
-}
-
+$context = resolve_public_catalog_context($slug, $token);
+record_catalog_access($context);
+$catalog = $context['catalog'];
 $status = resolve_catalog_status($catalog);
-
-if ($status === 'active') {
-    $log = db()->prepare('INSERT INTO catalog_access_logs (catalog_id, ip_address, user_agent, referrer) VALUES (:catalog_id, :ip_address, :user_agent, :referrer)');
-    $log->execute([
-        'catalog_id' => $catalog['id'],
-        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? '',
-        'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
-        'referrer' => $_SERVER['HTTP_REFERER'] ?? '',
-    ]);
-}
 
 json_response([
     'ok' => $status === 'active',
@@ -41,7 +27,8 @@ json_response([
         'public_url' => $catalog['public_url'],
         'pdf_url' => $catalog['pdf_url'],
         'expires_at' => $catalog['expires_at'],
-        'seller_name' => $catalog['seller_name'],
-        'client_name' => $catalog['client_name'],
+        'seller_name' => $context['seller_name'],
+        'client_name' => $context['client_name'],
+        'share_link_id' => $context['share_link']['id'] ?? null,
     ],
 ]);

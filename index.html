@@ -182,6 +182,41 @@
                 </section>
 
                 <section class="controls-section manual-only">
+                    <h2>Promocion visual</h2>
+                    <div class="controls-grid">
+                        <label class="control-field control-field--wide">
+                            <span>Titulo promocional</span>
+                            <input id="promoTitleInput" type="text" value="Oferta destacada para compras mayoristas">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Texto promocional</span>
+                            <input id="promoTextInput" type="text" value="Configura una imagen liviana o video opcional sin afectar la carga movil.">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Imagen promocional</span>
+                            <input id="promoImageFile" type="file" accept=".jpg,.jpeg,.png,.webp,.JPG,.JPEG,.PNG,.WEBP">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Video promocional opcional</span>
+                            <input id="promoVideoFile" type="file" accept=".mp4,.webm,.mov,.MP4,.WEBM,.MOV">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Texto boton promo</span>
+                            <input id="promoLinkLabelInput" type="text" value="Consultar promocion">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>URL boton promo</span>
+                            <input id="promoLinkUrlInput" type="text" value="" placeholder="https://...">
+                        </label>
+                    </div>
+                </section>
+
+                <section class="controls-section manual-only">
                     <h2>Publicacion web</h2>
                     <div class="controls-grid">
                         <label class="control-field">
@@ -215,13 +250,29 @@
                         </label>
 
                         <label class="control-field">
+                            <span>Protocolo</span>
+                            <select id="hostingFtpProtocol">
+                                <option value="ftp">FTP compatible</option>
+                                <option value="ftps">FTPS explicito</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Puerto</span>
+                            <input id="hostingFtpPort" type="number" min="1" max="65535" value="21">
+                        </label>
+
+                        <label class="control-field">
                             <span>FTP usuario</span>
                             <input id="hostingFtpUser" type="text" value="" placeholder="Usuario FTP">
                         </label>
 
                         <label class="control-field">
                             <span>FTP clave</span>
-                            <input id="hostingFtpPassword" type="password" value="" placeholder="Clave FTP">
+                            <div class="secret-input">
+                                <input id="hostingFtpPassword" type="password" value="" placeholder="Clave FTP">
+                                <button id="toggleFtpPasswordButton" type="button" aria-label="Mostrar clave FTP">Mostrar</button>
+                            </div>
                         </label>
 
                         <label class="control-field">
@@ -231,8 +282,24 @@
 
                         <label class="control-field control-field--wide">
                             <span>API key privada</span>
-                            <input id="hostingApiKey" type="password" value="" placeholder="API key de catalogos_api/config.php">
+                            <div class="secret-input">
+                                <input id="hostingApiKey" type="password" value="" placeholder="API key de catalogos_api/config.php">
+                                <button id="toggleApiKeyButton" type="button" aria-label="Mostrar API key privada">Mostrar</button>
+                            </div>
                         </label>
+
+                        <div class="control-field control-field--wide">
+                            <span>Configuracion local</span>
+                            <div class="settings-actions">
+                                <button id="saveHostingSettingsButton" type="button">Guardar configuracion</button>
+                                <label class="settings-autosave">
+                                    <input id="hostingAutoSave" type="checkbox" checked>
+                                    <span>Autoguardado</span>
+                                </label>
+                                <button id="clearHostingSettingsButton" type="button">Limpiar configuracion</button>
+                            </div>
+                            <small id="hostingSettingsPath" class="settings-path">La configuracion se guarda solo en esta PC.</small>
+                        </div>
 
                         <label class="control-field control-field--wide">
                             <span>Carpeta salida web</span>
@@ -266,6 +333,7 @@
                         <button id="printButton" type="button">Imprimir / Exportar PDF</button>
                         <button id="exportWebButton" type="button">Exportar paquete web</button>
                         <button id="publishHostingButton" type="button">Publicar al hosting</button>
+                        <button id="testHostingButton" type="button">Probar FTP</button>
                     </div>
                     <p id="statusMessage" class="status-message">Carga un Excel y tus imagenes para comenzar.</p>
                 </section>
@@ -363,6 +431,11 @@
         </aside>
 
         <main class="workspace">
+            <div class="preview-tabs no-print">
+                <button id="webPreviewModeButton" class="preview-tabs__button preview-tabs__button--active" type="button">Vista web B2B moderna</button>
+                <button id="pdfPreviewModeButton" class="preview-tabs__button" type="button">Vista PDF legado</button>
+            </div>
+            <section id="webPreviewRoot" class="web-preview-root no-print"></section>
             <main id="catalogRoot" class="catalog-root">
                 <section class="cover-page">
                     <div class="cover-page__bg"></div>

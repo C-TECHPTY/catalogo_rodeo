@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, nativeImage } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, nativeImage, safeStorage } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const { pathToFileURL } = require("url");
@@ -7,6 +7,20 @@ const { execFile, spawn } = require("child_process");
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".svg"]);
 const COVER_CANDIDATES = new Set(["cover", "portada"]);
 const LOGO_CANDIDATES = new Set(["logo", "brand", "marca"]);
+const SETTINGS_FILE_NAME = "settings.json";
+const SECRET_SETTING_KEYS = new Set(["ftpPassword", "apiKey"]);
+const DEFAULT_PUBLICATION_SETTINGS = {
+    autoSave: true,
+    protocol: "ftp",
+    ftpHost: "",
+    ftpPort: 21,
+    ftpUser: "",
+    ftpPassword: "",
+    remoteDir: "",
+    apiKey: "",
+    publicBaseUrl: "",
+    apiBaseUrl: "",
+};
 
 let mainWindow = null;
 
@@ -114,6 +128,29 @@ function registerIpcHandlers() {
         });
     });
 
+    ipcMain.handle("hosting:test-connection", async (_, payload) => {
+        return testFtpConnection(payload);
+    });
+
+    ipcMain.handle("settings:load-publication", async () => {
+        const result = loadPublicationSettings();
+        return { ...result, path: getSettingsFilePath() };
+    });
+
+    ipcMain.handle("settings:save-publication", async (_, payload) => {
+        const settings = normalizePublicationSettings(payload);
+        savePublicationSettings(settings);
+        return { ok: true, settings, path: getSettingsFilePath() };
+    });
+
+    ipcMain.handle("settings:clear-publication", async () => {
+        const settingsPath = getSettingsFilePath();
+        if (fs.existsSync(settingsPath)) {
+            fs.unlinkSync(settingsPath);
+        }
+        return { ok: true, settings: { ...DEFAULT_PUBLICATION_SETTINGS }, path: settingsPath };
+    });
+
     ipcMain.handle("window:export-current-pdf", async (_, payload = {}) => {
         if (!mainWindow || mainWindow.isDestroyed()) {
             throw new Error("La ventana principal no esta disponible.");
@@ -137,6 +174,96 @@ function registerIpcHandlers() {
         fs.writeFileSync(result.filePath, pdf);
         return { canceled: false, filePath: result.filePath };
     });
+}
+
+function getSettingsFilePath() {
+    return path.join(app.getPath("userData"), SETTINGS_FILE_NAME);
+}
+
+function loadPublicationSettings() {
+    const settingsPath = getSettingsFilePath();
+    if (!fs.existsSync(settingsPath)) {
+        return { settings: { ...DEFAULT_PUBLICATION_SETTINGS }, encrypted: false };
+    }
+
+    try {
+        const raw = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+        const settings = normalizePublicationSettings(raw);
+        const encryptedSecrets = raw?.encryptedSecrets && typeof raw.encryptedSecrets === "object" ? raw.encryptedSecrets : {};
+        Object.entries(encryptedSecrets).forEach(([key, encryptedValue]) => {
+            if (!SECRET_SETTING_KEYS.has(key) || !encryptedValue) return;
+            const decrypted = decryptSettingSecret(encryptedValue);
+            if (decrypted !== null) {
+                settings[key] = decrypted;
+            }
+        });
+        return { settings, encrypted: Boolean(raw?.encryptedSecrets) };
+    } catch (error) {
+        console.error("No se pudo cargar settings.json", error);
+        return { settings: { ...DEFAULT_PUBLICATION_SETTINGS }, encrypted: false, error: error.message };
+    }
+}
+
+function savePublicationSettings(settings) {
+    const normalized = normalizePublicationSettings(settings);
+    const filePayload = { ...normalized };
+    const encryptedSecrets = {};
+
+    SECRET_SETTING_KEYS.forEach((key) => {
+        const value = String(normalized[key] || "");
+        filePayload[key] = "";
+        if (!value) return;
+        const encrypted = encryptSettingSecret(value);
+        if (encrypted) {
+            encryptedSecrets[key] = encrypted;
+        } else {
+            filePayload[key] = value;
+        }
+    });
+
+    if (Object.keys(encryptedSecrets).length) {
+        filePayload.encryptedSecrets = encryptedSecrets;
+    }
+
+    const settingsPath = getSettingsFilePath();
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, JSON.stringify(filePayload, null, 2), "utf8");
+}
+
+function normalizePublicationSettings(value = {}) {
+    const source = value && typeof value === "object" ? value : {};
+    return {
+        autoSave: source.autoSave !== false,
+        protocol: source.protocol === "ftps" ? "ftps" : "ftp",
+        ftpHost: String(source.ftpHost || ""),
+        ftpPort: Number(source.ftpPort || DEFAULT_PUBLICATION_SETTINGS.ftpPort) || DEFAULT_PUBLICATION_SETTINGS.ftpPort,
+        ftpUser: String(source.ftpUser || ""),
+        ftpPassword: String(source.ftpPassword || ""),
+        remoteDir: String(source.remoteDir ?? ""),
+        apiKey: String(source.apiKey || ""),
+        publicBaseUrl: String(source.publicBaseUrl || "").trim().replace(/\/+$/, ""),
+        apiBaseUrl: String(source.apiBaseUrl || "").trim().replace(/\/+$/, ""),
+    };
+}
+
+function encryptSettingSecret(value) {
+    try {
+        if (!safeStorage?.isEncryptionAvailable?.()) return "";
+        return safeStorage.encryptString(String(value)).toString("base64");
+    } catch (error) {
+        console.error("No se pudo cifrar un secreto local.", error);
+        return "";
+    }
+}
+
+function decryptSettingSecret(value) {
+    try {
+        if (!safeStorage?.isEncryptionAvailable?.()) return null;
+        return safeStorage.decryptString(Buffer.from(String(value), "base64"));
+    } catch (error) {
+        console.error("No se pudo descifrar un secreto local.", error);
+        return null;
+    }
 }
 
 function scanCategories(rootDir) {
@@ -267,8 +394,8 @@ function exportWebPackage(payload) {
     if (!outputRoot) throw new Error("No se indico carpeta de salida.");
     const packageDir = path.join(outputRoot, slug);
     fs.mkdirSync(packageDir, { recursive: true });
-    copyIfExists(path.join(__dirname, "styles.css"), path.join(packageDir, "styles.css"));
-    copyDirectory(path.join(__dirname, "fonts"), path.join(packageDir, "fonts"));
+    copyIfExists(path.join(__dirname, "hosting", "assets", "public-catalog.css"), path.join(packageDir, "assets", "public-catalog.css"));
+    copyIfExists(path.join(__dirname, "hosting", "assets", "public-catalog.js"), path.join(packageDir, "assets", "public-catalog.js"));
     const assets = Array.isArray(payload?.assets) ? payload.assets : [];
     assets.forEach((asset) => {
         if (!asset?.sourcePath || !asset?.relativePath) return;
@@ -296,7 +423,9 @@ async function publishCatalogPackage(payload, onProgress = () => {}) {
     await createZipFromDirectory(packageDir, zipFilePath);
     await uploadFileViaPowerShellFtp({
         localFile: zipFilePath,
+        protocol: hosting.protocol || "ftp",
         ftpHost: hosting.ftpHost,
+        ftpPort: hosting.ftpPort || 21,
         ftpUser: hosting.ftpUser,
         ftpPassword: hosting.ftpPassword,
         remoteDir: sanitizeRemoteDir(hosting.remoteDir),
@@ -320,13 +449,24 @@ async function publishCatalogPackage(payload, onProgress = () => {}) {
         body: JSON.stringify({
             slug,
             title: publish.title || slug,
-            template: publish.template || "classic",
+            template: publish.template || "b2b-modern",
             public_url: publicUrl,
             pdf_url: publish.pdfUrl || "",
             expires_at: publish.expiresAt || "",
             seller_name: publish.sellerName || "",
-            client_name: publish.clientName || "",
-            notes: publish.notes || "",
+        client_name: publish.clientName || "",
+        hero_title: publish.title || slug,
+        hero_subtitle: "Catalogo comercial B2B publicado desde la plataforma Rodeo.",
+        promo_title: publish.promoTitle || "",
+        promo_text: publish.promoText || "",
+        promo_image_url: publish.promoImageUrl || "",
+        promo_video_url: publish.promoVideoUrl || "",
+        promo_link_url: publish.promoLinkUrl || "",
+        promo_link_label: publish.promoLinkLabel || "",
+        currency: "USD",
+        legacy_pdf_url: publish.legacyPdfUrl || publish.pdfUrl || "",
+        modern_pdf_url: publish.modernPdfUrl || "",
+        notes: publish.notes || "",
             zip_name: zipFileName,
             status: "active",
         }),
@@ -515,7 +655,7 @@ foreach ($relative in $files) {
     });
 }
 
-async function uploadFileViaPowerShellFtp({ localFile, ftpHost, ftpUser, ftpPassword, remoteDir, remoteFileName, onProgress = () => {} }) {
+async function uploadFileViaPowerShellFtp({ localFile, protocol = "ftp", ftpHost, ftpPort = 21, ftpUser, ftpPassword, remoteDir, remoteFileName, onProgress = () => {} }) {
     if (!ftpHost || !ftpUser || !ftpPassword) {
         throw new Error("Faltan datos FTP para publicar el catalogo.");
     }
@@ -527,11 +667,14 @@ async function uploadFileViaPowerShellFtp({ localFile, ftpHost, ftpUser, ftpPass
     const destinationPath = [remoteBase, remoteFileName].filter(Boolean).join("/");
     const script = `
 $ErrorActionPreference = 'Stop'
+$protocol = ${psSingleQuote(protocol === "ftps" ? "ftps" : "ftp")}
 $ftpHost = ${psSingleQuote(ftpHost)}
+$ftpPort = ${Number(ftpPort) || 21}
 $ftpUser = ${psSingleQuote(ftpUser)}
 $ftpPassword = ${psSingleQuote(ftpPassword)}
 $sourceFile = ${psSingleQuote(localFile)}
 $destinationPath = ${psSingleQuote(destinationPath)}
+$enableSsl = $protocol -eq 'ftps'
 
 function New-FtpDirectoryRecursive {
     param([string]$TargetPath)
@@ -540,7 +683,7 @@ function New-FtpDirectoryRecursive {
     foreach ($part in $parts) {
         if ([string]::IsNullOrWhiteSpace($part)) { continue }
         $current = "$current/$part"
-        $uri = [System.Uri]("ftp://$ftpHost$current")
+        $uri = [System.Uri]("ftp://$ftpHost\`:$ftpPort$current")
         try {
             $request = [System.Net.FtpWebRequest]::Create($uri)
             $request.Method = [System.Net.WebRequestMethods+Ftp]::MakeDirectory
@@ -548,6 +691,7 @@ function New-FtpDirectoryRecursive {
             $request.UseBinary = $true
             $request.UsePassive = $true
             $request.KeepAlive = $false
+            $request.EnableSsl = $enableSsl
             $response = $request.GetResponse()
             $response.Close()
         } catch {
@@ -561,7 +705,7 @@ function New-FtpDirectoryRecursive {
 
 $directory = [System.IO.Path]::GetDirectoryName($destinationPath).Replace('\\','/')
 if ($directory) { New-FtpDirectoryRecursive -TargetPath $directory }
-$uri = [System.Uri]("ftp://$ftpHost/$destinationPath")
+$uri = [System.Uri]("ftp://$ftpHost\`:$ftpPort/$destinationPath")
 function Invoke-FtpUpload {
     param([bool]$UsePassive)
     $request = [System.Net.FtpWebRequest]::Create($uri)
@@ -570,7 +714,7 @@ function Invoke-FtpUpload {
     $request.UseBinary = $true
     $request.UsePassive = $UsePassive
     $request.KeepAlive = $false
-    $request.EnableSsl = $false
+    $request.EnableSsl = $enableSsl
     $request.ReadWriteTimeout = 300000
     $request.Timeout = 300000
     $bytes = [System.IO.File]::ReadAllBytes($sourceFile)
@@ -595,6 +739,44 @@ Write-Output "__PROGRESS__|1|1|${remoteFileName}"
         if (!line.startsWith("__PROGRESS__|")) return;
         onProgress({ phase: "uploading", percent: 92, completed: 1, total: 1, label: remoteFileName });
     });
+}
+
+async function testFtpConnection({ protocol = "ftp", ftpHost, ftpPort = 21, ftpUser, ftpPassword, remoteDir = "" } = {}) {
+    if (!ftpHost || !ftpUser || !ftpPassword) {
+        return { ok: false, error: "Faltan host, usuario o clave FTP." };
+    }
+
+    const remoteBase = sanitizeRemoteDir(remoteDir);
+    const targetPath = remoteBase ? `${remoteBase}/` : "";
+    const script = `
+$ErrorActionPreference = 'Stop'
+$protocol = ${psSingleQuote(protocol === "ftps" ? "ftps" : "ftp")}
+$ftpHost = ${psSingleQuote(ftpHost)}
+$ftpPort = ${Number(ftpPort) || 21}
+$ftpUser = ${psSingleQuote(ftpUser)}
+$ftpPassword = ${psSingleQuote(ftpPassword)}
+$targetPath = ${psSingleQuote(targetPath)}
+$enableSsl = $protocol -eq 'ftps'
+$uri = [System.Uri]("ftp://$ftpHost\`:$ftpPort/$targetPath")
+$request = [System.Net.FtpWebRequest]::Create($uri)
+$request.Method = [System.Net.WebRequestMethods+Ftp]::ListDirectory
+$request.Credentials = New-Object System.Net.NetworkCredential($ftpUser, $ftpPassword)
+$request.UseBinary = $true
+$request.UsePassive = $true
+$request.KeepAlive = $false
+$request.EnableSsl = $enableSsl
+$request.Timeout = 30000
+$response = $request.GetResponse()
+$response.Close()
+Write-Output "OK"
+`;
+
+    try {
+        await runPowerShellScript(script);
+        return { ok: true };
+    } catch (error) {
+        return { ok: false, error: error.message || "No se pudo conectar por FTP." };
+    }
 }
 
 function runPowerShellScript(script) {
@@ -716,959 +898,88 @@ function buildWebExportHtml(snapshotHtml, metadata) {
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>${escapeHtml(metadata?.title || "Catalogo publicable")}</title>
-    <link rel="stylesheet" href="./styles.css">
-    <style>
-        body.web-export-body { background: #d8d4cf; }
-        .web-export-shell { padding: 28px 0 56px; }
-        [data-item] { position: relative; }
-        [data-item] .product-card__image-wrap,
-        [data-item] .campin1-hero__visual,
-        [data-item] .showcase-card__visual,
-        [data-item] .industrial-card__visual,
-        [data-item] .minimal-card__visual,
-        [data-item] .editorial-card__visual,
-        [data-item] .horizontal-card__visual {
-            position: relative;
-            overflow: visible;
-        }
-        .web-media-trigger {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            z-index: 3;
-            min-height: 36px;
-            border: none;
-            border-radius: 999px;
-            padding: 0 14px;
-            background: rgba(22,22,22,0.88);
-            color: #fff;
-            font: inherit;
-            font-size: 12px;
-            font-weight: 700;
-            cursor: pointer;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.16);
-        }
-        .web-media-trigger--inline {
-            position: static;
-            top: auto;
-            left: auto;
-        }
-        .web-media-clickable {
-            cursor: zoom-in;
-        }
-        .web-media-inline {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-top: 10px;
-        }
-        .web-media-hint {
-            position: static;
-            z-index: 2;
-            display: inline-flex;
-            align-items: center;
-            min-height: 28px;
-            padding: 0 10px;
-            border-radius: 999px;
-            background: rgba(255,255,255,0.92);
-            color: #171717;
-            font: inherit;
-            font-size: 11px;
-            font-weight: 700;
-            box-shadow: 0 10px 18px rgba(0,0,0,0.12);
-            pointer-events: none;
-        }
-        .web-expired-banner {
-            position: fixed;
-            inset: 0;
-            z-index: 100;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            padding: 24px;
-            background: rgba(12,12,12,0.72);
-            backdrop-filter: blur(6px);
-        }
-        .web-expired-banner--visible { display: flex; }
-        .web-expired-banner__card {
-            max-width: 540px;
-            padding: 28px;
-            border-radius: 24px;
-            background: #fff;
-            color: #222;
-            text-align: center;
-            box-shadow: 0 22px 44px rgba(0,0,0,0.22);
-        }
-        .web-media-modal {
-            position: fixed;
-            inset: 0;
-            z-index: 110;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            padding: 24px;
-            background: rgba(10,10,10,0.82);
-            backdrop-filter: blur(8px);
-        }
-        .web-media-modal--open { display: flex; }
-        .web-media-modal__dialog {
-            width: min(960px, 100%);
-            max-height: calc(100vh - 48px);
-            overflow: auto;
-            border-radius: 24px;
-            background: #fff;
-            padding: 22px;
-            box-shadow: 0 28px 60px rgba(0,0,0,0.34);
-        }
-        .web-media-modal__header {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-        .web-media-modal__title { margin: 0; font-size: 24px; }
-        .web-media-modal__close {
-            min-width: 42px;
-            min-height: 42px;
-            border: none;
-            border-radius: 50%;
-            background: #171717;
-            color: #fff;
-            font: inherit;
-            font-size: 18px;
-            cursor: pointer;
-        }
-        .web-media-modal__hero {
-            display: grid;
-            gap: 16px;
-        }
-        .web-media-modal__stage {
-            position: relative;
-        }
-        .web-media-modal__frame {
-            min-height: 320px;
-            border-radius: 20px;
-            background: #f6f4ef;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-            padding: 20px;
-        }
-        .web-media-modal__frame img,
-        .web-media-modal__frame video {
-            max-width: 100%;
-            max-height: 68vh;
-            object-fit: contain;
-        }
-        .web-media-modal__nav {
-            position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            z-index: 2;
-            width: 42px;
-            height: 42px;
-            border: none;
-            border-radius: 50%;
-            background: rgba(23,23,23,0.88);
-            color: #fff;
-            font: inherit;
-            font-size: 20px;
-            cursor: pointer;
-            box-shadow: 0 10px 22px rgba(0,0,0,0.18);
-        }
-        .web-media-modal__nav[disabled] {
-            opacity: 0.36;
-            cursor: not-allowed;
-        }
-        .web-media-modal__nav--prev { left: 14px; }
-        .web-media-modal__nav--next { right: 14px; }
-        .web-media-modal__toolbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-        .web-media-modal__counter {
-            color: #5d5d59;
-            font-size: 13px;
-            font-weight: 700;
-        }
-        .web-media-modal__thumbs {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-        .web-media-modal__thumb {
-            width: 92px;
-            height: 92px;
-            border: 2px solid transparent;
-            border-radius: 16px;
-            overflow: hidden;
-            background: #f0eee8;
-            cursor: pointer;
-            padding: 0;
-        }
-        .web-media-modal__thumb--active { border-color: #171717; }
-        .web-media-modal__thumb img,
-        .web-media-modal__thumb video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        .web-order-floating {
-            position: fixed;
-            right: 20px;
-            bottom: 20px;
-            z-index: 120;
-            min-height: 50px;
-            border: none;
-            border-radius: 999px;
-            padding: 0 18px;
-            background: #171717;
-            color: #fff;
-            font: inherit;
-            font-weight: 700;
-            cursor: pointer;
-            box-shadow: 0 14px 28px rgba(0,0,0,0.28);
-        }
-        .web-order-floating[disabled] {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        .web-order-action {
-            min-height: 34px;
-            border: none;
-            border-radius: 999px;
-            padding: 0 14px;
-            background: rgba(92,107,69,0.92);
-            color: #fff;
-            font: inherit;
-            font-size: 12px;
-            font-weight: 700;
-            cursor: pointer;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.14);
-        }
-        .web-order-action--ghost {
-            background: rgba(23,23,23,0.08);
-            color: #171717;
-            box-shadow: none;
-        }
-        .web-order-inline {
-            position: absolute;
-            right: 10px;
-            bottom: 10px;
-            z-index: 3;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px;
-            border-radius: 999px;
-            background: rgba(255,255,255,0.92);
-            box-shadow: 0 10px 20px rgba(0,0,0,0.14);
-            opacity: 0;
-            transform: translateY(8px);
-            transition: opacity 0.18s ease, transform 0.18s ease;
-        }
-        [data-item]:hover .web-order-inline,
-        [data-item]:focus-within .web-order-inline,
-        [data-item]:hover .web-media-inline,
-        [data-item]:focus-within .web-media-inline,
-        [data-item] .web-order-inline--visible,
-        [data-item] .web-media-inline--visible {
-            opacity: 1;
-            transform: translateY(0);
-        }
-        .web-qty-step {
-            width: 34px;
-            min-width: 34px;
-            min-height: 34px;
-            border: none;
-            border-radius: 50%;
-            background: rgba(23,23,23,0.08);
-            color: #171717;
-            font: inherit;
-            font-size: 18px;
-            cursor: pointer;
-        }
-        .web-order-inline__qty {
-            width: 72px;
-            min-height: 34px;
-            border: 1px solid #d7d0c2;
-            border-radius: 999px;
-            padding: 0 10px;
-            font: inherit;
-            text-align: center;
-        }
-        .web-media-modal__order {
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        .web-media-inline {
-            opacity: 0;
-            transform: translateY(8px);
-            transition: opacity 0.18s ease, transform 0.18s ease;
-        }
-        .web-order-inline--modal {
-            position: static;
-            right: auto;
-            bottom: auto;
-            background: #f6f4ef;
-            box-shadow: none;
-            padding: 0;
-            opacity: 1;
-            transform: none;
-        }
-        .web-order-panel {
-            position: fixed;
-            top: 0;
-            right: 0;
-            bottom: 0;
-            z-index: 115;
-            width: min(430px, 100%);
-            padding: 20px;
-            background: #fff;
-            box-shadow: -18px 0 36px rgba(0,0,0,0.18);
-            transform: translateX(100%);
-            transition: transform 0.22s ease;
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-        }
-        .web-order-panel--open { transform: translateX(0); }
-        .web-order-panel__header {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 12px;
-        }
-        .web-order-panel__header h2 {
-            margin: 0;
-            font-size: 24px;
-        }
-        .web-order-panel__close {
-            min-width: 40px;
-            min-height: 40px;
-            border: none;
-            border-radius: 50%;
-            background: #171717;
-            color: #fff;
-            font: inherit;
-            cursor: pointer;
-        }
-        .web-order-panel__summary {
-            flex: 1;
-            overflow: auto;
-            display: grid;
-            gap: 10px;
-            align-content: start;
-        }
-        .web-order-item {
-            border: 1px solid #e3dfd6;
-            border-radius: 16px;
-            padding: 12px;
-            background: #faf8f3;
-        }
-        .web-order-item h3 {
-            margin: 0 0 4px;
-            font-size: 16px;
-        }
-        .web-order-item p {
-            margin: 0;
-            color: #5d5d59;
-            font-size: 13px;
-        }
-        .web-order-item__price {
-            margin-top: 8px;
-            font-size: 13px;
-            color: #171717;
-            font-weight: 700;
-        }
-        .web-order-item__meta {
-            margin-top: 8px;
-            display: grid;
-            gap: 4px;
-            font-size: 12px;
-            color: #5d5d59;
-        }
-        .web-order-item__row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            margin-top: 10px;
-        }
-        .web-order-item__actions {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        .web-order-item__qty {
-            width: 90px;
-            min-height: 38px;
-            border: 1px solid #d7d0c2;
-            border-radius: 12px;
-            padding: 0 10px;
-            font: inherit;
-            text-align: center;
-        }
-        .web-order-item__line-total {
-            font-size: 14px;
-            font-weight: 700;
-            color: #171717;
-            text-align: right;
-        }
-        .web-order-totals {
-            display: grid;
-            gap: 8px;
-            padding: 14px;
-            border: 1px solid #e3dfd6;
-            border-radius: 16px;
-            background: #f4f1ea;
-        }
-        .web-order-totals__row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            font-size: 14px;
-            color: #383834;
-        }
-        .web-order-totals__row strong {
-            font-size: 16px;
-            color: #171717;
-        }
-        .web-order-form {
-            display: grid;
-            gap: 10px;
-        }
-        .web-order-form input,
-        .web-order-form textarea {
-            width: 100%;
-            min-height: 42px;
-            border: 1px solid #d7d0c2;
-            border-radius: 14px;
-            padding: 10px 12px;
-            font: inherit;
-        }
-        .web-order-form textarea {
-            min-height: 92px;
-            resize: vertical;
-        }
-        .web-order-submit {
-            min-height: 46px;
-            border: none;
-            border-radius: 14px;
-            background: #5c6b45;
-            color: #fff;
-            font: inherit;
-            font-weight: 700;
-            cursor: pointer;
-        }
-        .web-order-submit[disabled] {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        .web-order-note {
-            margin: 0;
-            color: #5d5d59;
-            font-size: 12px;
-        }
-        @media (max-width: 900px) {
-            .web-export-shell { padding-top: 12px; }
-            .web-media-modal__dialog { padding: 16px; }
-            .web-order-panel { width: 100%; }
-            .web-media-modal__nav {
-                width: 38px;
-                height: 38px;
-            }
-            .web-media-modal__toolbar,
-            .web-order-item__row {
-                align-items: stretch;
-            }
-            .web-order-inline,
-            .web-media-inline {
-                opacity: 1;
-                transform: none;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="./assets/public-catalog.css">
 </head>
-<body class="web-export-body">
-    <div class="web-expired-banner" id="webExpiredBanner">
-        <div class="web-expired-banner__card">
-            <h1>Este catalogo ya no esta disponible</h1>
-            <p>La vigencia del enlace ha expirado. Si necesitas una version actualizada, solicita un nuevo enlace comercial.</p>
+<body>
+    <div class="network-banner" id="networkBanner" hidden></div>
+    <div class="expired" id="expiredOverlay"><div class="expired__card"><h1>Este catalogo ya no esta disponible</h1><p>Solicita a tu vendedor un enlace actualizado para continuar comprando.</p></div></div>
+    <div class="catalog-shell">
+        <header class="catalog-header">
+            <div class="catalog-header__top">
+                <div class="catalog-brand">
+                    <img class="catalog-brand__logo" id="catalogLogo" alt="Logo">
+                    <div>
+                        <h1 id="catalogBrandTitle">${escapeHtml(metadata?.title || "Catalogo comercial")}</h1>
+                        <p id="catalogBrandSubtitle">${escapeHtml(metadata?.footerText || "Experiencia mayorista B2B")}</p>
+                    </div>
+                </div>
+                <div class="catalog-meta">
+                    <span class="catalog-chip" id="sellerReference">Vendedor: General</span>
+                    <span class="catalog-chip" id="clientReference">Cliente: Acceso libre</span>
+                    <span class="catalog-chip" id="queueIndicator">Sin pedidos pendientes</span>
+                </div>
+            </div>
+            <div class="catalog-header__bottom" style="margin-top:14px;">
+                <label class="catalog-search"><span>Buscar</span><input id="catalogSearch" type="search" placeholder="SKU, descripcion, marca o categoria"></label>
+                <div class="exports-panel" id="exportsPanel"></div>
+                <button class="catalog-cart-button" id="cartButton" type="button">Carrito <span class="cart-badge" id="cartBadge">0</span></button>
+            </div>
+        </header>
+        <section class="hero">
+            <div class="hero-card">
+                <h2 id="heroTitle">${escapeHtml(metadata?.heroTitle || metadata?.title || "Catalogo comercial")}</h2>
+                <p id="heroSubtitle">${escapeHtml(metadata?.heroSubtitle || "Selecciona productos, revisa empaques y registra tu pedido empresarial.")}</p>
+                <div class="hero-card__highlights"><div class="hero-highlight">Mayorista B2B</div><div class="hero-highlight">Pedidos trazables</div><div class="hero-highlight">Excel operativo</div></div>
+            </div>
+            <aside class="panel"><h3>Acceso rapido</h3><div class="filters" id="categoryFilters"></div><p class="status-note" id="resultCount"></p></aside>
+        </section>
+        <section class="promo-block" id="promoBlock" hidden>
+            <div class="promo-copy">
+                <p class="promo-kicker">Promocion configurable</p>
+                <h2 id="promoTitle">Promocion comercial</h2>
+                <p id="promoText">Configura una imagen o video liviano desde la app o el panel admin.</p>
+                <div class="promo-actions" id="promoActions"></div>
+            </div>
+            <div class="promo-media" id="promoMedia"></div>
+        </section>
+        <section class="catalog-layout">
+            <div class="catalog-results" id="productGrid"></div>
+            <div class="cart-drawer-backdrop" id="cartDrawerBackdrop"></div>
+            <aside class="drawer" id="cartDrawer" aria-label="Carrito de pedido">
+                <div class="drawer__header"><h3>Carrito y pedido</h3><button class="drawer__close" id="cartClose" type="button">x</button></div>
+                <div id="cartLines"></div>
+                <div class="cart-summary" id="cartSummary"></div>
+                <form class="checkout-form" id="checkoutForm">
+                    <input id="companyName" type="text" placeholder="Empresa" required>
+                    <input id="contactName" type="text" placeholder="Contacto" required>
+                    <input id="contactPhone" type="text" placeholder="Telefono" required>
+                    <input id="contactEmail" type="email" placeholder="Correo">
+                    <input id="addressZone" type="text" placeholder="Direccion o zona">
+                    <textarea id="comments" placeholder="Observaciones"></textarea>
+                    <button class="checkout-button" id="checkoutButton" type="submit">Enviar pedido</button>
+                </form>
+                <div class="drawer__actions" style="margin-top:12px;"><button class="button-secondary" id="continueShoppingButton" type="button">Seguir comprando</button></div>
+                <p class="status-note" id="checkoutStatus">Completa el formulario para registrar el pedido comercial.</p>
+            </aside>
+        </section>
+    </div>
+    <div class="overlay" id="detailOverlay">
+        <div class="modal-card">
+            <div class="toolbar"><div><strong id="detailTitle">Producto</strong><div class="muted" id="detailSubtitle"></div></div><button id="detailClose" type="button">Cerrar</button></div>
+            <div class="modal-gallery"><div class="modal-stage" id="detailStage"></div><div class="thumbs" id="detailThumbs"></div></div>
+            <div class="modal-content">
+                <div class="detail-specs" id="detailSpecs"></div>
+                <aside class="calculator">
+                    <strong>Calculadora mayorista</strong>
+                    <div class="qty-controls" style="margin-top:12px;"><button id="calcMinus" type="button">-</button><input id="calcQty" type="number" min="1" value="1"><button id="calcPlus" type="button">+</button></div>
+                    <div class="calculator-breakdown" id="calcBreakdown"></div>
+                    <button class="button-primary" id="calcAdd" type="button">Agregar al carrito</button>
+                </aside>
+            </div>
         </div>
     </div>
-    <div class="web-export-shell">
-        <main id="catalogRoot" class="catalog-root">${snapshotHtml || ""}</main>
-    </div>
-    <div class="web-media-modal" id="webMediaModal" aria-hidden="true">
-        <div class="web-media-modal__dialog">
-            <div class="web-media-modal__header">
-                <div>
-                    <h2 class="web-media-modal__title" id="webMediaTitle">Multimedia del producto</h2>
-                    <p id="webMediaSubtitle"></p>
-                </div>
-                <button class="web-media-modal__close" id="webMediaClose" type="button">x</button>
-            </div>
-            <div class="web-media-modal__hero">
-                <div class="web-media-modal__stage">
-                    <button class="web-media-modal__nav web-media-modal__nav--prev" id="webMediaPrev" type="button" aria-label="Anterior">&#8249;</button>
-                    <div class="web-media-modal__frame" id="webMediaFrame"></div>
-                    <button class="web-media-modal__nav web-media-modal__nav--next" id="webMediaNext" type="button" aria-label="Siguiente">&#8250;</button>
-                </div>
-                <div class="web-media-modal__toolbar">
-                    <div class="web-media-modal__counter" id="webMediaCounter">1 / 1</div>
-                    <div class="web-media-modal__order" id="webMediaOrder"></div>
-                </div>
-                <div class="web-media-modal__thumbs" id="webMediaThumbs"></div>
-            </div>
-        </div>
-    </div>
-    <button class="web-order-floating" id="webOrderFloating" type="button">Pedido (0)</button>
-    <aside class="web-order-panel" id="webOrderPanel" aria-hidden="true">
-        <div class="web-order-panel__header">
-            <div>
-                <h2>Pedido</h2>
-                <p id="webOrderHeaderText">Agrega productos y envia la solicitud comercial.</p>
-            </div>
-            <button class="web-order-panel__close" id="webOrderClose" type="button">x</button>
-        </div>
-        <div class="web-order-panel__summary" id="webOrderSummary"></div>
-        <form class="web-order-form" id="webOrderForm">
-            <input id="webOrderCustomerName" name="customer_name" type="text" placeholder="Nombre del cliente" required>
-            <input id="webOrderCustomerEmail" name="customer_email" type="email" placeholder="Correo">
-            <input id="webOrderCustomerPhone" name="customer_phone" type="text" placeholder="Telefono o WhatsApp" required>
-            <textarea id="webOrderComments" name="comments" placeholder="Observaciones del pedido"></textarea>
-            <button class="web-order-submit" id="webOrderSubmit" type="submit">Enviar pedido</button>
-        </form>
-        <p class="web-order-note" id="webOrderNote">Configura la API del hosting para guardar pedidos y mandar correos.</p>
-    </aside>
     <script id="catalogMeta" type="application/json">${safeMetadata}</script>
-    <script>
-        (function () {
-            const metadata = JSON.parse(document.getElementById("catalogMeta").textContent || "{}");
-            const products = new Map((metadata.catalog || []).map((entry) => [String(entry.item || ""), entry]));
-            const catalogRoot = document.getElementById("catalogRoot");
-            const expiredBanner = document.getElementById("webExpiredBanner");
-            const modal = document.getElementById("webMediaModal");
-            const modalClose = document.getElementById("webMediaClose");
-            const modalTitle = document.getElementById("webMediaTitle");
-            const modalSubtitle = document.getElementById("webMediaSubtitle");
-            const modalFrame = document.getElementById("webMediaFrame");
-            const modalThumbs = document.getElementById("webMediaThumbs");
-            const modalPrev = document.getElementById("webMediaPrev");
-            const modalNext = document.getElementById("webMediaNext");
-            const modalCounter = document.getElementById("webMediaCounter");
-            const modalOrder = document.getElementById("webMediaOrder");
-            const orderFloating = document.getElementById("webOrderFloating");
-            const orderPanel = document.getElementById("webOrderPanel");
-            const orderClose = document.getElementById("webOrderClose");
-            const orderSummary = document.getElementById("webOrderSummary");
-            const orderHeaderText = document.getElementById("webOrderHeaderText");
-            const orderForm = document.getElementById("webOrderForm");
-            const orderSubmit = document.getElementById("webOrderSubmit");
-            const orderNote = document.getElementById("webOrderNote");
-            const cart = new Map();
-            let activeViewer = null;
-            const apiBaseUrl = String(metadata.apiBaseUrl || "").replace(/\\/+$/, "");
-            const expiresAt = metadata.expiresAt ? new Date(metadata.expiresAt) : null;
-            if (expiresAt && !Number.isNaN(expiresAt.getTime()) && Date.now() > expiresAt.getTime()) {
-                expiredBanner.classList.add("web-expired-banner--visible");
-            }
-            if (!apiBaseUrl) {
-                orderNote.textContent = "La API del hosting no esta configurada. El pedido no se enviara hasta que definas catalogos_api.";
-                orderSubmit.disabled = true;
-            }
-            if (apiBaseUrl && metadata.slug) {
-                fetch(apiBaseUrl + "/check_catalog.php?slug=" + encodeURIComponent(metadata.slug))
-                    .then((response) => response.ok ? response.json() : null)
-                    .then((result) => {
-                        if (!result) return;
-                        if (!result.ok || !result.catalog || result.catalog.status !== "active") {
-                            expiredBanner.classList.add("web-expired-banner--visible");
-                            orderSubmit.disabled = true;
-                        }
-                    })
-                    .catch(() => {});
-            }
-            document.querySelectorAll("[data-item]").forEach((node) => {
-                const item = node.getAttribute("data-item");
-                const product = products.get(item);
-                const mainImage = product && product.media ? String(product.media.mainImage || "") : "";
-                if (!mainImage) return;
-                const existingImage = node.querySelector("img.product-card__image, .campin1-hero__visual img, img");
-                if (existingImage) {
-                    existingImage.setAttribute("src", mainImage);
-                    existingImage.setAttribute("loading", "lazy");
-                    existingImage.classList.add("web-media-clickable");
-                }
-            });
-            document.querySelectorAll("[data-item]").forEach((node) => {
-                const item = node.getAttribute("data-item");
-                const product = products.get(item);
-                if (!product) return;
-                const media = product && product.media ? product.media : null;
-                const mainGallery = media && media.mainImage ? [String(media.mainImage)] : [];
-                const extraGallery = media && Array.isArray(media.gallery) ? media.gallery.filter(Boolean).map(String) : [];
-                const gallery = [...new Set([...mainGallery, ...extraGallery])];
-                const video = media && media.video ? media.video : "";
-                const hasViewerMedia = gallery.length > 0 || Boolean(video);
-                const visualHost = node.querySelector(".product-card__image-wrap, .campin1-hero__visual, .showcase-card__visual, .industrial-card__visual, .minimal-card__visual, .editorial-card__visual, .horizontal-card__visual") || node;
-                const orderInline = document.createElement("div");
-                orderInline.className = "web-order-inline";
-                const qtyInput = createQtyInput(item, 1);
-                const minusButton = createQtyStepButton("-", () => updateQtyInputValue(qtyInput, -1));
-                const plusButton = createQtyStepButton("+", () => updateQtyInputValue(qtyInput, 1));
-                const addButton = document.createElement("button");
-                addButton.type = "button";
-                addButton.className = "web-order-action";
-                addButton.textContent = "Agregar vultos";
-                addButton.setAttribute("data-add-product", item);
-                qtyInput.title = "Cantidad en vultos";
-                addButton.addEventListener("click", () => {
-                    const bultos = Math.max(1, Number(qtyInput.value) || 1);
-                    addToOrder(product, bultos);
-                });
-                orderInline.appendChild(minusButton);
-                orderInline.appendChild(qtyInput);
-                orderInline.appendChild(plusButton);
-                orderInline.appendChild(addButton);
-                visualHost.appendChild(orderInline);
-                const clickableImage = node.querySelector("img.product-card__image, .campin1-hero__visual img, img");
-                if (clickableImage && hasViewerMedia) {
-                    clickableImage.setAttribute("data-open-viewer", item);
-                    clickableImage.setAttribute("title", video ? "Ver fotos y video" : gallery.length > 1 ? "Ver mas fotos" : "Ver foto");
-                    clickableImage.setAttribute("role", "button");
-                    clickableImage.setAttribute("tabindex", "0");
-                    clickableImage.addEventListener("click", () => openMediaViewer(product, gallery, video));
-                    clickableImage.addEventListener("keydown", (event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            openMediaViewer(product, gallery, video);
-                        }
-                    });
-                }
-                if (!hasViewerMedia) return;
-                const button = document.createElement("button");
-                button.type = "button";
-                button.className = "web-media-trigger web-media-trigger--inline";
-                button.setAttribute("data-open-viewer", item);
-                button.textContent = video ? "Ver fotos y video" : gallery.length > 1 ? "Ver mas fotos" : "Ver foto";
-                button.addEventListener("click", () => openMediaViewer(product, gallery, video));
-                const mediaInline = document.createElement("div");
-                mediaInline.className = "web-media-inline";
-                const hint = document.createElement("span");
-                hint.className = "web-media-hint";
-                hint.textContent = gallery.length > 1 || video ? "Toca la imagen para ampliar" : "Toca para ver";
-                mediaInline.appendChild(button);
-                mediaInline.appendChild(hint);
-                node.appendChild(mediaInline);
-            });
-            catalogRoot.addEventListener("click", (event) => {
-                const viewerTrigger = event.target.closest("[data-open-viewer]");
-                if (viewerTrigger) {
-                    const item = viewerTrigger.getAttribute("data-open-viewer");
-                    if (item) {
-                        event.preventDefault();
-                        openViewerForItem(item);
-                        return;
-                    }
-                }
-                const productCard = event.target.closest("[data-item]");
-                if (productCard && !event.target.closest("button, input, textarea, select, a, label")) {
-                    const visualTap = event.target.closest(".product-card__image-wrap, .campin1-hero__visual, .showcase-card__visual, .industrial-card__visual, .minimal-card__visual, .editorial-card__visual, .horizontal-card__visual, img");
-                    if (visualTap) {
-                        const item = productCard.getAttribute("data-item");
-                        if (item) {
-                            openViewerForItem(item);
-                            return;
-                        }
-                    }
-                }
-            });
-            orderFloating.addEventListener("click", openOrderPanel);
-            orderClose.addEventListener("click", closeOrderPanel);
-            orderPanel.addEventListener("click", (event) => {
-                if (event.target.matches("[data-remove-item]")) {
-                    const item = event.target.getAttribute("data-remove-item");
-                    cart.delete(item);
-                    renderOrderSummary();
-                }
-                if (event.target.matches("[data-qty-item]")) {
-                    const item = event.target.getAttribute("data-qty-item");
-                    const input = orderSummary.querySelector('[data-qty-input="' + item + '"]');
-                    if (!input) return;
-                    const nextQty = Math.max(1, Number(input.value) || 1);
-                    const current = cart.get(item);
-                    if (!current) return;
-                    current.bultos = nextQty;
-                    current.quantity = current.bultos;
-                    current.piecesTotal = current.bultos * Number(current.packageQty || 1);
-                    current.lineTotal = current.piecesTotal * Number(current.priceValue || 0);
-                    renderOrderSummary();
-                }
-            });
-            orderForm.addEventListener("submit", async (event) => {
-                event.preventDefault();
-                if (!apiBaseUrl) return;
-                if (!cart.size) {
-                    orderNote.textContent = "Agrega al menos un producto antes de enviar el pedido.";
-                    return;
-                }
-                orderSubmit.disabled = true;
-                orderNote.textContent = "Enviando pedido...";
-                const payload = {
-                    slug: metadata.slug || "",
-                    customer_name: document.getElementById("webOrderCustomerName").value.trim(),
-                    customer_email: document.getElementById("webOrderCustomerEmail").value.trim(),
-                    customer_phone: document.getElementById("webOrderCustomerPhone").value.trim(),
-                    comments: document.getElementById("webOrderComments").value.trim(),
-                    items: Array.from(cart.values()).map((entry) => ({
-                        item_code: entry.item,
-                        description: entry.description,
-                        quantity: entry.bultos,
-                        price: entry.priceValue,
-                        package_qty: entry.packageQty,
-                        pieces_total: entry.piecesTotal,
-                        line_total: entry.lineTotal
-                    }))
-                };
-                try {
-                    const response = await fetch(apiBaseUrl + "/submit_order.php", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(payload)
-                    });
-                    const result = await response.json();
-                    if (!response.ok || !result.ok) throw new Error(result && result.error ? result.error : "No se pudo enviar el pedido.");
-                    cart.clear();
-                    renderOrderSummary();
-                    orderForm.reset();
-                    orderNote.textContent = "Pedido enviado correctamente. Revisa tu correo para la confirmacion si aplica.";
-                } catch (error) {
-                    orderNote.textContent = "No se pudo enviar el pedido: " + error.message;
-                } finally {
-                    orderSubmit.disabled = !apiBaseUrl;
-                }
-            });
-            renderOrderSummary();
-            function openMediaViewer(product, gallery, video) {
-                const items = gallery.map((src) => ({ type:"image", src }));
-                if (video) items.push({ type:"video", src:video });
-                if (!items.length) return;
-                modal.classList.add("web-media-modal--open");
-                modal.setAttribute("aria-hidden", "false");
-                modalTitle.textContent = product.description || product.shortDescription || product.item || "Producto";
-                modalSubtitle.textContent = [product.item ? "ITEM: " + product.item : "", product.price || "", product.available ? "Disponible: " + product.available : ""].filter(Boolean).join(" | ");
-                activeViewer = { product, items, index: 0 };
-                renderMedia(items, 0);
-                renderModalOrder(product);
-            }
-            function openViewerForItem(item) {
-                const product = products.get(String(item || ""));
-                if (!product || !product.media) return;
-                const mainGallery = product.media.mainImage ? [String(product.media.mainImage)] : [];
-                const extraGallery = Array.isArray(product.media.gallery) ? product.media.gallery.filter(Boolean).map(String) : [];
-                const gallery = [...new Set([...mainGallery, ...extraGallery])];
-                const video = product.media.video ? String(product.media.video) : "";
-                if (!gallery.length && !video) return;
-                openMediaViewer(product, gallery, video);
-            }
-            function renderMedia(items, activeIndex) {
-                if (!items.length) return;
-                modalFrame.innerHTML = "";
-                modalThumbs.innerHTML = "";
-                const active = items[activeIndex];
-                if (activeViewer) {
-                    activeViewer.index = activeIndex;
-                }
-                const mainNode = active.type === "video" ? document.createElement("video") : document.createElement("img");
-                if (active.type === "video") {
-                    mainNode.src = active.src;
-                    mainNode.controls = true;
-                    mainNode.preload = "metadata";
-                } else {
-                    mainNode.src = active.src;
-                    mainNode.alt = "Multimedia del producto";
-                }
-                modalFrame.appendChild(mainNode);
-                modalCounter.textContent = (activeIndex + 1) + " / " + items.length;
-                modalPrev.disabled = items.length <= 1;
-                modalNext.disabled = items.length <= 1;
-                items.forEach((item, index) => {
-                    const thumb = document.createElement("button");
-                    thumb.type = "button";
-                    thumb.className = "web-media-modal__thumb" + (index === activeIndex ? " web-media-modal__thumb--active" : "");
-                    const mediaNode = item.type === "video" ? document.createElement("video") : document.createElement("img");
-                    mediaNode.src = item.src;
-                    if (item.type === "video") mediaNode.muted = true;
-                    thumb.appendChild(mediaNode);
-                    thumb.addEventListener("click", () => renderMedia(items, index));
-                    modalThumbs.appendChild(thumb);
-                });
-            }
-            function renderModalOrder(product) {
-                modalOrder.innerHTML = "";
-                const orderInline = document.createElement("div");
-                orderInline.className = "web-order-inline web-order-inline--modal";
-                const qtyInput = createQtyInput(product.item, 1);
-                const minusButton = createQtyStepButton("-", () => updateQtyInputValue(qtyInput, -1));
-                const plusButton = createQtyStepButton("+", () => updateQtyInputValue(qtyInput, 1));
-                const addButton = document.createElement("button");
-                addButton.type = "button";
-                addButton.className = "web-order-action";
-                addButton.textContent = "Agregar vultos";
-                addButton.addEventListener("click", () => {
-                    const bultos = Math.max(1, Number(qtyInput.value) || 1);
-                    addToOrder(product, bultos);
-                });
-                orderInline.appendChild(minusButton);
-                orderInline.appendChild(qtyInput);
-                orderInline.appendChild(plusButton);
-                orderInline.appendChild(addButton);
-                modalOrder.appendChild(orderInline);
-            }
-            function closeModal() {
-                modal.classList.remove("web-media-modal--open");
-                modal.setAttribute("aria-hidden", "true");
-                modalFrame.innerHTML = "";
-                modalThumbs.innerHTML = "";
-                modalOrder.innerHTML = "";
-                modalCounter.textContent = "1 / 1";
-                activeViewer = null;
-            }
-            function addToOrder(product, quantity) {
-                if (!product || !product.item) return;
-                const qtyToAdd = Math.max(1, Number(quantity) || 1);
-                const priceValue = parsePriceValue(product.price);
-                const packageQty = parsePackageQty(product.packageQty || product.empaque || product.package || product.media?.packageQty || product.media?.empaque || product.media?.package);
-                const piecesToAdd = qtyToAdd * packageQty;
-                if (!cart.has(product.item)) {
-                    cart.set(product.item, {
-                        item: product.item,
-                        description: product.description || product.shortDescription || product.item,
-                        price: product.price || "",
-                        priceValue,
-                        packageQty,
-                        bultos: qtyToAdd,
-                        piecesTotal: piecesToAdd,
-                        quantity: qtyToAdd,
-                        lineTotal: piecesToAdd * priceValue
-                    });
-                } else {
-                    const current = cart.get(product.item);
-                    current.bultos += qtyToAdd;
-                    current.quantity = current.bultos;
-                    current.priceValue = priceValue;
-                    current.packageQty = packageQty;
-                    current.piecesTotal = current.bultos * current.packageQty;
-                    current.lineTotal = current.piecesTotal * current.priceValue;
-                }
-                renderOrderSummary();
-                openOrderPanel();
-            }
-            function renderOrderSummary() {
-                const entries = Array.from(cart.values());
-                const totalUnits = entries.reduce((sum, entry) => sum + Number(entry.bultos || 0), 0);
-                const subtotal = entries.reduce((sum, entry) => sum + Number(entry.lineTotal || 0), 0);
-                orderFloating.textContent = "Pedido (" + totalUnits + " bultos)";
-                orderSummary.innerHTML = entries.length
-                    ? entries.map((entry) => '<article class="web-order-item"><h3>' + escapeHtmlJs(entry.description) + '</h3><p>ITEM: ' + escapeHtmlJs(entry.item) + '</p><div class="web-order-item__price">Precio unitario: ' + escapeHtmlJs(formatMoney(entry.priceValue)) + '</div><div class="web-order-item__meta"><div>Empaque: ' + escapeHtmlJs(String(entry.packageQty)) + ' piezas</div><div>Vultos: ' + escapeHtmlJs(String(entry.bultos)) + '</div><div>Piezas totales: ' + escapeHtmlJs(String(entry.piecesTotal)) + '</div></div><div class="web-order-item__row"><div class="web-order-item__actions"><input class="web-order-item__qty" data-qty-input="' + escapeHtmlJs(entry.item) + '" type="number" min="1" value="' + Number(entry.bultos || 1) + '"><button class="web-order-submit" data-qty-item="' + escapeHtmlJs(entry.item) + '" type="button">Actualizar</button><button class="web-order-action web-order-action--ghost" data-remove-item="' + escapeHtmlJs(entry.item) + '" type="button">Eliminar</button></div><div class="web-order-item__line-total">' + escapeHtmlJs(formatMoney(entry.lineTotal)) + '</div></div></article>').join("") + '<div class="web-order-totals"><div class="web-order-totals__row"><span>Subtotal</span><span>' + escapeHtmlJs(formatMoney(subtotal)) + '</span></div><div class="web-order-totals__row"><strong>Total general</strong><strong>' + escapeHtmlJs(formatMoney(subtotal)) + '</strong></div></div>'
-                    : '<p class="web-order-note">Aun no has agregado productos al pedido.</p>';
-                orderHeaderText.textContent = entries.length ? "Productos seleccionados: " + entries.length + " | Vultos totales: " + totalUnits : "Agrega productos desde el catalogo.";
-            }
-            function openOrderPanel() {
-                orderPanel.classList.add("web-order-panel--open");
-                orderPanel.setAttribute("aria-hidden", "false");
-            }
-            function closeOrderPanel() {
-                orderPanel.classList.remove("web-order-panel--open");
-                orderPanel.setAttribute("aria-hidden", "true");
-            }
-            function updateQtyInputValue(input, delta) {
-                const nextValue = Math.max(1, (Number(input.value) || 1) + delta);
-                input.value = String(nextValue);
-            }
-            function createQtyInput(item, value) {
-                const input = document.createElement("input");
-                input.type = "number";
-                input.min = "1";
-                input.value = String(Math.max(1, Number(value) || 1));
-                input.className = "web-order-inline__qty";
-                input.setAttribute("data-add-qty", item);
-                return input;
-            }
-            function createQtyStepButton(label, onClick) {
-                const button = document.createElement("button");
-                button.type = "button";
-                button.className = "web-qty-step";
-                button.textContent = label;
-                button.addEventListener("click", onClick);
-                return button;
-            }
-            function parsePriceValue(value) {
-                if (typeof value === "number") return value;
-                const normalized = String(value || "").replace(/[^0-9.,-]/g, "").replace(/,/g, ".");
-                const parsed = Number(normalized);
-                return Number.isFinite(parsed) ? parsed : 0;
-            }
-            function parsePackageQty(value) {
-                const normalized = String(value || "").replace(/[^0-9.,-]/g, "").replace(/,/g, ".");
-                const parsed = Number(normalized);
-                return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-            }
-            function formatMoney(value) {
-                return new Intl.NumberFormat("es-PA", {
-                    style: "currency",
-                    currency: "USD",
-                    minimumFractionDigits: 2
-                }).format(Number(value) || 0);
-            }
-            modalClose.addEventListener("click", closeModal);
-            modal.addEventListener("click", (event) => { if (event.target === modal) closeModal(); });
-            modalPrev.addEventListener("click", () => {
-                if (!activeViewer || activeViewer.items.length <= 1) return;
-                const nextIndex = (activeViewer.index - 1 + activeViewer.items.length) % activeViewer.items.length;
-                renderMedia(activeViewer.items, nextIndex);
-            });
-            modalNext.addEventListener("click", () => {
-                if (!activeViewer || activeViewer.items.length <= 1) return;
-                const nextIndex = (activeViewer.index + 1) % activeViewer.items.length;
-                renderMedia(activeViewer.items, nextIndex);
-            });
-            window.addEventListener("keydown", (event) => {
-                if (event.key === "Escape") { closeModal(); closeOrderPanel(); }
-                if (!activeViewer) return;
-                if (event.key === "ArrowLeft") {
-                    const nextIndex = (activeViewer.index - 1 + activeViewer.items.length) % activeViewer.items.length;
-                    renderMedia(activeViewer.items, nextIndex);
-                }
-                if (event.key === "ArrowRight") {
-                    const nextIndex = (activeViewer.index + 1) % activeViewer.items.length;
-                    renderMedia(activeViewer.items, nextIndex);
-                }
-            });
-            function escapeHtmlJs(text) {
-                return String(text || "")
-                    .replace(/&/g, "&amp;")
-                    .replace(/</g, "&lt;")
-                    .replace(/>/g, "&gt;")
-                    .replace(/"/g, "&quot;")
-                    .replace(/'/g, "&#39;");
-            }
-        })();
-    </script>
+    <script src="./assets/public-catalog.js"></script>
 </body>
 </html>`;
 }

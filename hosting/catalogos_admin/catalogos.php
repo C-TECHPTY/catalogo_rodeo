@@ -4,244 +4,138 @@ declare(strict_types=1);
 require __DIR__ . '/_bootstrap.php';
 admin_require_login();
 
-$flash = '';
-$flashType = 'ok';
-$catalogsDir = rtrim((string) catalog_config('paths.public_catalogs_dir', dirname(__DIR__) . '/catalogos'), DIRECTORY_SEPARATOR);
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verify_csrf_or_abort();
     $action = (string) ($_POST['action'] ?? '');
     $catalogId = (int) ($_POST['catalog_id'] ?? 0);
 
-    if ($catalogId > 0) {
-        $stmt = db()->prepare('SELECT * FROM catalogs WHERE id = :id LIMIT 1');
-        $stmt->execute(['id' => $catalogId]);
-        $catalog = $stmt->fetch();
+    if ($action === 'save' && $catalogId > 0) {
+        db()->prepare(
+            'UPDATE catalogs
+             SET title = :title, status = :status, expires_at = :expires_at, seller_name = :seller_name,
+                 client_name = :client_name, hero_title = :hero_title, hero_subtitle = :hero_subtitle,
+                 promo_title = :promo_title, promo_text = :promo_text, promo_image_url = :promo_image_url,
+                 promo_video_url = :promo_video_url, promo_link_url = :promo_link_url, promo_link_label = :promo_link_label,
+                 legacy_pdf_url = :legacy_pdf_url, modern_pdf_url = :modern_pdf_url, updated_at = NOW()
+             WHERE id = :id'
+        )->execute([
+            'title' => trim((string) $_POST['title']),
+            'status' => trim((string) $_POST['status']),
+            'expires_at' => parse_datetime_or_null((string) ($_POST['expires_at'] ?? '')),
+            'seller_name' => trim((string) ($_POST['seller_name'] ?? '')),
+            'client_name' => trim((string) ($_POST['client_name'] ?? '')),
+            'hero_title' => trim((string) ($_POST['hero_title'] ?? '')),
+            'hero_subtitle' => trim((string) ($_POST['hero_subtitle'] ?? '')),
+            'promo_title' => trim((string) ($_POST['promo_title'] ?? '')),
+            'promo_text' => trim((string) ($_POST['promo_text'] ?? '')),
+            'promo_image_url' => trim((string) ($_POST['promo_image_url'] ?? '')),
+            'promo_video_url' => trim((string) ($_POST['promo_video_url'] ?? '')),
+            'promo_link_url' => trim((string) ($_POST['promo_link_url'] ?? '')),
+            'promo_link_label' => trim((string) ($_POST['promo_link_label'] ?? '')),
+            'legacy_pdf_url' => trim((string) ($_POST['legacy_pdf_url'] ?? '')),
+            'modern_pdf_url' => trim((string) ($_POST['modern_pdf_url'] ?? '')),
+            'id' => $catalogId,
+        ]);
+        audit_log('catalog.updated', 'catalogs', $catalogId);
+        flash_set('success', 'Catalogo actualizado correctamente.');
+        header('Location: catalogos.php');
+        exit;
+    }
 
-        if ($catalog) {
-            if ($action === 'renew') {
-                $days = max(1, (int) ($_POST['renew_days'] ?? 30));
-                $baseDate = !empty($catalog['expires_at']) && strtotime((string) $catalog['expires_at']) > time()
-                    ? strtotime((string) $catalog['expires_at'])
-                    : time();
-                $newDate = date('Y-m-d H:i:s', strtotime("+{$days} days", $baseDate));
-                $update = db()->prepare('UPDATE catalogs SET expires_at = :expires_at, status = :status, updated_at = NOW() WHERE id = :id');
-                $update->execute([
-                    'expires_at' => $newDate,
-                    'status' => 'active',
-                    'id' => $catalogId,
-                ]);
-                $flash = 'Link renovado correctamente.';
-            }
-
-            if ($action === 'delete') {
-                $delete = db()->prepare('DELETE FROM catalogs WHERE id = :id');
-                $delete->execute(['id' => $catalogId]);
-                delete_directory_recursive($catalogsDir . DIRECTORY_SEPARATOR . $catalog['slug']);
-                $flash = 'Catalogo eliminado correctamente.';
-            }
-
-            if ($action === 'save') {
-                $title = trim((string) ($_POST['title'] ?? $catalog['title']));
-                $seller = trim((string) ($_POST['seller_name'] ?? $catalog['seller_name']));
-                $client = trim((string) ($_POST['client_name'] ?? $catalog['client_name']));
-                $status = trim((string) ($_POST['status'] ?? $catalog['status']));
-                $expiresAtInput = trim((string) ($_POST['expires_at'] ?? ''));
-                $expiresAt = $expiresAtInput !== '' ? date('Y-m-d H:i:s', strtotime($expiresAtInput)) : null;
-                $update = db()->prepare(
-                    'UPDATE catalogs
-                     SET title = :title, seller_name = :seller_name, client_name = :client_name, status = :status, expires_at = :expires_at, updated_at = NOW()
-                     WHERE id = :id'
-                );
-                $update->execute([
-                    'title' => $title !== '' ? $title : $catalog['title'],
-                    'seller_name' => $seller,
-                    'client_name' => $client,
-                    'status' => $status !== '' ? $status : $catalog['status'],
-                    'expires_at' => $expiresAt,
-                    'id' => $catalogId,
-                ]);
-                $flash = 'Catalogo actualizado correctamente.';
-            }
-        } else {
-            $flash = 'No se encontro el catalogo seleccionado.';
-            $flashType = 'error';
-        }
+    if ($action === 'toggle' && $catalogId > 0) {
+        db()->prepare(
+            "UPDATE catalogs
+             SET status = CASE WHEN status = 'active' THEN 'archived' ELSE 'active' END, updated_at = NOW()
+             WHERE id = :id"
+        )->execute(['id' => $catalogId]);
+        audit_log('catalog.toggled', 'catalogs', $catalogId);
+        flash_set('success', 'Estado del catalogo actualizado.');
+        header('Location: catalogos.php');
+        exit;
     }
 }
+
+$catalogs = db()->query(
+    'SELECT c.*, s.name AS seller_display_name, cl.business_name AS client_business_name,
+            (SELECT COUNT(*) FROM catalog_share_links l WHERE l.catalog_id = c.id) AS links_count,
+            (SELECT COUNT(*) FROM orders o WHERE o.catalog_id = c.id) AS orders_count
+     FROM catalogs c
+     LEFT JOIN sellers s ON s.id = c.seller_id
+     LEFT JOIN clients cl ON cl.id = c.client_id
+     ORDER BY c.updated_at DESC
+     LIMIT 200'
+)->fetchAll();
 
 $editId = (int) ($_GET['edit'] ?? 0);
-$statement = db()->query('SELECT * FROM catalogs ORDER BY updated_at DESC, created_at DESC LIMIT 200');
-$catalogs = $statement->fetchAll();
 $editCatalog = null;
-
-if ($editId > 0) {
-    foreach ($catalogs as $candidate) {
-        if ((int) $candidate['id'] === $editId) {
-            $editCatalog = $candidate;
-            break;
-        }
+foreach ($catalogs as $catalog) {
+    if ((int) $catalog['id'] === $editId) {
+        $editCatalog = $catalog;
+        break;
     }
 }
 
-admin_header('Catalogos');
+admin_header('Catalogos', 'catalogos.php');
 ?>
-<style>
-    .catalog-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-    .catalog-actions form { margin: 0; }
-    .catalog-actions button,
-    .catalog-actions a {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 34px;
-        padding: 0 12px;
-        border-radius: 999px;
-        border: 1px solid #d8d0c3;
-        background: #fff;
-        color: #222;
-        text-decoration: none;
-        font-size: 12px;
-        font-weight: 700;
-        cursor: pointer;
-    }
-    .catalog-actions .danger { background: #8e3030; color: #fff; border-color: #8e3030; }
-    .catalog-actions .primary { background: #1f1f1f; color: #fff; border-color: #1f1f1f; }
-    .catalog-edit-card { margin-bottom: 20px; }
-    .catalog-edit-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .catalog-edit-grid label { display: grid; gap: 6px; font-size: 13px; }
-    .catalog-edit-grid .wide { grid-column: 1 / -1; }
-    .flash-ok { background: #e2efda; color: #2f5728; }
-    .flash-error { background: #f6d7d7; color: #8e3030; }
-</style>
-
-<?php if ($flash !== ''): ?>
-    <div class="card <?= $flashType === 'error' ? 'flash-error' : 'flash-ok' ?>" style="margin-bottom:16px;">
-        <?= htmlspecialchars($flash, ENT_QUOTES, 'UTF-8') ?>
-    </div>
-<?php endif; ?>
-
 <?php if ($editCatalog): ?>
-    <div class="card catalog-edit-card">
-        <h1>Editar catalogo: <?= htmlspecialchars($editCatalog['slug'], ENT_QUOTES, 'UTF-8') ?></h1>
-        <form method="post" class="catalog-edit-grid">
+    <section class="card" style="margin-bottom:18px;">
+        <div class="toolbar"><strong>Editar catalogo</strong><a class="button" href="catalogos.php">Cancelar</a></div>
+        <form class="form-grid" method="post">
+            <?= csrf_field() ?>
             <input type="hidden" name="action" value="save">
             <input type="hidden" name="catalog_id" value="<?= (int) $editCatalog['id'] ?>">
-            <label>
-                <span>Titulo</span>
-                <input type="text" name="title" value="<?= htmlspecialchars((string) $editCatalog['title'], ENT_QUOTES, 'UTF-8') ?>">
-            </label>
-            <label>
-                <span>Estado</span>
-                <select name="status">
-                    <?php foreach (['active', 'expired', 'archived', 'draft'] as $option): ?>
-                        <option value="<?= $option ?>" <?= $option === $editCatalog['status'] ? 'selected' : '' ?>><?= htmlspecialchars($option, ENT_QUOTES, 'UTF-8') ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-            <label>
-                <span>Vendedor</span>
-                <input type="text" name="seller_name" value="<?= htmlspecialchars((string) $editCatalog['seller_name'], ENT_QUOTES, 'UTF-8') ?>">
-            </label>
-            <label>
-                <span>Cliente</span>
-                <input type="text" name="client_name" value="<?= htmlspecialchars((string) $editCatalog['client_name'], ENT_QUOTES, 'UTF-8') ?>">
-            </label>
-            <label class="wide">
-                <span>Vence</span>
-                <input type="datetime-local" name="expires_at" value="<?= !empty($editCatalog['expires_at']) ? htmlspecialchars(date('Y-m-d\TH:i', strtotime((string) $editCatalog['expires_at'])), ENT_QUOTES, 'UTF-8') : '' ?>">
-            </label>
-            <div class="wide catalog-actions">
-                <button class="primary" type="submit">Guardar cambios</button>
-                <a href="catalogos.php">Cancelar</a>
-            </div>
+            <label><span>Titulo</span><input type="text" name="title" value="<?= html_escape($editCatalog['title']) ?>" required></label>
+            <label><span>Estado</span><select name="status"><?php foreach (['active','draft','expired','archived'] as $status): ?><option value="<?= $status ?>" <?= $status === $editCatalog['status'] ? 'selected' : '' ?>><?= html_escape($status) ?></option><?php endforeach; ?></select></label>
+            <label><span>Vendedor visible</span><input type="text" name="seller_name" value="<?= html_escape($editCatalog['seller_name']) ?>"></label>
+            <label><span>Cliente visible</span><input type="text" name="client_name" value="<?= html_escape($editCatalog['client_name']) ?>"></label>
+            <label class="wide"><span>Hero title</span><input type="text" name="hero_title" value="<?= html_escape($editCatalog['hero_title']) ?>"></label>
+            <label class="wide"><span>Hero subtitle</span><input type="text" name="hero_subtitle" value="<?= html_escape($editCatalog['hero_subtitle']) ?>"></label>
+            <label><span>Promo title</span><input type="text" name="promo_title" value="<?= html_escape($editCatalog['promo_title'] ?? '') ?>"></label>
+            <label><span>Promo texto</span><input type="text" name="promo_text" value="<?= html_escape($editCatalog['promo_text'] ?? '') ?>"></label>
+            <label class="wide"><span>Promo imagen URL</span><input type="text" name="promo_image_url" value="<?= html_escape($editCatalog['promo_image_url'] ?? '') ?>"></label>
+            <label class="wide"><span>Promo video URL</span><input type="text" name="promo_video_url" value="<?= html_escape($editCatalog['promo_video_url'] ?? '') ?>"></label>
+            <label class="wide"><span>Promo link URL</span><input type="text" name="promo_link_url" value="<?= html_escape($editCatalog['promo_link_url'] ?? '') ?>"></label>
+            <label><span>Promo CTA</span><input type="text" name="promo_link_label" value="<?= html_escape($editCatalog['promo_link_label'] ?? '') ?>"></label>
+            <label class="wide"><span>PDF legado URL</span><input type="text" name="legacy_pdf_url" value="<?= html_escape($editCatalog['legacy_pdf_url'] ?? '') ?>"></label>
+            <label class="wide"><span>PDF moderno URL</span><input type="text" name="modern_pdf_url" value="<?= html_escape($editCatalog['modern_pdf_url'] ?? '') ?>"></label>
+            <label class="wide"><span>Vence</span><input type="datetime-local" name="expires_at" value="<?= !empty($editCatalog['expires_at']) ? html_escape(date('Y-m-d\TH:i', strtotime((string) $editCatalog['expires_at']))) : '' ?>"></label>
+            <div class="wide"><button class="button--primary" type="submit">Guardar cambios</button></div>
         </form>
-    </div>
+    </section>
 <?php endif; ?>
 
-<div class="card">
-    <h1>Catalogos publicados</h1>
-    <table>
-        <thead>
-            <tr>
-                <th>Slug</th>
-                <th>Titulo</th>
-                <th>Estado</th>
-                <th>Vendedor</th>
-                <th>Cliente</th>
-                <th>Vence</th>
-                <th>Links</th>
-                <th>Acciones</th>
-            </tr>
-        </thead>
-        <tbody>
-        <?php foreach ($catalogs as $catalog): ?>
-            <?php $status = resolve_catalog_status($catalog); ?>
-            <tr>
-                <td><?= htmlspecialchars($catalog['slug'], ENT_QUOTES, 'UTF-8') ?></td>
-                <td><?= htmlspecialchars($catalog['title'], ENT_QUOTES, 'UTF-8') ?></td>
-                <td>
-                    <span class="badge <?= $status === 'active' ? 'badge--active' : 'badge--expired' ?>">
-                        <?= htmlspecialchars($status, ENT_QUOTES, 'UTF-8') ?>
-                    </span>
-                </td>
-                <td><?= htmlspecialchars((string) $catalog['seller_name'], ENT_QUOTES, 'UTF-8') ?></td>
-                <td><?= htmlspecialchars((string) $catalog['client_name'], ENT_QUOTES, 'UTF-8') ?></td>
-                <td><?= htmlspecialchars((string) $catalog['expires_at'], ENT_QUOTES, 'UTF-8') ?></td>
-                <td>
-                    <?php if (!empty($catalog['public_url'])): ?>
-                        <a href="<?= htmlspecialchars($catalog['public_url'], ENT_QUOTES, 'UTF-8') ?>" target="_blank">Ver</a>
-                    <?php endif; ?>
-                    <?php if (!empty($catalog['pdf_url'])): ?>
-                        <br><a href="<?= htmlspecialchars($catalog['pdf_url'], ENT_QUOTES, 'UTF-8') ?>" target="_blank">PDF</a>
-                    <?php endif; ?>
-                </td>
-                <td>
-                    <div class="catalog-actions">
-                        <a href="catalogos.php?edit=<?= (int) $catalog['id'] ?>">Editar</a>
-                        <form method="post">
-                            <input type="hidden" name="action" value="renew">
-                            <input type="hidden" name="catalog_id" value="<?= (int) $catalog['id'] ?>">
-                            <input type="hidden" name="renew_days" value="30">
-                            <button type="submit">Renovar 30d</button>
-                        </form>
-                        <form method="post" onsubmit="return confirm('¿Eliminar este catalogo y su carpeta publicada?');">
-                            <input type="hidden" name="action" value="delete">
-                            <input type="hidden" name="catalog_id" value="<?= (int) $catalog['id'] ?>">
-                            <button class="danger" type="submit">Eliminar</button>
-                        </form>
-                    </div>
-                </td>
-            </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
-</div>
+<section class="card">
+    <div class="toolbar"><strong>Catalogos publicados</strong><span class="pill"><?= count($catalogs) ?> registros</span></div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Slug</th><th>Titulo</th><th>Vendedor</th><th>Estado</th><th>Creado</th><th>Expira</th><th>Links</th><th>Pedidos</th><th>Acciones</th></tr></thead>
+            <tbody>
+            <?php foreach ($catalogs as $catalog): ?>
+                <tr>
+                    <td><?= html_escape($catalog['slug']) ?></td>
+                    <td><strong><?= html_escape($catalog['title']) ?></strong><div class="muted"><?= html_escape($catalog['public_url']) ?></div></td>
+                    <td><?= html_escape($catalog['seller_display_name'] ?: $catalog['seller_name'] ?: 'Sin vendedor') ?></td>
+                    <td><?= admin_status_badge(resolve_catalog_status($catalog)) ?></td>
+                    <td><?= html_escape($catalog['created_at'] ?? $catalog['generated_at']) ?></td>
+                    <td><?= html_escape($catalog['expires_at'] ?: 'Sin vencimiento') ?></td>
+                    <td><?= (int) $catalog['links_count'] ?></td>
+                    <td><?= (int) $catalog['orders_count'] ?></td>
+                    <td>
+                        <div class="toolbar__actions">
+                            <a class="button" href="catalogos.php?edit=<?= (int) $catalog['id'] ?>">Editar</a>
+                            <?php if (!empty($catalog['public_url'])): ?><a class="button" href="<?= html_escape($catalog['public_url']) ?>" target="_blank">Abrir</a><?php endif; ?>
+                            <form method="post">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="toggle">
+                                <input type="hidden" name="catalog_id" value="<?= (int) $catalog['id'] ?>">
+                                <button type="submit"><?= $catalog['status'] === 'active' ? 'Archivar' : 'Activar' ?></button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</section>
 <?php admin_footer(); ?>
-
-<?php
-function delete_directory_recursive(string $dirPath): void
-{
-    if (!is_dir($dirPath)) {
-        return;
-    }
-
-    $items = scandir($dirPath);
-    if ($items === false) {
-        return;
-    }
-
-    foreach ($items as $item) {
-        if ($item === '.' || $item === '..') {
-            continue;
-        }
-
-        $fullPath = $dirPath . DIRECTORY_SEPARATOR . $item;
-        if (is_dir($fullPath)) {
-            delete_directory_recursive($fullPath);
-            continue;
-        }
-        @unlink($fullPath);
-    }
-
-    @rmdir($dirPath);
-}

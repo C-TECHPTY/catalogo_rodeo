@@ -3,8 +3,11 @@ declare(strict_types=1);
 
 require __DIR__ . '/bootstrap.php';
 
+admin_require_login(['admin', 'sales', 'billing', 'operator', 'vendor']);
+
 $orderId = (int) ($_GET['id'] ?? 0);
 $format = strtolower(trim((string) ($_GET['format'] ?? 'csv')));
+
 if ($orderId <= 0) {
     json_response([
         'ok' => false,
@@ -13,7 +16,7 @@ if ($orderId <= 0) {
 }
 
 $orderStmt = db()->prepare(
-    'SELECT o.*, c.slug AS catalog_slug, c.title AS catalog_title, c.catalog_json_path
+    'SELECT o.*, c.slug AS catalog_slug_ref, c.title AS catalog_title
      FROM orders o
      INNER JOIN catalogs c ON c.id = o.catalog_id
      WHERE o.id = :id
@@ -31,41 +34,22 @@ if (!$order) {
 
 $itemsStmt = db()->prepare('SELECT * FROM order_items WHERE order_id = :order_id ORDER BY id ASC');
 $itemsStmt->execute(['order_id' => $orderId]);
-$items = $itemsStmt->fetchAll();
-
-$packageMap = load_catalog_package_map((string) ($order['catalog_json_path'] ?? ''));
-$rows = [];
-$subtotal = 0.0;
-
-foreach ($items as $item) {
-    $packageQty = (float) ($packageMap[$item['item_code']]['packageQty'] ?? 1);
-    if ($packageQty <= 0) {
-        $packageQty = 1;
-    }
-    $bultos = (float) $item['quantity'];
-    $piecesTotal = $bultos * $packageQty;
-    $lineTotal = (float) $item['line_total'];
-    $subtotal += $lineTotal;
-    $rows[] = [
-        'item_code' => (string) $item['item_code'],
-        'description' => (string) $item['description'],
-        'package_qty' => $packageQty,
-        'bultos' => $bultos,
-        'pieces_total' => $piecesTotal,
-        'price' => (float) $item['price'],
-        'line_total' => $lineTotal,
-    ];
-}
+$rows = $itemsStmt->fetchAll();
 
 if ($format === 'xlsx') {
-    output_order_xlsx($order, $rows, $subtotal);
+    output_order_xlsx($order, $rows);
     exit;
 }
 
-output_order_csv($order, $rows, $subtotal);
+if ($format === 'pdf') {
+    output_order_printable_html($order, $rows);
+    exit;
+}
+
+output_order_csv($order, $rows);
 exit;
 
-function output_order_csv(array $order, array $rows, float $subtotal): void
+function output_order_csv(array $order, array $rows): void
 {
     $filename = sprintf('pedido-%s.csv', $order['order_number']);
     header('Content-Type: text/csv; charset=utf-8');
@@ -74,61 +58,125 @@ function output_order_csv(array $order, array $rows, float $subtotal): void
     $output = fopen('php://output', 'wb');
     fputcsv($output, ['Pedido', $order['order_number']]);
     fputcsv($output, ['Catalogo', $order['catalog_title']]);
-    fputcsv($output, ['Cliente', $order['customer_name']]);
-    fputcsv($output, ['Correo', $order['customer_email']]);
-    fputcsv($output, ['Telefono', $order['customer_phone']]);
+    fputcsv($output, ['Empresa', $order['company_name']]);
+    fputcsv($output, ['Contacto', $order['contact_name']]);
+    fputcsv($output, ['Correo', $order['contact_email']]);
+    fputcsv($output, ['Telefono', $order['contact_phone']]);
+    fputcsv($output, ['Zona / Direccion', $order['address_zone']]);
     fputcsv($output, ['Estado', $order['status']]);
     fputcsv($output, ['Fecha', $order['created_at']]);
-    fputcsv($output, ['Total', number_format($subtotal, 2, '.', '')]);
+    fputcsv($output, ['Total', number_format((float) $order['total'], 2, '.', '')]);
     fputcsv($output, []);
-    fputcsv($output, ['ITEM', 'Descripcion', 'Empaque', 'Vultos', 'Piezas Totales', 'Precio Unitario', 'Total Linea']);
+    fputcsv($output, ['ITEM', 'Descripcion', 'Cantidad', 'Unidad de venta', 'Empaque', 'Piezas', 'Precio unitario', 'Total linea']);
 
     foreach ($rows as $row) {
         fputcsv($output, [
             $row['item_code'],
             $row['description'],
-            format_plain_number($row['package_qty']),
-            format_plain_number($row['bultos']),
-            format_plain_number($row['pieces_total']),
-            number_format($row['price'], 2, '.', ''),
-            number_format($row['line_total'], 2, '.', ''),
+            format_plain_number((float) $row['quantity']),
+            $row['sale_unit'],
+            trim((string) $row['package_label'] . ' ' . format_plain_number((float) $row['package_qty'])),
+            format_plain_number((float) $row['pieces_total']),
+            number_format((float) $row['unit_price'], 2, '.', ''),
+            number_format((float) $row['line_total'], 2, '.', ''),
         ]);
     }
 
-    fputcsv($output, []);
-    fputcsv($output, ['Subtotal', '', '', '', '', '', number_format($subtotal, 2, '.', '')]);
-    fputcsv($output, ['Total General', '', '', '', '', '', number_format($subtotal, 2, '.', '')]);
     fclose($output);
 }
 
-function output_order_xlsx(array $order, array $rows, float $subtotal): void
+function output_order_printable_html(array $order, array $rows): void
+{
+    header('Content-Type: text/html; charset=utf-8');
+    ?>
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <title><?= html_escape('Pedido ' . $order['order_number']) ?></title>
+        <style>
+            body { font-family: Arial, Helvetica, sans-serif; margin: 24px; color: #1d1d1d; }
+            h1 { margin-bottom: 8px; }
+            .meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; margin-bottom: 24px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #d8d8d8; padding: 8px; text-align: left; vertical-align: top; }
+            th { background: #f1f1f1; }
+            .total { margin-top: 16px; text-align: right; font-size: 18px; font-weight: 700; }
+        </style>
+    </head>
+    <body>
+        <h1>Pedido <?= html_escape($order['order_number']) ?></h1>
+        <div class="meta">
+            <div><strong>Catalogo:</strong> <?= html_escape($order['catalog_title']) ?></div>
+            <div><strong>Estado:</strong> <?= html_escape($order['status']) ?></div>
+            <div><strong>Empresa:</strong> <?= html_escape($order['company_name']) ?></div>
+            <div><strong>Contacto:</strong> <?= html_escape($order['contact_name']) ?></div>
+            <div><strong>Correo:</strong> <?= html_escape($order['contact_email']) ?></div>
+            <div><strong>Telefono:</strong> <?= html_escape($order['contact_phone']) ?></div>
+            <div><strong>Zona:</strong> <?= html_escape($order['address_zone']) ?></div>
+            <div><strong>Fecha:</strong> <?= html_escape($order['created_at']) ?></div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>ITEM</th>
+                    <th>Descripcion</th>
+                    <th>Cantidad</th>
+                    <th>Unidad</th>
+                    <th>Empaque</th>
+                    <th>Piezas</th>
+                    <th>Precio</th>
+                    <th>Total</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($rows as $row): ?>
+                <tr>
+                    <td><?= html_escape($row['item_code']) ?></td>
+                    <td><?= html_escape($row['description']) ?></td>
+                    <td><?= html_escape(format_plain_number((float) $row['quantity'])) ?></td>
+                    <td><?= html_escape($row['sale_unit']) ?></td>
+                    <td><?= html_escape(trim((string) $row['package_label'] . ' ' . format_plain_number((float) $row['package_qty']))) ?></td>
+                    <td><?= html_escape(format_plain_number((float) $row['pieces_total'])) ?></td>
+                    <td><?= html_escape(number_format((float) $row['unit_price'], 2, '.', '')) ?></td>
+                    <td><?= html_escape(number_format((float) $row['line_total'], 2, '.', '')) ?></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <div class="total">Total general: <?= html_escape(number_format((float) $order['total'], 2, '.', '')) ?></div>
+    </body>
+    </html>
+    <?php
+}
+
+function output_order_xlsx(array $order, array $rows): void
 {
     if (!class_exists('ZipArchive')) {
-        output_order_csv($order, $rows, $subtotal);
+        output_order_csv($order, $rows);
         return;
     }
 
     $filename = sprintf('pedido-%s.xlsx', $order['order_number']);
     $tempFile = tempnam(sys_get_temp_dir(), 'order_xlsx_');
     if ($tempFile === false) {
-        output_order_csv($order, $rows, $subtotal);
+        output_order_csv($order, $rows);
         return;
     }
     @unlink($tempFile);
     $xlsxPath = $tempFile . '.xlsx';
 
-    $headerRow = 9;
-    $dataStartRow = 10;
+    $headerRow = 11;
+    $dataStartRow = 12;
     $dataEndRow = $dataStartRow + max(count($rows) - 1, 0);
-    $subtotalRow = $dataEndRow + 2;
-    $totalRow = $subtotalRow + 1;
+    $totalRow = $dataEndRow + 2;
 
-    $sheetXml = build_sheet_xml($order, $rows, $subtotal, $headerRow, $dataEndRow, $subtotalRow, $totalRow);
+    $sheetXml = build_sheet_xml($order, $rows, $headerRow, $dataEndRow, $totalRow);
     $stylesXml = build_styles_xml();
 
     $zip = new ZipArchive();
     if ($zip->open($xlsxPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-        output_order_csv($order, $rows, $subtotal);
+        output_order_csv($order, $rows);
         return;
     }
 
@@ -147,85 +195,31 @@ function output_order_xlsx(array $order, array $rows, float $subtotal): void
     @unlink($xlsxPath);
 }
 
-function load_catalog_package_map(string $relativeJsonPath): array
-{
-    $relativeJsonPath = trim($relativeJsonPath);
-    if ($relativeJsonPath === '') {
-        return [];
-    }
-
-    $baseDir = dirname(__DIR__);
-    $fullPath = $baseDir . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $relativeJsonPath);
-    if (!is_file($fullPath)) {
-        return [];
-    }
-
-    $raw = file_get_contents($fullPath);
-    if ($raw === false || $raw === '') {
-        return [];
-    }
-
-    $decoded = json_decode($raw, true);
-    if (!is_array($decoded) || !isset($decoded['catalog']) || !is_array($decoded['catalog'])) {
-        return [];
-    }
-
-    $map = [];
-    foreach ($decoded['catalog'] as $entry) {
-        $item = (string) ($entry['item'] ?? '');
-        if ($item === '') {
-            continue;
-        }
-        $packageQty = (float) ($entry['packageQty'] ?? $entry['empaque'] ?? $entry['package'] ?? 1);
-        if ($packageQty <= 0 && isset($entry['media']) && is_array($entry['media'])) {
-            $packageQty = (float) ($entry['media']['packageQty'] ?? $entry['media']['empaque'] ?? $entry['media']['package'] ?? 1);
-        }
-        if ($packageQty <= 0) {
-            $packageQty = 1;
-        }
-        $map[$item] = [
-            'packageQty' => $packageQty,
-        ];
-    }
-
-    return $map;
-}
-
-function build_sheet_xml(array $order, array $rows, float $subtotal, int $headerRow, int $dataEndRow, int $subtotalRow, int $totalRow): string
+function build_sheet_xml(array $order, array $rows, int $headerRow, int $dataEndRow, int $totalRow): string
 {
     $cells = [];
-    $cells[] = sheet_row(1, [
-        text_cell('A1', 'Pedido'),
-        text_cell('B1', (string) $order['order_number']),
-    ]);
-    $cells[] = sheet_row(2, [
-        text_cell('A2', 'Catalogo'),
-        text_cell('B2', (string) $order['catalog_title']),
-    ]);
-    $cells[] = sheet_row(3, [
-        text_cell('A3', 'Cliente'),
-        text_cell('B3', (string) $order['customer_name']),
-    ]);
-    $cells[] = sheet_row(4, [
-        text_cell('A4', 'Correo'),
-        text_cell('B4', (string) $order['customer_email']),
-    ]);
-    $cells[] = sheet_row(5, [
-        text_cell('A5', 'Telefono'),
-        text_cell('B5', (string) $order['customer_phone']),
-    ]);
-    $cells[] = sheet_row(6, [
-        text_cell('A6', 'Estado'),
-        text_cell('B6', (string) $order['status']),
-    ]);
-    $cells[] = sheet_row(7, [
-        text_cell('A7', 'Fecha'),
-        text_cell('B7', (string) $order['created_at']),
-    ]);
+    $metaRows = [
+        ['A1', 'Pedido', 'B1', (string) $order['order_number']],
+        ['A2', 'Catalogo', 'B2', (string) $order['catalog_title']],
+        ['A3', 'Empresa', 'B3', (string) $order['company_name']],
+        ['A4', 'Contacto', 'B4', (string) $order['contact_name']],
+        ['A5', 'Correo', 'B5', (string) $order['contact_email']],
+        ['A6', 'Telefono', 'B6', (string) $order['contact_phone']],
+        ['A7', 'Zona', 'B7', (string) $order['address_zone']],
+        ['A8', 'Estado', 'B8', (string) $order['status']],
+        ['A9', 'Fecha', 'B9', (string) $order['created_at']],
+    ];
 
-    $headers = ['ITEM', 'Descripcion', 'Empaque', 'Vultos', 'Piezas Totales', 'Precio Unitario', 'Total Linea'];
+    foreach ($metaRows as $index => $meta) {
+        $cells[] = sheet_row($index + 1, [
+            text_cell($meta[0], $meta[1]),
+            text_cell($meta[2], $meta[3]),
+        ]);
+    }
+
+    $headers = ['ITEM', 'Descripcion', 'Cantidad', 'Unidad', 'Empaque', 'Piezas', 'Precio Unitario', 'Total Linea'];
     $headerCells = [];
-    foreach (range('A', 'G') as $index => $column) {
+    foreach (range('A', 'H') as $index => $column) {
         $headerCells[] = text_cell($column . $headerRow, $headers[$index], 1);
     }
     $cells[] = sheet_row($headerRow, $headerCells);
@@ -233,40 +227,34 @@ function build_sheet_xml(array $order, array $rows, float $subtotal, int $header
     $rowNumber = $headerRow + 1;
     foreach ($rows as $row) {
         $cells[] = sheet_row($rowNumber, [
-            text_cell('A' . $rowNumber, $row['item_code'], 2),
-            text_cell('B' . $rowNumber, $row['description'], 2),
-            number_cell('C' . $rowNumber, $row['package_qty'], 3),
-            number_cell('D' . $rowNumber, $row['bultos'], 3),
-            number_cell('E' . $rowNumber, $row['pieces_total'], 3),
-            number_cell('F' . $rowNumber, $row['price'], 4),
-            number_cell('G' . $rowNumber, $row['line_total'], 4),
+            text_cell('A' . $rowNumber, (string) $row['item_code'], 2),
+            text_cell('B' . $rowNumber, (string) $row['description'], 2),
+            number_cell('C' . $rowNumber, (float) $row['quantity'], 3),
+            text_cell('D' . $rowNumber, (string) $row['sale_unit'], 2),
+            text_cell('E' . $rowNumber, trim((string) $row['package_label'] . ' ' . format_plain_number((float) $row['package_qty'])), 2),
+            number_cell('F' . $rowNumber, (float) $row['pieces_total'], 3),
+            number_cell('G' . $rowNumber, (float) $row['unit_price'], 4),
+            number_cell('H' . $rowNumber, (float) $row['line_total'], 4),
         ]);
         $rowNumber++;
     }
 
-    $cells[] = sheet_row($subtotalRow, [
-        text_cell('F' . $subtotalRow, 'Subtotal', 5),
-        number_cell('G' . $subtotalRow, $subtotal, 6),
-    ]);
     $cells[] = sheet_row($totalRow, [
-        text_cell('F' . $totalRow, 'Total General', 5),
-        number_cell('G' . $totalRow, $subtotal, 6),
+        text_cell('G' . $totalRow, 'Total General', 5),
+        number_cell('H' . $totalRow, (float) $order['total'], 6),
     ]);
-
-    $autoFilterRef = 'A' . $headerRow . ':G' . max($headerRow, $dataEndRow);
 
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-        . '<sheetViews><sheetView workbookViewId="0"><pane ySplit="' . $headerRow . '" topLeftCell="A' . ($headerRow + 1) . '" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+        . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        . '<sheetViews><sheetView workbookViewId="0"/></sheetViews>'
         . '<sheetFormatPr defaultRowHeight="18"/>'
         . '<cols>'
-        . '<col min="1" max="1" width="16" customWidth="1"/>'
-        . '<col min="2" max="2" width="46" customWidth="1"/>'
-        . '<col min="3" max="5" width="16" customWidth="1"/>'
-        . '<col min="6" max="7" width="18" customWidth="1"/>'
+        . '<col min="1" max="1" width="18" customWidth="1"/>'
+        . '<col min="2" max="2" width="42" customWidth="1"/>'
+        . '<col min="3" max="8" width="16" customWidth="1"/>'
         . '</cols>'
         . '<sheetData>' . implode('', $cells) . '</sheetData>'
-        . '<autoFilter ref="' . $autoFilterRef . '"/>'
+        . '<autoFilter ref="A' . $headerRow . ':H' . max($headerRow, $dataEndRow) . '"/>'
         . '</worksheet>';
 }
 
@@ -283,8 +271,8 @@ function build_styles_xml(): string
         . '<fills count="4">'
         . '<fill><patternFill patternType="none"/></fill>'
         . '<fill><patternFill patternType="gray125"/></fill>'
-        . '<fill><patternFill patternType="solid"><fgColor rgb="FFB7192E"/><bgColor indexed="64"/></patternFill></fill>'
-        . '<fill><patternFill patternType="solid"><fgColor rgb="FFF4F1EA"/><bgColor indexed="64"/></patternFill></fill>'
+        . '<fill><patternFill patternType="solid"><fgColor rgb="FF1F3B5F"/><bgColor indexed="64"/></patternFill></fill>'
+        . '<fill><patternFill patternType="solid"><fgColor rgb="FFF4F7FB"/><bgColor indexed="64"/></patternFill></fill>'
         . '</fills>'
         . '<borders count="2">'
         . '<border><left/><right/><top/><bottom/><diagonal/></border>'
@@ -294,7 +282,7 @@ function build_styles_xml(): string
         . '<cellXfs count="7">'
         . '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
         . '<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'
-        . '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>'
+        . '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>'
         . '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'
         . '<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'
         . '<xf numFmtId="0" fontId="1" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'

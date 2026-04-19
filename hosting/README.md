@@ -1,30 +1,46 @@
-# Hosting Bundle
+# Catalogo Rodeo B2B
 
-Esta carpeta contiene la base para subir el sistema al hosting:
+Bundle web listo para hosting con:
 
-- `sql/catalog_platform.sql`: crea la base de datos y tablas.
-- `catalogos_api/`: scripts PHP para publicar catalogos, validar vigencia y recibir pedidos.
-- `catalogos_admin/`: panel basico para ver catalogos y pedidos.
+- API PHP segura en `catalogos_api/`
+- panel admin en `catalogos_admin/`
+- panel vendedor en `catalogos_vendedor/`
+- assets compartidos en `assets/`
+- SQL base en `sql/catalog_platform.sql`
+- migracion evolutiva en `sql/20260418_b2b_upgrade.sql`
 
-## Estructura recomendada en cPanel
+## Estructura sugerida
 
 ```text
 public_html/
   catalogos/
   catalogos_api/
   catalogos_admin/
+  catalogos_vendedor/
+  assets/
 ```
 
-## Pasos de despliegue
+## Instalacion rapida
 
-1. Importa `sql/catalog_platform.sql` en MySQL.
-2. Copia `catalogos_api/config.example.php` como `catalogos_api/config.php`.
-3. Completa credenciales de base de datos, API key y correos.
-4. Sube `catalogos_api/` a `public_html/catalogos_api/`.
-5. Sube `catalogos_admin/` a `public_html/catalogos_admin/`.
-6. Usa el programa local para exportar el paquete web del catalogo.
-7. Sube cada catalogo a `public_html/catalogos/<slug>/`.
+1. Importa `sql/catalog_platform.sql` si es instalacion nueva.
+2. Si ya existe una base previa, ejecuta `sql/20260418_b2b_upgrade.sql`.
+3. Copia `catalogos_api/config.example.php` como `catalogos_api/config.php`.
+4. Ajusta credenciales MySQL, `api_key`, correo remitente y zona horaria.
+5. Sube `catalogos_api/`, `catalogos_admin/`, `catalogos_vendedor/` y `assets/`.
+6. Mantén `sql/` fuera del acceso publico si el hosting lo permite.
+7. Publica los catalogos generados por Electron dentro de `catalogos/<slug>/`.
 
-## Nota importante
+## Usuario inicial
 
-El panel ya funciona con login por base de datos, pero debes cambiar el hash del usuario `admin` por uno generado con `password_hash()` antes de ponerlo en produccion.
+- usuario: `admin`
+- clave temporal: `AdminRodeo2026!`
+- cambia el hash de `catalog_users.password_hash` antes de produccion
+
+## Recomendaciones de produccion
+
+- PHP 8.1 o superior
+- MySQL 8.0+ o MariaDB 10.6+
+- `ZipArchive` habilitado
+- `mail()` funcional o relay SMTP del hosting
+- HTTPS obligatorio
+- cambia `api_key` y hash admin antes de exponer el sistema

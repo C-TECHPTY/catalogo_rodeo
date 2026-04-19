@@ -3,66 +3,178 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/catalogos_api/bootstrap.php';
 
-function admin_header(string $title): void
+function admin_menu_items(): array
 {
-    if (session_status() !== PHP_SESSION_ACTIVE) {
-        session_name((string) catalog_config('admin.session_name', 'catalog_admin_session'));
-        session_start();
+    return [
+        'dashboard.php' => 'Dashboard',
+        'catalogos.php' => 'Catalogos',
+        'pedidos.php' => 'Pedidos',
+        'sellers.php' => 'Vendedores',
+        'links.php' => 'Links / Enlaces',
+        'clients.php' => 'Clientes',
+        'configuracion.php' => 'Configuracion',
+        'exportaciones.php' => 'Exportaciones',
+    ];
+}
+
+function admin_authenticate(string $username, string $password): array
+{
+    $username = trim($username);
+    if ($username === '') {
+        return ['ok' => false, 'reason' => 'user', 'message' => 'Escribe tu usuario para continuar.'];
     }
-    $user = $_SESSION['catalog_admin_user'] ?? null;
+
+    $statement = db()->prepare(
+        'SELECT u.*, s.name AS seller_display_name
+         FROM catalog_users u
+         LEFT JOIN sellers s ON s.id = u.seller_id
+         WHERE u.username = :username
+         LIMIT 1'
+    );
+    $statement->execute(['username' => $username]);
+    $user = $statement->fetch();
+
+    if (!$user) {
+        return ['ok' => false, 'reason' => 'user', 'message' => 'Usuario incorrecto.'];
+    }
+
+    if ((int) ($user['is_active'] ?? 0) !== 1) {
+        return ['ok' => false, 'reason' => 'denied', 'message' => 'Acceso denegado. El usuario esta inactivo.'];
+    }
+
+    $hash = (string) ($user['password_hash'] ?? '');
+    if ($hash === '' || !password_verify($password, $hash)) {
+        return ['ok' => false, 'reason' => 'password', 'message' => 'Contrasena incorrecta.'];
+    }
+
+    if (password_needs_rehash($hash, PASSWORD_DEFAULT)) {
+        db()->prepare('UPDATE catalog_users SET password_hash = :hash WHERE id = :id')->execute([
+            'hash' => password_hash($password, PASSWORD_DEFAULT),
+            'id' => (int) $user['id'],
+        ]);
+    }
+
+    start_app_session();
+    session_regenerate_id(true);
+    $_SESSION['catalog_admin_user'] = [
+        'id' => (int) $user['id'],
+        'username' => $user['username'],
+        'full_name' => $user['full_name'],
+        'email' => $user['email'],
+        'role' => $user['role'],
+        'seller_id' => $user['seller_id'] ? (int) $user['seller_id'] : null,
+        'seller_display_name' => $user['seller_display_name'] ?? '',
+    ];
+
+    db()->prepare('UPDATE catalog_users SET last_login_at = NOW() WHERE id = :id')->execute([
+        'id' => (int) $user['id'],
+    ]);
+    audit_log('auth.login', 'catalog_users', (int) $user['id'], [
+        'username' => $user['username'],
+        'role' => $user['role'],
+    ]);
+
+    return ['ok' => true, 'reason' => 'ok', 'user' => $_SESSION['catalog_admin_user']];
+}
+
+function admin_state_label(string $status): string
+{
+    $labels = [
+        'active' => 'Activo',
+        'draft' => 'Borrador',
+        'expired' => 'Expirado',
+        'archived' => 'Archivado',
+        'inactive' => 'Inactivo',
+        'new' => 'Nuevo',
+        'reviewed' => 'Revisado',
+        'processing' => 'En proceso',
+        'invoiced' => 'Facturado',
+        'completed' => 'Completado',
+        'cancelled' => 'Cancelado',
+        'queued' => 'En cola',
+        'sent' => 'Enviado',
+        'failed' => 'Fallido',
+        'none' => 'Sin link',
+    ];
+
+    return $labels[$status] ?? $status;
+}
+
+function admin_header(string $title, string $active = 'dashboard.php'): void
+{
+    start_app_session();
+    $user = current_user();
+    $flash = flash_get();
     ?>
     <!DOCTYPE html>
     <html lang="es">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title><?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?></title>
-        <style>
-            body { margin: 0; font-family: Arial, Helvetica, sans-serif; background: #f4f1eb; color: #242424; }
-            .admin-shell { max-width: 1180px; margin: 0 auto; padding: 24px; }
-            .admin-nav { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; padding: 18px 20px; border-radius: 18px; background: #1f1f1f; color: #fff; }
-            .admin-nav a { color: #fff; text-decoration: none; font-weight: 700; margin-right: 16px; }
-            .card { background: #fff; border-radius: 18px; padding: 20px; box-shadow: 0 12px 24px rgba(0,0,0,0.06); }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { padding: 12px 10px; border-bottom: 1px solid #ebe5db; text-align: left; vertical-align: top; }
-            th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #666; }
-            .badge { display: inline-flex; align-items: center; min-height: 24px; padding: 0 10px; border-radius: 999px; background: #f2eee6; font-size: 12px; font-weight: 700; }
-            .badge--active { background: #dde9d4; color: #34512c; }
-            .badge--expired { background: #f6d7d7; color: #8e3030; }
-            .badge--new { background: #d8e8f6; color: #284b70; }
-            .login-card { max-width: 420px; margin: 10vh auto 0; }
-            input, button, textarea { width: 100%; min-height: 44px; border-radius: 12px; border: 1px solid #d8d0c3; padding: 10px 12px; font: inherit; }
-            button { background: #1f1f1f; color: #fff; cursor: pointer; font-weight: 700; }
-            .grid { display: grid; gap: 16px; }
-            .muted { color: #666; }
-            .flash { margin-bottom: 14px; padding: 12px 14px; border-radius: 14px; background: #f5ecec; color: #8b2e2e; }
-        </style>
+        <title><?= html_escape($title) ?></title>
+        <link rel="stylesheet" href="../assets/admin.css">
     </head>
     <body>
     <?php if ($user): ?>
-        <div class="admin-shell">
-            <div class="admin-nav">
-                <div>
-                    <a href="catalogos.php">Catalogos</a>
-                    <a href="pedidos.php">Pedidos</a>
+        <div class="shell">
+            <aside class="sidebar">
+                <div class="brand">
+                    <h1>Catalogo Rodeo</h1>
+                    <p>Plataforma comercial B2B con trazabilidad, links seguros y pedidos operativos.</p>
                 </div>
-                <div>
-                    <?= htmlspecialchars((string) ($user['full_name'] ?? $user['username']), ENT_QUOTES, 'UTF-8') ?>
-                    <a href="logout.php">Salir</a>
+                <nav class="nav">
+                    <?php foreach (admin_menu_items() as $href => $label): ?>
+                        <a class="<?= $active === $href ? 'active' : '' ?>" href="<?= html_escape($href) ?>">
+                            <span><?= html_escape($label) ?></span>
+                        </a>
+                    <?php endforeach; ?>
+                </nav>
+                <div class="sidebar-footer">
+                    <div><strong><?= html_escape($user['full_name'] ?: $user['username']) ?></strong></div>
+                    <div><?= html_escape($user['role']) ?></div>
+                    <div style="margin-top:12px;"><a href="logout.php" style="color:#fff;">Cerrar sesion</a></div>
                 </div>
-            </div>
+            </aside>
+            <main class="main">
+                <div class="topbar">
+                    <div>
+                        <h2><?= html_escape($title) ?></h2>
+                        <p>Operacion comercial, seguridad y seguimiento centralizados.</p>
+                    </div>
+                    <div class="topbar__actions">
+                        <span class="pill"><?= html_escape(date('Y-m-d H:i')) ?></span>
+                        <a class="button" href="../catalogos_vendedor/index.php">Vista vendedor</a>
+                    </div>
+                </div>
+                <?php if ($flash): ?>
+                    <div class="flash <?= $flash['type'] === 'error' ? 'flash--error' : 'flash--success' ?>">
+                        <?= html_escape($flash['message']) ?>
+                    </div>
+                <?php endif; ?>
     <?php endif; ?>
     <?php
 }
 
 function admin_footer(): void
 {
-    if (session_status() !== PHP_SESSION_ACTIVE) {
-        session_name((string) catalog_config('admin.session_name', 'catalog_admin_session'));
-        session_start();
-    }
-    if (!empty($_SESSION['catalog_admin_user'])) {
-        echo '</div>';
+    if (current_user()) {
+        echo '</main></div>';
     }
     echo '</body></html>';
+}
+
+function admin_status_badge(string $status): string
+{
+    $map = [
+        'active' => 'badge badge--ok',
+        'new' => 'badge badge--warn',
+        'processing' => 'badge',
+        'completed' => 'badge badge--ok',
+        'cancelled' => 'badge badge--danger',
+        'expired' => 'badge badge--danger',
+        'inactive' => 'badge badge--danger',
+    ];
+
+    $class = $map[$status] ?? 'badge';
+    return '<span class="' . $class . '">' . html_escape(admin_state_label($status)) . '</span>';
 }

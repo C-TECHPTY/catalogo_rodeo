@@ -4,118 +4,180 @@ declare(strict_types=1);
 require __DIR__ . '/_bootstrap.php';
 admin_require_login();
 
-$orderId = (int) ($_GET['id'] ?? 0);
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verify_csrf_or_abort();
+    $allowedStatuses = ['new', 'reviewed', 'processing', 'invoiced', 'completed', 'cancelled'];
+    $status = (string) ($_POST['status'] ?? 'new');
+    if (!in_array($status, $allowedStatuses, true)) {
+        flash_set('error', 'Estado de pedido invalido.');
+        header('Location: pedidos.php');
+        exit;
+    }
+    update_order_status((int) $_POST['order_id'], $status, trim((string) ($_POST['notes'] ?? '')));
+    flash_set('success', 'Estado del pedido actualizado.');
+    header('Location: pedidos.php?id=' . (int) $_POST['order_id']);
+    exit;
+}
 
+$orderId = (int) ($_GET['id'] ?? 0);
 if ($orderId > 0) {
-    $orderStmt = db()->prepare(
-        'SELECT o.*, c.title AS catalog_title, c.slug AS catalog_slug
+    $stmt = db()->prepare(
+        'SELECT o.*, c.title AS catalog_title, c.public_url, s.name AS seller_display_name, cl.business_name AS client_business_name
          FROM orders o
          INNER JOIN catalogs c ON c.id = o.catalog_id
+         LEFT JOIN sellers s ON s.id = o.seller_id
+         LEFT JOIN clients cl ON cl.id = o.client_id
          WHERE o.id = :id
          LIMIT 1'
     );
-    $orderStmt->execute(['id' => $orderId]);
-    $order = $orderStmt->fetch();
+    $stmt->execute(['id' => $orderId]);
+    $order = $stmt->fetch();
     $items = [];
+    $history = [];
     if ($order) {
         $itemsStmt = db()->prepare('SELECT * FROM order_items WHERE order_id = :order_id ORDER BY id ASC');
         $itemsStmt->execute(['order_id' => $orderId]);
         $items = $itemsStmt->fetchAll();
+        $historyStmt = db()->prepare('SELECT * FROM order_status_history WHERE order_id = :order_id ORDER BY created_at DESC');
+        $historyStmt->execute(['order_id' => $orderId]);
+        $history = $historyStmt->fetchAll();
     }
 
-    admin_header('Pedido');
+    admin_header('Detalle de pedido', 'pedidos.php');
+    if (!$order) {
+        echo '<section class="card">Pedido no encontrado.</section>';
+        admin_footer();
+        exit;
+    }
     ?>
-    <div class="card">
-        <?php if (!$order): ?>
-            <p>Pedido no encontrado.</p>
-        <?php else: ?>
-            <h1><?= htmlspecialchars($order['order_number'], ENT_QUOTES, 'UTF-8') ?></h1>
-            <p class="muted">
-                Catalogo: <?= htmlspecialchars($order['catalog_title'], ENT_QUOTES, 'UTF-8') ?>
-                · Cliente: <?= htmlspecialchars($order['customer_name'], ENT_QUOTES, 'UTF-8') ?>
-                · Telefono: <?= htmlspecialchars($order['customer_phone'], ENT_QUOTES, 'UTF-8') ?>
-            </p>
-            <p>
-                <span class="badge badge--new"><?= htmlspecialchars($order['status'], ENT_QUOTES, 'UTF-8') ?></span>
-            </p>
-            <table>
-                <thead>
-                    <tr>
-                        <th>ITEM</th>
-                        <th>Descripcion</th>
-                        <th>Vultos</th>
-                        <th>Precio Unitario</th>
-                        <th>Total Linea</th>
-                    </tr>
-                </thead>
-                <tbody>
-                <?php foreach ($items as $item): ?>
-                    <tr>
-                        <td><?= htmlspecialchars($item['item_code'], ENT_QUOTES, 'UTF-8') ?></td>
-                        <td><?= htmlspecialchars($item['description'], ENT_QUOTES, 'UTF-8') ?></td>
-                        <td><?= htmlspecialchars((string) $item['quantity'], ENT_QUOTES, 'UTF-8') ?></td>
-                        <td><?= htmlspecialchars((string) $item['price'], ENT_QUOTES, 'UTF-8') ?></td>
-                        <td><?= htmlspecialchars((string) $item['line_total'], ENT_QUOTES, 'UTF-8') ?></td>
-                    </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-            <p>
-                <a href="../catalogos_api/export_order.php?id=<?= (int) $order['id'] ?>">Descargar CSV</a>
-                |
-                <a href="../catalogos_api/export_order.php?id=<?= (int) $order['id'] ?>&format=xlsx">Descargar XLSX</a>
-            </p>
-        <?php endif; ?>
+    <div class="split">
+        <section class="card">
+            <div class="toolbar">
+                <strong><?= html_escape($order['order_number']) ?></strong>
+                <?= admin_status_badge((string) $order['status']) ?>
+            </div>
+            <div class="form-grid" style="margin-bottom:18px;">
+                <div><strong>Catalogo</strong><div class="muted"><?= html_escape($order['catalog_title']) ?></div></div>
+                <div><strong>Vendedor</strong><div class="muted"><?= html_escape($order['seller_display_name'] ?: $order['seller_name'] ?: 'Sin vendedor') ?></div></div>
+                <div><strong>Cliente asociado</strong><div class="muted"><?= html_escape($order['client_business_name'] ?: 'Sin cliente') ?></div></div>
+                <div><strong>Empresa</strong><div class="muted"><?= html_escape($order['company_name']) ?></div></div>
+                <div><strong>Contacto</strong><div class="muted"><?= html_escape($order['contact_name']) ?></div></div>
+                <div><strong>Telefono</strong><div class="muted"><?= html_escape($order['contact_phone']) ?></div></div>
+                <div><strong>Correo</strong><div class="muted"><?= html_escape($order['contact_email']) ?></div></div>
+                <div><strong>Zona</strong><div class="muted"><?= html_escape($order['address_zone']) ?></div></div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>ITEM</th><th>Descripcion</th><th>Cantidad</th><th>Unidad</th><th>Empaque</th><th>Piezas</th><th>Total</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($items as $item): ?>
+                        <tr>
+                            <td><?= html_escape($item['item_code']) ?></td>
+                            <td><?= html_escape($item['description']) ?></td>
+                            <td><?= html_escape(rtrim(rtrim(number_format((float) $item['quantity'], 2, '.', ''), '0'), '.')) ?></td>
+                            <td><?= html_escape($item['sale_unit']) ?></td>
+                            <td><?= html_escape($item['package_label']) ?> <?= html_escape(rtrim(rtrim(number_format((float) $item['package_qty'], 2, '.', ''), '0'), '.')) ?></td>
+                            <td><?= html_escape(rtrim(rtrim(number_format((float) $item['pieces_total'], 2, '.', ''), '0'), '.')) ?></td>
+                            <td><?= html_escape(number_format((float) $item['line_total'], 2)) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <div class="toolbar" style="margin-top:16px;">
+                <strong>Total general: <?= html_escape(number_format((float) $order['total'], 2)) ?></strong>
+                <div class="toolbar__actions">
+                    <a class="button" href="../catalogos_api/export_order.php?id=<?= (int) $order['id'] ?>">CSV</a>
+                    <a class="button" href="../catalogos_api/export_order.php?id=<?= (int) $order['id'] ?>&format=xlsx">XLSX</a>
+                    <a class="button" href="../catalogos_api/export_order.php?id=<?= (int) $order['id'] ?>&format=pdf" target="_blank">PDF/Print</a>
+                </div>
+            </div>
+        </section>
+        <section class="grid">
+            <div class="card">
+                <div class="toolbar"><strong>Cambiar estado</strong></div>
+                <form class="grid" method="post">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="order_id" value="<?= (int) $order['id'] ?>">
+                    <label><span>Nuevo estado</span><select name="status"><?php foreach (['new','processing','invoiced','completed','reviewed','cancelled'] as $status): ?><option value="<?= $status ?>" <?= $status === $order['status'] ? 'selected' : '' ?>><?= html_escape(admin_state_label($status)) ?></option><?php endforeach; ?></select></label>
+                    <label><span>Notas</span><textarea name="notes"></textarea></label>
+                    <button class="button--primary" type="submit">Actualizar</button>
+                </form>
+            </div>
+            <div class="card">
+                <div class="toolbar"><strong>Historial</strong></div>
+                <div class="list">
+                    <?php foreach ($history as $row): ?>
+                        <div class="list-item">
+                            <strong><?= html_escape($row['to_status']) ?></strong>
+                            <div class="muted"><?= html_escape($row['created_at']) ?></div>
+                            <div class="muted"><?= html_escape($row['notes']) ?></div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </section>
     </div>
     <?php
     admin_footer();
     exit;
 }
 
-$ordersStmt = db()->query(
-    'SELECT o.id, o.order_number, o.customer_name, o.customer_phone, o.total, o.status, o.created_at, c.title AS catalog_title
+$sellerFilter = (int) ($_GET['seller_id'] ?? 0);
+$linkFilter = (int) ($_GET['link_id'] ?? 0);
+$conditions = [];
+$params = [];
+if ($sellerFilter > 0) {
+    $conditions[] = 'o.seller_id = :seller_id';
+    $params['seller_id'] = $sellerFilter;
+}
+if ($linkFilter > 0) {
+    $conditions[] = 'o.share_link_id = :link_id';
+    $params['link_id'] = $linkFilter;
+}
+$where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
+$ordersStmt = db()->prepare(
+    "SELECT o.id, o.order_number, o.company_name, o.contact_name, o.total, o.status, o.created_at,
+            c.title AS catalog_title, s.name AS seller_name
      FROM orders o
      INNER JOIN catalogs c ON c.id = o.catalog_id
+     LEFT JOIN sellers s ON s.id = o.seller_id
+     $where
      ORDER BY o.created_at DESC
-     LIMIT 200'
+     LIMIT 200"
 );
+$ordersStmt->execute($params);
 $orders = $ordersStmt->fetchAll();
 
-admin_header('Pedidos');
+admin_header('Pedidos', 'pedidos.php');
 ?>
-<div class="card">
-    <h1>Pedidos recibidos</h1>
-    <table>
-        <thead>
-            <tr>
-                <th>Pedido</th>
-                <th>Catalogo</th>
-                <th>Cliente</th>
-                <th>Telefono</th>
-                <th>Total</th>
-                <th>Estado</th>
-                <th>Fecha</th>
-                <th>Exportar</th>
-            </tr>
-        </thead>
-        <tbody>
-        <?php foreach ($orders as $order): ?>
-            <tr>
-                <td><a href="pedidos.php?id=<?= (int) $order['id'] ?>"><?= htmlspecialchars($order['order_number'], ENT_QUOTES, 'UTF-8') ?></a></td>
-                <td><?= htmlspecialchars($order['catalog_title'], ENT_QUOTES, 'UTF-8') ?></td>
-                <td><?= htmlspecialchars($order['customer_name'], ENT_QUOTES, 'UTF-8') ?></td>
-                <td><?= htmlspecialchars($order['customer_phone'], ENT_QUOTES, 'UTF-8') ?></td>
-                <td><?= htmlspecialchars((string) $order['total'], ENT_QUOTES, 'UTF-8') ?></td>
-                <td><span class="badge badge--new"><?= htmlspecialchars($order['status'], ENT_QUOTES, 'UTF-8') ?></span></td>
-                <td><?= htmlspecialchars((string) $order['created_at'], ENT_QUOTES, 'UTF-8') ?></td>
-                <td>
-                    <a href="../catalogos_api/export_order.php?id=<?= (int) $order['id'] ?>">CSV</a>
-                    |
-                    <a href="../catalogos_api/export_order.php?id=<?= (int) $order['id'] ?>&format=xlsx">XLSX</a>
-                </td>
-            </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
-</div>
+<section class="card">
+    <div class="toolbar">
+        <strong>Pedidos registrados</strong>
+        <div class="toolbar__actions">
+            <?php if ($sellerFilter > 0 || $linkFilter > 0): ?><a class="button" href="pedidos.php">Ver todos</a><?php endif; ?>
+            <span class="pill"><?= count($orders) ?> resultados</span>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Pedido</th><th>Catalogo</th><th>Vendedor</th><th>Empresa</th><th>Contacto</th><th>Total</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
+            <tbody>
+            <?php foreach ($orders as $order): ?>
+                <tr>
+                    <td><?= html_escape($order['order_number']) ?></td>
+                    <td><?= html_escape($order['catalog_title']) ?></td>
+                    <td><?= html_escape($order['seller_name'] ?: 'Sin vendedor') ?></td>
+                    <td><?= html_escape($order['company_name']) ?></td>
+                    <td><?= html_escape($order['contact_name']) ?></td>
+                    <td><?= html_escape(number_format((float) $order['total'], 2)) ?></td>
+                    <td><?= admin_status_badge((string) $order['status']) ?></td>
+                    <td><?= html_escape($order['created_at']) ?></td>
+                    <td><a class="button" href="pedidos.php?id=<?= (int) $order['id'] ?>">Ver detalle</a></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</section>
 <?php admin_footer(); ?>
