@@ -3,6 +3,76 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/catalogos_api/bootstrap.php';
 
+if (!function_exists('vendor_table_exists')) {
+    function vendor_table_exists(string $tableName): bool
+    {
+        static $cache = [];
+        if (array_key_exists($tableName, $cache)) return $cache[$tableName];
+        $statement = db()->prepare(
+            'SELECT COUNT(*)
+             FROM INFORMATION_SCHEMA.TABLES
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name'
+        );
+        $statement->execute(['table_name' => $tableName]);
+        $cache[$tableName] = ((int) $statement->fetchColumn()) > 0;
+        return $cache[$tableName];
+    }
+}
+
+if (!function_exists('vendor_column_exists')) {
+    function vendor_column_exists(string $tableName, string $columnName): bool
+    {
+        static $cache = [];
+        $key = $tableName . '.' . $columnName;
+        if (array_key_exists($key, $cache)) return $cache[$key];
+        $statement = db()->prepare(
+            'SELECT COUNT(*)
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name'
+        );
+        $statement->execute(['table_name' => $tableName, 'column_name' => $columnName]);
+        $cache[$key] = ((int) $statement->fetchColumn()) > 0;
+        return $cache[$key];
+    }
+}
+
+function vendor_b2b_schema_ready(): bool
+{
+    return vendor_table_exists('sellers')
+        && vendor_table_exists('catalog_share_links')
+        && vendor_column_exists('catalog_users', 'seller_id')
+        && vendor_column_exists('orders', 'seller_id');
+}
+
+if (!function_exists('admin_state_label')) {
+    function admin_state_label(string $status): string
+    {
+        $labels = [
+            'active' => 'Activo',
+            'draft' => 'Borrador',
+            'expired' => 'Expirado',
+            'archived' => 'Archivado',
+            'inactive' => 'Inactivo',
+            'new' => 'Nuevo',
+            'reviewed' => 'Revisado',
+            'processing' => 'En proceso',
+            'invoiced' => 'Facturado',
+            'completed' => 'Completado',
+            'cancelled' => 'Cancelado',
+        ];
+        return $labels[$status] ?? $status;
+    }
+}
+
+if (!function_exists('admin_status_badge')) {
+    function admin_status_badge(string $status): string
+    {
+        $class = in_array($status, ['active', 'completed'], true) ? 'badge badge--ok'
+            : (in_array($status, ['expired', 'archived', 'inactive', 'cancelled'], true) ? 'badge badge--danger' : 'badge');
+        return '<span class="' . $class . '">' . html_escape(admin_state_label($status)) . '</span>';
+    }
+}
+
 function vendor_header(string $title, string $active = 'index.php'): void
 {
     vendor_require_login();

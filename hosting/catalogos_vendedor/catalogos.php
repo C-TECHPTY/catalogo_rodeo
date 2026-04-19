@@ -5,22 +5,40 @@ require __DIR__ . '/_bootstrap.php';
 vendor_require_login();
 
 $sellerId = (int) (current_user()['seller_id'] ?? 0);
-$stmt = db()->prepare(
-    'SELECT c.*, (SELECT COUNT(*) FROM catalog_share_links l WHERE l.catalog_id = c.id AND l.seller_id = :seller_id) AS links_count
-     FROM catalogs c
-     WHERE c.seller_id = :seller_id OR c.seller_name = :seller_name
-     ORDER BY c.updated_at DESC'
-);
-$stmt->execute([
-    'seller_id' => $sellerId,
-    'seller_name' => current_user()['seller_display_name'] ?? '',
-]);
-$catalogs = $stmt->fetchAll();
+$catalogs = [];
+$schemaReady = vendor_table_exists('catalogs');
+if ($schemaReady) {
+    $hasSellerId = vendor_column_exists('catalogs', 'seller_id');
+    $hasSellerName = vendor_column_exists('catalogs', 'seller_name');
+    $hasLinks = vendor_table_exists('catalog_share_links');
+    $linksSelect = $hasLinks ? '(SELECT COUNT(*) FROM catalog_share_links l WHERE l.catalog_id = c.id AND l.seller_id = :seller_id) AS links_count' : '0 AS links_count';
+    $conditions = [];
+    $params = [];
+    if ($hasLinks || $hasSellerId) $params['seller_id'] = $sellerId;
+    if ($hasSellerId) $conditions[] = 'c.seller_id = :seller_id';
+    if ($hasSellerName) {
+        $conditions[] = 'c.seller_name = :seller_name';
+        $params['seller_name'] = current_user()['seller_display_name'] ?? '';
+    }
+    $where = $conditions ? 'WHERE ' . implode(' OR ', $conditions) : '';
+    $orderBy = vendor_column_exists('catalogs', 'updated_at') ? 'c.updated_at DESC' : 'c.id DESC';
+    $stmt = db()->prepare(
+        "SELECT c.*, {$linksSelect}
+         FROM catalogs c
+         {$where}
+         ORDER BY {$orderBy}"
+    );
+    $stmt->execute($params);
+    $catalogs = $stmt->fetchAll();
+}
 
 vendor_header('Mis catalogos', 'catalogos.php');
 ?>
 <section class="card">
     <div class="toolbar"><strong>Catalogos asignados</strong></div>
+    <?php if (!$schemaReady): ?>
+        <p class="muted">Falta la tabla de catalogos. Ejecuta la migracion SQL.</p>
+    <?php else: ?>
     <div class="table-wrap">
         <table>
             <thead><tr><th>Slug</th><th>Titulo</th><th>Estado</th><th>Vence</th><th>Links</th><th>Acciones</th></tr></thead>
@@ -38,5 +56,6 @@ vendor_header('Mis catalogos', 'catalogos.php');
             </tbody>
         </table>
     </div>
+    <?php endif; ?>
 </section>
 <?php vendor_footer(); ?>

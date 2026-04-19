@@ -28,6 +28,7 @@ $stats = [
 
 $recentOrders = [];
 if ($hasOrders) {
+    $orderNumberExpr = admin_column_exists('orders', 'order_number') ? 'o.order_number' : "CONCAT('PED-', o.id)";
     $companyExpr = $ordersHasCompany ? 'o.company_name' : "''";
     $contactExpr = $ordersHasContact ? 'o.contact_name' : (admin_column_exists('orders', 'customer_name') ? 'o.customer_name' : "''");
     $totalExpr = $ordersHasTotal ? 'o.total' : '0';
@@ -39,7 +40,7 @@ if ($hasOrders) {
     $sellerJoin = $hasSellers && $ordersHasSeller ? 'LEFT JOIN sellers s ON s.id = o.seller_id' : '';
     $orderBy = $ordersHasCreatedAt ? 'o.created_at DESC' : 'o.id DESC';
     $recentOrders = db()->query(
-        "SELECT o.id, o.order_number, {$companyExpr} AS company_name, {$contactExpr} AS contact_name,
+        "SELECT o.id, {$orderNumberExpr} AS order_number, {$companyExpr} AS company_name, {$contactExpr} AS contact_name,
                 {$totalExpr} AS total, {$statusExpr} AS status, {$createdExpr} AS created_at,
                 {$catalogTitleExpr} AS catalog_title, {$sellerExpr} AS seller_name
          FROM orders o
