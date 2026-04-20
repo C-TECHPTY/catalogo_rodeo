@@ -9,7 +9,9 @@ if (!$user) {
     exit;
 }
 
-if (!in_array((string) ($user['role'] ?? ''), ['admin', 'sales', 'billing', 'operator', 'vendor', 'seller'], true)) {
+$userRole = (string) ($user['role'] ?? '');
+$userSellerId = (int) ($user['seller_id'] ?? 0);
+if (!in_array($userRole, ['admin', 'sales', 'billing', 'operator', 'vendor', 'seller', 'vendedor'], true) && $userSellerId <= 0) {
     http_response_code(403);
     echo 'No tienes permisos para exportar pedidos.';
     exit;
@@ -42,9 +44,8 @@ if (!$order) {
     ], 404);
 }
 
-if (in_array((string) ($user['role'] ?? ''), ['vendor', 'seller'], true)) {
-    $sellerId = (int) ($user['seller_id'] ?? 0);
-    if ($sellerId <= 0 || (int) ($order['seller_id'] ?? 0) !== $sellerId) {
+if (in_array($userRole, ['vendor', 'seller', 'vendedor'], true) || $userSellerId > 0) {
+    if ($userSellerId <= 0 || (int) ($order['seller_id'] ?? 0) !== $userSellerId) {
         http_response_code(403);
         echo 'No tienes permisos para exportar este pedido.';
         exit;
