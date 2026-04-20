@@ -277,14 +277,13 @@ if (!empty($exportFiles['xlsx_path'])) {
 
 $mailStatus = 'pending';
 try {
-    send_notification_mail(
+    $mailStatus = send_notification_mail(
         sprintf('Nuevo pedido %s - %s', $orderNumber, $catalog['title']),
         implode("\n", $lines),
         $mailRecipients,
         $orderId,
         $mailAttachments
     );
-    $mailStatus = 'sent';
 } catch (Throwable $exception) {
     $mailStatus = 'failed';
     audit_log('order.notification_failed', 'orders', $orderId, [

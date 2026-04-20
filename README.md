@@ -324,6 +324,18 @@ Revisar:
 - Logs del hosting.
 - Que se hayan ejecutado las migraciones SQL.
 
+### No se envian correos de pedidos
+
+Revisar:
+
+- Correos configurados en `catalogos_admin/configuracion.php`.
+- Que el vendedor tenga correo en `catalogos_admin/sellers.php`.
+- Que el pedido entre por un link seguro asociado al vendedor si se espera copia al vendedor.
+- Que `Copiar a vendedor` este activo en Configuracion.
+- Que `catalogos_api/config.php` tenga un `mail.from_email` real del dominio.
+- Que el hosting permita `mail()` de PHP. En Configuracion > Ultimas notificaciones se ve si `mail()` devolvio `OK` o `false`.
+- Si el hosting no permite `mail()`, configurar SMTP en el hosting o adaptar el sistema a SMTP autenticado.
+
 ### No exporta pedidos XLSX/PDF
 
 Revisar:

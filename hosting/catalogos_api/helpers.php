@@ -658,11 +658,11 @@ function update_app_settings(array $settings): void
     }
 }
 
-function send_notification_mail(string $subject, string $message, array $recipients = [], ?int $orderId = null, array $attachments = []): void
+function send_notification_mail(string $subject, string $message, array $recipients = [], ?int $orderId = null, array $attachments = []): string
 {
     $finalRecipients = array_values(array_unique(array_filter(array_map('trim', $recipients))));
     if (!$finalRecipients) {
-        return;
+        return 'failed';
     }
 
     $fromName = (string) catalog_config('mail.from_name', 'Catalog Platform');
@@ -708,8 +708,15 @@ function send_notification_mail(string $subject, string $message, array $recipie
     $body[] = '--' . $boundary . '--';
     $mailBody = implode("\r\n", $body);
 
+    $sentCount = 0;
+    $failedCount = 0;
     foreach ($finalRecipients as $recipient) {
         $status = @mail($recipient, $subject, $mailBody, implode("\r\n", $headers)) ? 'sent' : 'failed';
+        if ($status === 'sent') {
+            $sentCount++;
+        } else {
+            $failedCount++;
+        }
         db()->prepare(
             'INSERT INTO notifications_log (order_id, channel, recipient, subject, payload, attachments_json, status, response_message)
              VALUES (:order_id, :channel, :recipient, :subject, :payload, :attachments_json, :status, :response_message)'
@@ -724,6 +731,8 @@ function send_notification_mail(string $subject, string $message, array $recipie
             'response_message' => $status === 'sent' ? 'mail() OK' : 'mail() devolvio false',
         ]);
     }
+
+    return $sentCount > 0 && $failedCount === 0 ? 'sent' : ($sentCount > 0 ? 'sent' : 'failed');
 }
 
 function build_notification_recipients(array $order, ?array $seller = null): array

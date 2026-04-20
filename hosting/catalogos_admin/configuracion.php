@@ -61,14 +61,15 @@ $maskedApiKey = $apiKey !== '' ? substr($apiKey, 0, 4) . str_repeat('*', max(8, 
     <div class="toolbar"><strong>Ultimas notificaciones</strong></div>
     <div class="table-wrap">
         <table>
-            <thead><tr><th>Fecha</th><th>Destinatario</th><th>Asunto</th><th>Estado</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Destinatario</th><th>Asunto</th><th>Estado</th><th>Respuesta</th></tr></thead>
             <tbody>
-            <?php foreach (db()->query('SELECT recipient, subject, status, created_at FROM notifications_log ORDER BY created_at DESC LIMIT 50')->fetchAll() as $row): ?>
+            <?php foreach (db()->query('SELECT recipient, subject, status, response_message, created_at FROM notifications_log ORDER BY created_at DESC LIMIT 50')->fetchAll() as $row): ?>
                 <tr>
                     <td><?= html_escape($row['created_at']) ?></td>
                     <td><?= html_escape($row['recipient']) ?></td>
                     <td><?= html_escape($row['subject']) ?></td>
                     <td><?= admin_status_badge((string) $row['status']) ?></td>
+                    <td><?= html_escape($row['response_message'] ?? '') ?></td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
