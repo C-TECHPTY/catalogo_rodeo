@@ -156,7 +156,7 @@ function vendor_require_login(): void
         exit;
     }
 
-    if (!in_array((string) ($user['role'] ?? ''), ['vendor', 'admin', 'sales'], true)) {
+    if (!in_array((string) ($user['role'] ?? ''), ['vendor', 'seller', 'admin', 'sales'], true)) {
         http_response_code(403);
         echo 'No tienes permisos para acceder a esta seccion.';
         exit;

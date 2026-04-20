@@ -77,7 +77,7 @@ function admin_menu_items(): array
 
 function admin_post_login_target(array $user): string
 {
-    if (($user['role'] ?? '') === 'vendor' && admin_b2b_schema_ready() && is_file(dirname(__DIR__) . '/catalogos_vendedor/index.php')) {
+    if (in_array((string) ($user['role'] ?? ''), ['vendor', 'seller'], true) && admin_b2b_schema_ready() && is_file(dirname(__DIR__) . '/catalogos_vendedor/index.php')) {
         return '../catalogos_vendedor/index.php';
     }
 
