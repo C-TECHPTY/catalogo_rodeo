@@ -42,10 +42,13 @@ if (!$order) {
     ], 404);
 }
 
-if (($user['role'] ?? '') === 'vendor' && !empty($user['seller_id']) && (int) ($order['seller_id'] ?? 0) !== (int) $user['seller_id']) {
-    http_response_code(403);
-    echo 'No tienes permisos para exportar este pedido.';
-    exit;
+if (($user['role'] ?? '') === 'vendor') {
+    $sellerId = (int) ($user['seller_id'] ?? 0);
+    if ($sellerId <= 0 || (int) ($order['seller_id'] ?? 0) !== $sellerId) {
+        http_response_code(403);
+        echo 'No tienes permisos para exportar este pedido.';
+        exit;
+    }
 }
 
 $itemsStmt = db()->prepare('SELECT * FROM order_items WHERE order_id = :order_id ORDER BY id ASC');
@@ -78,6 +81,10 @@ function output_order_csv(array $order, array $rows): void
     fputcsv($output, ['Contacto', order_contact_name($order)]);
     fputcsv($output, ['Correo', $order['contact_email'] ?? $order['customer_email'] ?? '']);
     fputcsv($output, ['Telefono', $order['contact_phone'] ?? $order['customer_phone'] ?? '']);
+    $salesContact = sales_contact_info();
+    fputcsv($output, ['Contacto comercial', $salesContact['name']]);
+    fputcsv($output, ['Correo comercial', $salesContact['email']]);
+    fputcsv($output, ['Telefono comercial', $salesContact['phone']]);
     fputcsv($output, ['Zona / Direccion', $order['address_zone'] ?? '']);
     fputcsv($output, ['Estado', $order['status'] ?? 'new']);
     fputcsv($output, ['Fecha', $order['created_at'] ?? '']);
@@ -129,6 +136,10 @@ function output_order_printable_html(array $order, array $rows): void
             <div><strong>Contacto:</strong> <?= html_escape(order_contact_name($order)) ?></div>
             <div><strong>Correo:</strong> <?= html_escape($order['contact_email'] ?? $order['customer_email'] ?? '') ?></div>
             <div><strong>Telefono:</strong> <?= html_escape($order['contact_phone'] ?? $order['customer_phone'] ?? '') ?></div>
+            <?php $salesContact = sales_contact_info(); ?>
+            <div><strong>Contacto comercial:</strong> <?= html_escape($salesContact['name']) ?></div>
+            <div><strong>Correo comercial:</strong> <?= html_escape($salesContact['email']) ?></div>
+            <div><strong>Telefono comercial:</strong> <?= html_escape($salesContact['phone']) ?></div>
             <div><strong>Zona:</strong> <?= html_escape($order['address_zone'] ?? '') ?></div>
             <div><strong>Fecha:</strong> <?= html_escape($order['created_at'] ?? '') ?></div>
         </div>
@@ -182,8 +193,8 @@ function output_order_xlsx(array $order, array $rows): void
     @unlink($tempFile);
     $xlsxPath = $tempFile . '.xlsx';
 
-    $headerRow = 11;
-    $dataStartRow = 12;
+    $headerRow = 14;
+    $dataStartRow = 15;
     $dataEndRow = $dataStartRow + max(count($rows) - 1, 0);
     $totalRow = $dataEndRow + 2;
 
@@ -214,6 +225,7 @@ function output_order_xlsx(array $order, array $rows): void
 function build_sheet_xml(array $order, array $rows, int $headerRow, int $dataEndRow, int $totalRow): string
 {
     $cells = [];
+    $salesContact = sales_contact_info();
     $metaRows = [
         ['A1', 'Pedido', 'B1', order_number_label($order)],
         ['A2', 'Catalogo', 'B2', order_catalog_title($order)],
@@ -221,9 +233,12 @@ function build_sheet_xml(array $order, array $rows, int $headerRow, int $dataEnd
         ['A4', 'Contacto', 'B4', order_contact_name($order)],
         ['A5', 'Correo', 'B5', (string) ($order['contact_email'] ?? $order['customer_email'] ?? '')],
         ['A6', 'Telefono', 'B6', (string) ($order['contact_phone'] ?? $order['customer_phone'] ?? '')],
-        ['A7', 'Zona', 'B7', (string) ($order['address_zone'] ?? '')],
-        ['A8', 'Estado', 'B8', (string) ($order['status'] ?? 'new')],
-        ['A9', 'Fecha', 'B9', (string) ($order['created_at'] ?? '')],
+        ['A7', 'Contacto comercial', 'B7', $salesContact['name']],
+        ['A8', 'Correo comercial', 'B8', $salesContact['email']],
+        ['A9', 'Telefono comercial', 'B9', $salesContact['phone']],
+        ['A10', 'Zona', 'B10', (string) ($order['address_zone'] ?? '')],
+        ['A11', 'Estado', 'B11', (string) ($order['status'] ?? 'new')],
+        ['A12', 'Fecha', 'B12', (string) ($order['created_at'] ?? '')],
     ];
 
     foreach ($metaRows as $index => $meta) {

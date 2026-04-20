@@ -13,6 +13,11 @@ return [
         'charset' => 'utf8mb4',
     ],
     'api_key' => 'CHANGE_THIS_PRIVATE_API_KEY',
+    'sales_contact' => [
+        'name' => 'Ventas',
+        'email' => 'ventas@rodeoimportzl.com',
+        'phone' => '4418710',
+    ],
     'mail' => [
         'from_name' => 'Catalogo Rodeo B2B',
         'from_email' => 'no-reply@tuempresa.com',

@@ -84,6 +84,7 @@ if ($orderId > 0) {
                 <?= admin_status_badge((string) ($order['status'] ?? 'new')) ?>
             </div>
             <div class="form-grid" style="margin-bottom:18px;">
+                <?php $salesContact = sales_contact_info(); ?>
                 <div><strong>Catalogo</strong><div class="muted"><?= html_escape($order['catalog_title']) ?></div></div>
                 <div><strong>Vendedor</strong><div class="muted"><?= html_escape($order['seller_display_name'] ?: $order['seller_name'] ?: 'Sin vendedor') ?></div></div>
                 <div><strong>Cliente asociado</strong><div class="muted"><?= html_escape($order['client_business_name'] ?: 'Sin cliente') ?></div></div>
@@ -91,6 +92,9 @@ if ($orderId > 0) {
                 <div><strong>Contacto</strong><div class="muted"><?= html_escape(($order['contact_name'] ?? '') ?: ($order['customer_name'] ?? '')) ?></div></div>
                 <div><strong>Telefono</strong><div class="muted"><?= html_escape(($order['contact_phone'] ?? '') ?: ($order['customer_phone'] ?? '')) ?></div></div>
                 <div><strong>Correo</strong><div class="muted"><?= html_escape(($order['contact_email'] ?? '') ?: ($order['customer_email'] ?? '')) ?></div></div>
+                <div><strong>Contacto comercial</strong><div class="muted"><?= html_escape($salesContact['name']) ?></div></div>
+                <div><strong>Correo comercial</strong><div class="muted"><?= html_escape($salesContact['email']) ?></div></div>
+                <div><strong>Telefono comercial</strong><div class="muted"><?= html_escape($salesContact['phone']) ?></div></div>
                 <div><strong>Zona</strong><div class="muted"><?= html_escape($order['address_zone'] ?? '') ?></div></div>
             </div>
             <div class="table-wrap">

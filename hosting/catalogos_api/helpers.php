@@ -922,6 +922,15 @@ function format_money(float $amount, string $currency = 'USD'): string
     return sprintf('%s %s', $currency, number_format($amount, 2, '.', ','));
 }
 
+function sales_contact_info(): array
+{
+    return [
+        'name' => (string) catalog_config('sales_contact.name', 'Ventas'),
+        'email' => (string) catalog_config('sales_contact.email', 'ventas@rodeoimportzl.com'),
+        'phone' => (string) catalog_config('sales_contact.phone', '4418710'),
+    ];
+}
+
 function create_share_link(int $catalogId, ?int $sellerId, ?int $clientId, string $label, ?string $expiresAt, string $notes = ''): array
 {
     $token = generate_secure_token();
@@ -1046,6 +1055,10 @@ function build_order_csv_string(array $order, array $rows): string
     fputcsv($stream, ['Contacto', $order['contact_name'] ?? '']);
     fputcsv($stream, ['Correo', $order['contact_email'] ?? '']);
     fputcsv($stream, ['Telefono', $order['contact_phone'] ?? '']);
+    $salesContact = sales_contact_info();
+    fputcsv($stream, ['Contacto comercial', $salesContact['name']]);
+    fputcsv($stream, ['Correo comercial', $salesContact['email']]);
+    fputcsv($stream, ['Telefono comercial', $salesContact['phone']]);
     fputcsv($stream, ['Zona / Direccion', $order['address_zone'] ?? '']);
     fputcsv($stream, ['Estado', $order['status'] ?? '']);
     fputcsv($stream, ['Fecha', $order['created_at'] ?? date('Y-m-d H:i:s')]);
@@ -1074,8 +1087,8 @@ function build_order_csv_string(array $order, array $rows): string
 
 function build_order_xlsx_file(array $order, array $rows, string $targetPath): bool
 {
-    $headerRow = 11;
-    $dataStartRow = 12;
+    $headerRow = 14;
+    $dataStartRow = 15;
     $dataEndRow = $dataStartRow + max(count($rows) - 1, 0);
     $totalRow = $dataEndRow + 2;
 
@@ -1099,6 +1112,7 @@ function build_order_xlsx_file(array $order, array $rows, string $targetPath): b
 function build_order_sheet_xml(array $order, array $rows, int $headerRow, int $dataEndRow, int $totalRow): string
 {
     $cells = [];
+    $salesContact = sales_contact_info();
     $metaRows = [
         ['A1', 'Pedido', 'B1', (string) ($order['order_number'] ?? '')],
         ['A2', 'Catalogo', 'B2', (string) ($order['catalog_title'] ?? $order['catalog_slug'] ?? '')],
@@ -1106,9 +1120,12 @@ function build_order_sheet_xml(array $order, array $rows, int $headerRow, int $d
         ['A4', 'Contacto', 'B4', (string) ($order['contact_name'] ?? '')],
         ['A5', 'Correo', 'B5', (string) ($order['contact_email'] ?? '')],
         ['A6', 'Telefono', 'B6', (string) ($order['contact_phone'] ?? '')],
-        ['A7', 'Zona', 'B7', (string) ($order['address_zone'] ?? '')],
-        ['A8', 'Estado', 'B8', (string) ($order['status'] ?? '')],
-        ['A9', 'Fecha', 'B9', (string) ($order['created_at'] ?? date('Y-m-d H:i:s'))],
+        ['A7', 'Contacto comercial', 'B7', $salesContact['name']],
+        ['A8', 'Correo comercial', 'B8', $salesContact['email']],
+        ['A9', 'Telefono comercial', 'B9', $salesContact['phone']],
+        ['A10', 'Zona', 'B10', (string) ($order['address_zone'] ?? '')],
+        ['A11', 'Estado', 'B11', (string) ($order['status'] ?? '')],
+        ['A12', 'Fecha', 'B12', (string) ($order['created_at'] ?? date('Y-m-d H:i:s'))],
     ];
 
     foreach ($metaRows as $index => $meta) {

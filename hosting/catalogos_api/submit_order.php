@@ -64,6 +64,7 @@ if (!$normalizedItems) {
     ], 422);
 }
 
+$salesContact = sales_contact_info();
 $pdo = db();
 $pdo->beginTransaction();
 
@@ -228,6 +229,9 @@ $lines = [
     'Contacto: ' . $contactName,
     'Correo: ' . $contactEmail,
     'Telefono: ' . $contactPhone,
+    'Contacto comercial: ' . $salesContact['name'],
+    'Correo comercial: ' . $salesContact['email'],
+    'Telefono comercial: ' . $salesContact['phone'],
     'Zona / Direccion: ' . $addressZone,
     'Vendedor asociado: ' . ($context['seller_name'] ?: 'No definido'),
     'Cliente asociado: ' . ($context['client_name'] ?: 'No definido'),
