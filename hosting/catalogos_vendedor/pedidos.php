@@ -2,9 +2,9 @@
 declare(strict_types=1);
 
 require __DIR__ . '/_bootstrap.php';
-vendor_require_login();
+vendor_require_panel_login();
 
-$sellerId = (int) (current_user()['seller_id'] ?? 0);
+$sellerId = (int) (vendor_current_user()['seller_id'] ?? 0);
 $orderId = (int) ($_GET['id'] ?? 0);
 $orders = [];
 $order = null;

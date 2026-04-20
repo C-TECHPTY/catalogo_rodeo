@@ -2,9 +2,9 @@
 declare(strict_types=1);
 
 require __DIR__ . '/_bootstrap.php';
-vendor_require_login();
+vendor_require_panel_login();
 
-$user = current_user();
+$user = vendor_current_user();
 $sellerId = (int) ($user['seller_id'] ?? 0);
 
 $schemaReady = vendor_b2b_schema_ready();

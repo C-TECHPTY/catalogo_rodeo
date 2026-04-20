@@ -44,6 +44,64 @@ function vendor_b2b_schema_ready(): bool
         && vendor_column_exists('orders', 'seller_id');
 }
 
+function vendor_current_user(): ?array
+{
+    $sessionUser = current_user();
+    $userId = (int) ($sessionUser['id'] ?? 0);
+    if ($userId <= 0) {
+        return $sessionUser;
+    }
+
+    $hasSellerId = vendor_column_exists('catalog_users', 'seller_id');
+    $hasSellers = vendor_table_exists('sellers');
+    $sellerSelect = $hasSellerId && $hasSellers ? ', s.name AS seller_display_name' : ", '' AS seller_display_name";
+    $sellerJoin = $hasSellerId && $hasSellers ? ' LEFT JOIN sellers s ON s.id = u.seller_id' : '';
+    $statement = db()->prepare(
+        "SELECT u.*{$sellerSelect}
+         FROM catalog_users u
+         {$sellerJoin}
+         WHERE u.id = :id AND u.is_active = 1
+         LIMIT 1"
+    );
+    $statement->execute(['id' => $userId]);
+    $row = $statement->fetch();
+    if (!$row) {
+        return $sessionUser;
+    }
+
+    $_SESSION['catalog_admin_user'] = [
+        'id' => (int) $row['id'],
+        'username' => $row['username'],
+        'full_name' => $row['full_name'],
+        'email' => $row['email'],
+        'role' => $row['role'],
+        'seller_id' => $hasSellerId && !empty($row['seller_id']) ? (int) $row['seller_id'] : null,
+        'seller_display_name' => $row['seller_display_name'] ?? '',
+    ];
+
+    return $_SESSION['catalog_admin_user'];
+}
+
+function vendor_require_panel_login(): void
+{
+    $user = vendor_current_user();
+    if (!$user) {
+        header('Location: ../catalogos_admin/login.php');
+        exit;
+    }
+
+    $role = strtolower(trim((string) ($user['role'] ?? '')));
+    $sellerId = (int) ($user['seller_id'] ?? 0);
+    if ($sellerId <= 0 && !in_array($role, ['admin', 'sales'], true)) {
+        http_response_code(403);
+        echo 'No tienes permisos para acceder a esta seccion. Usuario: '
+            . html_escape((string) ($user['username'] ?? ''))
+            . ' / Rol: ' . html_escape($role ?: 'sin rol')
+            . ' / seller_id: ' . html_escape((string) ($user['seller_id'] ?? 'NULL'));
+        exit;
+    }
+}
+
 if (!function_exists('admin_state_label')) {
     function admin_state_label(string $status): string
     {
@@ -75,8 +133,8 @@ if (!function_exists('admin_status_badge')) {
 
 function vendor_header(string $title, string $active = 'index.php'): void
 {
-    vendor_require_login();
-    $user = current_user();
+    vendor_require_panel_login();
+    $user = vendor_current_user();
     $flash = flash_get();
     ?>
     <!DOCTYPE html>

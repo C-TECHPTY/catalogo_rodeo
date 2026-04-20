@@ -2,9 +2,9 @@
 declare(strict_types=1);
 
 require __DIR__ . '/_bootstrap.php';
-vendor_require_login();
+vendor_require_panel_login();
 
-$sellerId = (int) (current_user()['seller_id'] ?? 0);
+$sellerId = (int) (vendor_current_user()['seller_id'] ?? 0);
 $catalogs = [];
 $schemaReady = vendor_table_exists('catalogs');
 if ($schemaReady) {
@@ -23,7 +23,7 @@ if ($schemaReady) {
     }
     if ($hasSellerName) {
         $conditions[] = 'c.seller_name = :seller_name';
-        $params['seller_name'] = current_user()['seller_display_name'] ?? '';
+        $params['seller_name'] = vendor_current_user()['seller_display_name'] ?? '';
     }
     $where = $conditions ? 'WHERE ' . implode(' OR ', $conditions) : '';
     $orderBy = vendor_column_exists('catalogs', 'updated_at') ? 'c.updated_at DESC' : 'c.id DESC';
