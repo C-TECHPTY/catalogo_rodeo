@@ -117,6 +117,44 @@ function current_user(): ?array
     return is_array($user) ? $user : null;
 }
 
+function refresh_current_user_from_db(): ?array
+{
+    $user = current_user();
+    $userId = (int) ($user['id'] ?? 0);
+    if ($userId <= 0 || !catalog_table_exists('catalog_users')) {
+        return $user;
+    }
+
+    $hasSellerId = catalog_column_exists('catalog_users', 'seller_id');
+    $hasSellers = catalog_table_exists('sellers');
+    $sellerSelect = $hasSellerId && $hasSellers ? ', s.name AS seller_display_name' : ", '' AS seller_display_name";
+    $sellerJoin = $hasSellerId && $hasSellers ? ' LEFT JOIN sellers s ON s.id = u.seller_id' : '';
+    $statement = db()->prepare(
+        "SELECT u.*{$sellerSelect}
+         FROM catalog_users u
+         {$sellerJoin}
+         WHERE u.id = :id AND u.is_active = 1
+         LIMIT 1"
+    );
+    $statement->execute(['id' => $userId]);
+    $row = $statement->fetch();
+    if (!$row) {
+        return $user;
+    }
+
+    $_SESSION['catalog_admin_user'] = [
+        'id' => (int) $row['id'],
+        'username' => $row['username'],
+        'full_name' => $row['full_name'],
+        'email' => $row['email'],
+        'role' => $row['role'],
+        'seller_id' => $hasSellerId && !empty($row['seller_id']) ? (int) $row['seller_id'] : null,
+        'seller_display_name' => $row['seller_display_name'] ?? '',
+    ];
+
+    return $_SESSION['catalog_admin_user'];
+}
+
 function user_has_role(array $allowedRoles): bool
 {
     $user = current_user();
@@ -150,13 +188,13 @@ function admin_require_login(array $allowedRoles = []): void
 
 function vendor_require_login(): void
 {
-    $user = current_user();
+    $user = refresh_current_user_from_db();
     if (!$user) {
         header('Location: ../catalogos_admin/login.php');
         exit;
     }
 
-    $role = (string) ($user['role'] ?? '');
+    $role = strtolower(trim((string) ($user['role'] ?? '')));
     $sellerId = (int) ($user['seller_id'] ?? 0);
     if (!in_array($role, ['vendor', 'seller', 'vendedor', 'admin', 'sales'], true) && $sellerId <= 0) {
         http_response_code(403);
