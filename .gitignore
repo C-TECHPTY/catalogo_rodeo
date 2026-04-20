@@ -2,6 +2,7 @@ node_modules/
 *.log
 dist/
 build/
+release/
 .DS_Store
 Thumbs.db
 settings.json

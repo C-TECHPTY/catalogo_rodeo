@@ -77,6 +77,16 @@ Abrir la app:
 npm start
 ```
 
+Crear ejecutable para Windows:
+
+```bash
+npm run dist:win
+```
+
+El ejecutable queda en `release/Catalogo Rodeo B2B-win32-x64/Catalogo Rodeo B2B.exe` y se puede abrir con doble clic, sin ejecutar `npm start`. Mantén el `.exe` junto con las carpetas y DLLs que genera Electron en esa carpeta.
+
+Nota: el ejecutable de un solo archivo portable requiere permisos de symlink en Windows durante el build. Esta configuracion genera una carpeta lista para usar, que es la opcion mas estable para esta PC.
+
 Validar sintaxis JS:
 
 ```bash

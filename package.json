@@ -1,12 +1,17 @@
 {
-  "name": "catalogo-acenox-local",
+  "name": "catalogo-rodeo-b2b",
   "version": "1.0.0",
-  "description": "Generador manual y por lotes de catalogos PDF",
+  "description": "Generador B2B de catalogos comerciales Rodeo",
+  "author": "C-TECHPTY",
+  "productName": "Catalogo Rodeo B2B",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "pack": "node node_modules/@electron/packager/bin/electron-packager.mjs . \"Catalogo Rodeo B2B\" --platform=win32 --arch=x64 --out=release --overwrite --prune=true --ignore=\"^/release\" --ignore=\"^/web\" --ignore=\"\\\\.xlsx$\" --ignore=\"\\\\.xlsm$\" --ignore=\"\\\\.xls$\" --ignore=\"\\\\.zip$\"",
+    "dist:win": "npm run pack"
   },
   "devDependencies": {
+    "@electron/packager": "^19.1.0",
     "electron": "^31.7.7"
   }
 }
