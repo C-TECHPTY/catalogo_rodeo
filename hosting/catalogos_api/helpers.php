@@ -676,6 +676,7 @@ function send_notification_mail(string $subject, string $message, array $recipie
         'Return-Path: ' . $fromEmail,
     ];
     $mailParams = filter_var($fromEmail, FILTER_VALIDATE_EMAIL) ? '-f' . escapeshellarg($fromEmail) : '';
+    $smtpEnabled = (bool) catalog_config('mail.smtp.enabled', false);
 
     $body = [];
     $body[] = '--' . $boundary;
@@ -714,9 +715,18 @@ function send_notification_mail(string $subject, string $message, array $recipie
     $sentCount = 0;
     $failedCount = 0;
     foreach ($finalRecipients as $recipient) {
-        $sent = $mailParams !== ''
-            ? @mail($recipient, $subject, $mailBody, implode("\r\n", $headers), $mailParams)
-            : @mail($recipient, $subject, $mailBody, implode("\r\n", $headers));
+        if ($smtpEnabled) {
+            $sendResult = smtp_send_mail($recipient, $subject, $headers, $mailBody, $fromEmail);
+            $sent = $sendResult['ok'];
+            $responseMessage = $sendResult['message'];
+        } else {
+            $sent = $mailParams !== ''
+                ? @mail($recipient, $subject, $mailBody, implode("\r\n", $headers), $mailParams)
+                : @mail($recipient, $subject, $mailBody, implode("\r\n", $headers));
+            $responseMessage = $sent
+                ? 'mail() OK; envelope sender: ' . ($fromEmail ?: 'no definido')
+                : 'mail() devolvio false; envelope sender: ' . ($fromEmail ?: 'no definido');
+        }
         $status = $sent ? 'sent' : 'failed';
         if ($status === 'sent') {
             $sentCount++;
@@ -734,13 +744,148 @@ function send_notification_mail(string $subject, string $message, array $recipie
             'payload' => $message,
             'attachments_json' => $attachmentMeta ? json_encode($attachmentMeta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null,
             'status' => $status,
-            'response_message' => $status === 'sent'
-                ? 'mail() OK; envelope sender: ' . ($fromEmail ?: 'no definido')
-                : 'mail() devolvio false; envelope sender: ' . ($fromEmail ?: 'no definido'),
+            'response_message' => $responseMessage,
         ]);
     }
 
     return $sentCount > 0 && $failedCount === 0 ? 'sent' : ($sentCount > 0 ? 'sent' : 'failed');
+}
+
+function smtp_send_mail(string $recipient, string $subject, array $headers, string $body, string $fromEmail): array
+{
+    $host = trim((string) catalog_config('mail.smtp.host', ''));
+    $port = (int) catalog_config('mail.smtp.port', 465);
+    $encryption = strtolower(trim((string) catalog_config('mail.smtp.encryption', 'ssl')));
+    $username = trim((string) catalog_config('mail.smtp.username', ''));
+    $password = (string) catalog_config('mail.smtp.password', '');
+    $timeout = max(5, (int) catalog_config('mail.smtp.timeout', 20));
+
+    if ($host === '' || $username === '' || $password === '' || !filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
+        return ['ok' => false, 'message' => 'SMTP incompleto en config.php'];
+    }
+
+    $remote = $encryption === 'ssl' ? 'ssl://' . $host : $host;
+    $errno = 0;
+    $errstr = '';
+    $socket = @fsockopen($remote, $port, $errno, $errstr, $timeout);
+    if (!$socket) {
+        return ['ok' => false, 'message' => 'SMTP conexion fallida: ' . trim($errstr ?: (string) $errno)];
+    }
+
+    stream_set_timeout($socket, $timeout);
+    $lastResponse = '';
+
+    $read = static function () use ($socket, &$lastResponse): string {
+        $response = '';
+        while (($line = fgets($socket, 515)) !== false) {
+            $response .= $line;
+            if (strlen($line) >= 4 && $line[3] === ' ') {
+                break;
+            }
+        }
+        $lastResponse = trim($response);
+        return $lastResponse;
+    };
+
+    $write = static function (string $command) use ($socket): void {
+        fwrite($socket, $command . "\r\n");
+    };
+
+    $expect = static function (array $codes, string $step) use ($read): ?string {
+        $response = $read();
+        $code = substr($response, 0, 3);
+        return in_array($code, $codes, true) ? null : 'SMTP ' . $step . ' fallo: ' . $response;
+    };
+
+    $error = $expect(['220'], 'banner');
+    if ($error) {
+        fclose($socket);
+        return ['ok' => false, 'message' => $error];
+    }
+
+    $serverName = $_SERVER['SERVER_NAME'] ?? 'localhost';
+    $write('EHLO ' . $serverName);
+    $error = $expect(['250'], 'EHLO');
+    if ($error) {
+        fclose($socket);
+        return ['ok' => false, 'message' => $error];
+    }
+
+    if ($encryption === 'tls') {
+        $write('STARTTLS');
+        $error = $expect(['220'], 'STARTTLS');
+        if ($error) {
+            fclose($socket);
+            return ['ok' => false, 'message' => $error];
+        }
+        if (!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+            fclose($socket);
+            return ['ok' => false, 'message' => 'SMTP STARTTLS no pudo activar cifrado'];
+        }
+        $write('EHLO ' . $serverName);
+        $error = $expect(['250'], 'EHLO TLS');
+        if ($error) {
+            fclose($socket);
+            return ['ok' => false, 'message' => $error];
+        }
+    }
+
+    $write('AUTH LOGIN');
+    $error = $expect(['334'], 'AUTH');
+    if ($error) {
+        fclose($socket);
+        return ['ok' => false, 'message' => $error];
+    }
+    $write(base64_encode($username));
+    $error = $expect(['334'], 'usuario SMTP');
+    if ($error) {
+        fclose($socket);
+        return ['ok' => false, 'message' => $error];
+    }
+    $write(base64_encode($password));
+    $error = $expect(['235'], 'clave SMTP');
+    if ($error) {
+        fclose($socket);
+        return ['ok' => false, 'message' => $error];
+    }
+
+    $write('MAIL FROM:<' . $fromEmail . '>');
+    $error = $expect(['250'], 'MAIL FROM');
+    if ($error) {
+        fclose($socket);
+        return ['ok' => false, 'message' => $error];
+    }
+    $write('RCPT TO:<' . $recipient . '>');
+    $error = $expect(['250', '251'], 'RCPT TO');
+    if ($error) {
+        fclose($socket);
+        return ['ok' => false, 'message' => $error];
+    }
+    $write('DATA');
+    $error = $expect(['354'], 'DATA');
+    if ($error) {
+        fclose($socket);
+        return ['ok' => false, 'message' => $error];
+    }
+
+    $messageHeaders = array_merge($headers, [
+        'To: <' . $recipient . '>',
+        'Subject: ' . $subject,
+        'Date: ' . date(DATE_RFC2822),
+    ]);
+    $message = implode("\r\n", $messageHeaders) . "\r\n\r\n" . $body;
+    $message = preg_replace('/^\./m', '..', $message);
+    fwrite($socket, $message . "\r\n.\r\n");
+    $error = $expect(['250'], 'envio');
+    if ($error) {
+        fclose($socket);
+        return ['ok' => false, 'message' => $error];
+    }
+
+    $write('QUIT');
+    fclose($socket);
+
+    return ['ok' => true, 'message' => 'SMTP OK: ' . $lastResponse];
 }
 
 function build_notification_recipients(array $order, ?array $seller = null): array

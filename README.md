@@ -335,7 +335,25 @@ Revisar:
 - Que `catalogos_api/config.php` tenga un `mail.from_email` real del dominio.
 - Que el hosting permita `mail()` de PHP. En Configuracion > Ultimas notificaciones se ve si `mail()` devolvio `OK` o `false`.
 - En cPanel > Track Delivery, el remitente debe ser el `mail.from_email` configurado. Si aparece el usuario del servidor o un error `550 5.7.1 EASender blocked`, crea/usa un correo real del dominio como remitente o cambia a SMTP autenticado.
-- Si el hosting no permite `mail()`, configurar SMTP en el hosting o adaptar el sistema a SMTP autenticado.
+- Si el hosting bloquea `mail()`, activar SMTP autenticado en `catalogos_api/config.php`:
+
+```php
+'mail' => [
+    'from_name' => 'Rodeo Import',
+    'from_email' => 'catalogos@rodeoimportzl.com',
+    'smtp' => [
+        'enabled' => true,
+        'host' => 'mail.rodeoimportzl.com',
+        'port' => 465,
+        'encryption' => 'ssl',
+        'username' => 'catalogos@rodeoimportzl.com',
+        'password' => 'CLAVE_DEL_CORREO',
+        'timeout' => 20,
+    ],
+],
+```
+
+En cPanel estos datos suelen estar en Email Accounts > Connect Devices.
 
 ### No exporta pedidos XLSX/PDF
 

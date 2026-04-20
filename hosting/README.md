@@ -44,3 +44,24 @@ public_html/
 - `mail()` funcional o relay SMTP del hosting
 - HTTPS obligatorio
 - cambia `api_key` y hash admin antes de exponer el sistema
+
+## Correo SMTP
+
+Si cPanel bloquea `mail()` con errores como `550 5.7.1 EASender blocked`,
+configura SMTP autenticado en `catalogos_api/config.php`:
+
+```php
+'mail' => [
+    'from_name' => 'Rodeo Import',
+    'from_email' => 'catalogos@rodeoimportzl.com',
+    'smtp' => [
+        'enabled' => true,
+        'host' => 'mail.rodeoimportzl.com',
+        'port' => 465,
+        'encryption' => 'ssl',
+        'username' => 'catalogos@rodeoimportzl.com',
+        'password' => 'CLAVE_DEL_CORREO',
+        'timeout' => 20,
+    ],
+],
+```

@@ -16,6 +16,15 @@ return [
     'mail' => [
         'from_name' => 'Catalogo Rodeo B2B',
         'from_email' => 'no-reply@tuempresa.com',
+        'smtp' => [
+            'enabled' => false,
+            'host' => 'mail.tuempresa.com',
+            'port' => 465,
+            'encryption' => 'ssl', // ssl, tls o none
+            'username' => 'no-reply@tuempresa.com',
+            'password' => 'CAMBIA_ESTA_CLAVE',
+            'timeout' => 20,
+        ],
     ],
     'admin' => [
         'session_name' => 'catalog_admin_session',
