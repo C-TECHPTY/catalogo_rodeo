@@ -334,6 +334,7 @@ Revisar:
 - Que `Copiar a vendedor` este activo en Configuracion.
 - Que `catalogos_api/config.php` tenga un `mail.from_email` real del dominio.
 - Que el hosting permita `mail()` de PHP. En Configuracion > Ultimas notificaciones se ve si `mail()` devolvio `OK` o `false`.
+- En cPanel > Track Delivery, el remitente debe ser el `mail.from_email` configurado. Si aparece el usuario del servidor o un error `550 5.7.1 EASender blocked`, crea/usa un correo real del dominio como remitente o cambia a SMTP autenticado.
 - Si el hosting no permite `mail()`, configurar SMTP en el hosting o adaptar el sistema a SMTP autenticado.
 
 ### No exporta pedidos XLSX/PDF

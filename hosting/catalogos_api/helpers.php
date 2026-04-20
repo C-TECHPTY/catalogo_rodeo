@@ -672,7 +672,10 @@ function send_notification_mail(string $subject, string $message, array $recipie
         'MIME-Version: 1.0',
         'Content-Type: multipart/mixed; boundary="' . $boundary . '"',
         'From: ' . sprintf('%s <%s>', $fromName, $fromEmail),
+        'Reply-To: ' . sprintf('%s <%s>', $fromName, $fromEmail),
+        'Return-Path: ' . $fromEmail,
     ];
+    $mailParams = filter_var($fromEmail, FILTER_VALIDATE_EMAIL) ? '-f' . escapeshellarg($fromEmail) : '';
 
     $body = [];
     $body[] = '--' . $boundary;
@@ -711,7 +714,10 @@ function send_notification_mail(string $subject, string $message, array $recipie
     $sentCount = 0;
     $failedCount = 0;
     foreach ($finalRecipients as $recipient) {
-        $status = @mail($recipient, $subject, $mailBody, implode("\r\n", $headers)) ? 'sent' : 'failed';
+        $sent = $mailParams !== ''
+            ? @mail($recipient, $subject, $mailBody, implode("\r\n", $headers), $mailParams)
+            : @mail($recipient, $subject, $mailBody, implode("\r\n", $headers));
+        $status = $sent ? 'sent' : 'failed';
         if ($status === 'sent') {
             $sentCount++;
         } else {
@@ -728,7 +734,9 @@ function send_notification_mail(string $subject, string $message, array $recipie
             'payload' => $message,
             'attachments_json' => $attachmentMeta ? json_encode($attachmentMeta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null,
             'status' => $status,
-            'response_message' => $status === 'sent' ? 'mail() OK' : 'mail() devolvio false',
+            'response_message' => $status === 'sent'
+                ? 'mail() OK; envelope sender: ' . ($fromEmail ?: 'no definido')
+                : 'mail() devolvio false; envelope sender: ' . ($fromEmail ?: 'no definido'),
         ]);
     }
 
