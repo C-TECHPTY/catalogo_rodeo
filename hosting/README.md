@@ -8,6 +8,8 @@ Bundle web listo para hosting con:
 - assets compartidos en `assets/`
 - SQL base en `sql/catalog_platform.sql`
 - migracion evolutiva en `sql/20260418_b2b_upgrade.sql`
+- migracion de inteligencia comercial en `sql/20260423_intelligence_events.sql`
+- migracion de imagen de vendedor y branding en `sql/20260424_seller_photo_branding.sql`
 
 ## Estructura sugerida
 
@@ -24,9 +26,11 @@ public_html/
 
 1. Importa `sql/catalog_platform.sql` si es instalacion nueva.
 2. Si ya existe una base previa, ejecuta `sql/20260418_b2b_upgrade.sql`.
+   Para activar tracking e inteligencia comercial, ejecuta tambien `sql/20260423_intelligence_events.sql`.
+   Para fotos de vendedor y branding visual, ejecuta tambien `sql/20260424_seller_photo_branding.sql`.
 3. Copia `catalogos_api/config.example.php` como `catalogos_api/config.php`.
 4. Ajusta credenciales MySQL, `api_key`, correo remitente y zona horaria.
-5. Sube `catalogos_api/`, `catalogos_admin/`, `catalogos_vendedor/` y `assets/`.
+5. Sube `catalogos_api/`, `catalogos_admin/`, `catalogos_vendedor/`, `assets/` y permite escritura en `uploads/`.
 6. Mantén `sql/` fuera del acceso publico si el hosting lo permite.
 7. Publica los catalogos generados por Electron dentro de `catalogos/<slug>/`.
 

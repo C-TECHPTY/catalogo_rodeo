@@ -11,6 +11,14 @@ if ($currentUser) {
 
 $error = '';
 $username = '';
+$companyName = app_setting('branding_company_name', (string) catalog_config('app_name', 'Catalogo Rodeo B2B'));
+$loginTitle = app_setting('branding_login_title', 'Catalogo Rodeo B2B');
+$loginSubtitle = app_setting('branding_login_subtitle', 'Administracion comercial, vendedores, links y pedidos trazables.');
+$loginLogoPath = app_setting('branding_login_logo');
+$companyLogoPath = app_setting('branding_company_logo');
+$loginBackgroundPath = app_setting('branding_login_background');
+$loginLogoUrl = panel_media_url($loginLogoPath !== '' ? $loginLogoPath : $companyLogoPath);
+$loginBackgroundUrl = panel_media_url($loginBackgroundPath);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (function_exists('verify_csrf_or_abort')) {
         verify_csrf_or_abort();
@@ -37,14 +45,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Acceso Catalogo Rodeo B2B</title>
     <link rel="stylesheet" href="../assets/admin.css">
 </head>
-<body class="login-page">
+<body class="login-page"<?= $loginBackgroundUrl !== '' ? ' style="--login-bg-image:url(\'' . html_escape($loginBackgroundUrl) . '\')"' : '' ?>>
     <div class="login-shell">
         <div class="login-card">
             <div class="login-brand">
-                <span class="login-brand__mark">B2B</span>
+                <span class="login-brand__mark">
+                    <?php if ($loginLogoUrl !== ''): ?>
+                        <img class="login-brand__logo" src="<?= html_escape($loginLogoUrl) ?>" alt="<?= html_escape($companyName) ?>">
+                    <?php else: ?>
+                        B2B
+                    <?php endif; ?>
+                </span>
                 <div>
-                    <h1>Catalogo Rodeo B2B</h1>
-                    <p>Administracion comercial, vendedores, links y pedidos trazables.</p>
+                    <h1><?= html_escape($loginTitle) ?></h1>
+                    <p><?= html_escape($loginSubtitle) ?></p>
                 </div>
             </div>
             <?php if ($error !== ''): ?>
@@ -57,6 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <button class="button--primary" type="submit">Ingresar al panel</button>
             </form>
             <div class="login-meta">
+                <span><?= html_escape($companyName) ?></span>
                 <span>Acceso seguro con sesiones protegidas</span>
                 <span>API y pedidos integrados</span>
             </div>

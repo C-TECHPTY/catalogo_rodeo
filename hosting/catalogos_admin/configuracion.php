@@ -6,16 +6,59 @@ admin_require_login(['admin', 'billing', 'sales']);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf_or_abort();
-    update_app_settings([
+    $settings = [
         'mail_sales' => trim((string) ($_POST['mail_sales'] ?? '')),
         'mail_billing' => trim((string) ($_POST['mail_billing'] ?? '')),
         'mail_logistics' => trim((string) ($_POST['mail_logistics'] ?? '')),
         'mail_supervision' => trim((string) ($_POST['mail_supervision'] ?? '')),
         'mail_copy_seller' => isset($_POST['mail_copy_seller']) ? '1' : '0',
         'mail_copy_client' => isset($_POST['mail_copy_client']) ? '1' : '0',
-    ]);
+        'branding_company_name' => trim((string) ($_POST['branding_company_name'] ?? '')),
+        'branding_login_title' => trim((string) ($_POST['branding_login_title'] ?? '')),
+        'branding_login_subtitle' => trim((string) ($_POST['branding_login_subtitle'] ?? '')),
+    ];
+
+    try {
+        $logoPath = save_uploaded_image('branding_company_logo_file', 'uploads/branding', 'company-logo');
+        $loginLogoPath = save_uploaded_image('branding_login_logo_file', 'uploads/branding', 'login-logo');
+        $backgroundPath = save_uploaded_image('branding_login_background_file', 'uploads/branding', 'login-background');
+    } catch (Throwable $exception) {
+        flash_set('error', $exception->getMessage());
+        header('Location: configuracion.php');
+        exit;
+    }
+
+    $currentCompanyLogo = app_setting('branding_company_logo');
+    $currentLoginLogo = app_setting('branding_login_logo');
+    $currentBackground = app_setting('branding_login_background');
+
+    if (isset($_POST['remove_company_logo'])) {
+        delete_panel_file($currentCompanyLogo);
+        $settings['branding_company_logo'] = '';
+    } elseif ($logoPath !== null) {
+        delete_panel_file($currentCompanyLogo);
+        $settings['branding_company_logo'] = $logoPath;
+    }
+
+    if (isset($_POST['remove_login_logo'])) {
+        delete_panel_file($currentLoginLogo);
+        $settings['branding_login_logo'] = '';
+    } elseif ($loginLogoPath !== null) {
+        delete_panel_file($currentLoginLogo);
+        $settings['branding_login_logo'] = $loginLogoPath;
+    }
+
+    if (isset($_POST['remove_login_background'])) {
+        delete_panel_file($currentBackground);
+        $settings['branding_login_background'] = '';
+    } elseif ($backgroundPath !== null) {
+        delete_panel_file($currentBackground);
+        $settings['branding_login_background'] = $backgroundPath;
+    }
+
+    update_app_settings($settings);
     audit_log('settings.notifications_updated', 'app_settings');
-    flash_set('success', 'Configuracion de notificaciones actualizada.');
+    flash_set('success', 'Configuracion actualizada.');
     header('Location: configuracion.php');
     exit;
 }
@@ -23,11 +66,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 admin_header('Configuracion', 'configuracion.php');
 $apiKey = (string) catalog_config('api_key', '');
 $maskedApiKey = $apiKey !== '' ? substr($apiKey, 0, 4) . str_repeat('*', max(8, strlen($apiKey) - 8)) . substr($apiKey, -4) : 'No configurada';
+$brandingCompanyLogo = app_setting('branding_company_logo');
+$brandingLoginLogo = app_setting('branding_login_logo');
+$brandingLoginBackground = app_setting('branding_login_background');
 ?>
 <div class="split">
     <section class="card">
         <div class="toolbar"><strong>Destinos de notificacion</strong></div>
-        <form class="form-grid" method="post">
+        <form class="form-grid" method="post" enctype="multipart/form-data">
             <?= csrf_field() ?>
             <label><span>Ventas</span><input type="text" name="mail_sales" value="<?= html_escape(app_setting('mail_sales')) ?>"></label>
             <label><span>Facturacion</span><input type="text" name="mail_billing" value="<?= html_escape(app_setting('mail_billing')) ?>"></label>
@@ -35,6 +81,30 @@ $maskedApiKey = $apiKey !== '' ? substr($apiKey, 0, 4) . str_repeat('*', max(8, 
             <label><span>Supervision</span><input type="text" name="mail_supervision" value="<?= html_escape(app_setting('mail_supervision')) ?>"></label>
             <label class="checkbox-line"><input type="checkbox" name="mail_copy_seller" <?= app_setting('mail_copy_seller', '1') === '1' ? 'checked' : '' ?>><span>Copiar a vendedor</span></label>
             <label class="checkbox-line"><input type="checkbox" name="mail_copy_client" <?= app_setting('mail_copy_client', '1') === '1' ? 'checked' : '' ?>><span>Copiar a cliente</span></label>
+            <label><span>Nombre de empresa</span><input type="text" name="branding_company_name" value="<?= html_escape(app_setting('branding_company_name', (string) catalog_config('app_name', 'Catalogo Rodeo B2B'))) ?>"></label>
+            <label><span>Titulo del login</span><input type="text" name="branding_login_title" value="<?= html_escape(app_setting('branding_login_title', 'Catalogo Rodeo B2B')) ?>"></label>
+            <label class="wide"><span>Texto del login</span><input type="text" name="branding_login_subtitle" value="<?= html_escape(app_setting('branding_login_subtitle', 'Administracion comercial, vendedores, links y pedidos trazables.')) ?>"></label>
+            <label><span>Logo principal</span><input type="file" name="branding_company_logo_file" accept="image/*"></label>
+            <label><span>Logo del login</span><input type="file" name="branding_login_logo_file" accept="image/*"></label>
+            <label class="wide"><span>Fondo del login</span><input type="file" name="branding_login_background_file" accept="image/*"></label>
+            <?php if ($brandingCompanyLogo !== ''): ?>
+                <div class="branding-preview">
+                    <img class="branding-preview__logo" src="<?= html_escape(panel_media_url($brandingCompanyLogo)) ?>" alt="Logo principal">
+                    <label class="checkbox-line"><input type="checkbox" name="remove_company_logo"><span>Quitar logo principal</span></label>
+                </div>
+            <?php endif; ?>
+            <?php if ($brandingLoginLogo !== ''): ?>
+                <div class="branding-preview">
+                    <img class="branding-preview__logo" src="<?= html_escape(panel_media_url($brandingLoginLogo)) ?>" alt="Logo login">
+                    <label class="checkbox-line"><input type="checkbox" name="remove_login_logo"><span>Quitar logo del login</span></label>
+                </div>
+            <?php endif; ?>
+            <?php if ($brandingLoginBackground !== ''): ?>
+                <div class="branding-preview branding-preview--wide">
+                    <img class="branding-preview__background" src="<?= html_escape(panel_media_url($brandingLoginBackground)) ?>" alt="Fondo login">
+                    <label class="checkbox-line"><input type="checkbox" name="remove_login_background"><span>Quitar fondo del login</span></label>
+                </div>
+            <?php endif; ?>
             <div class="wide"><button class="button--primary" type="submit">Guardar configuracion</button></div>
         </form>
     </section>

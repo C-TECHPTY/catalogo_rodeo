@@ -4,6 +4,9 @@
 
   const metadata = JSON.parse(metaNode.textContent || "{}");
   const queueKey = `catalog-offline-queue:${metadata.slug || "catalog"}`;
+  const visitorId = stableClientId("catalog-visitor-id", "visitor");
+  const sessionId = stableSessionId();
+  let searchTrackTimer = null;
   const state = {
     products: [],
     filtered: [],
@@ -81,6 +84,7 @@
     renderFilters();
     applyFilters();
     renderCart();
+    trackCatalogEvent("catalog_view");
     flushOfflineQueue();
   }
 
@@ -250,6 +254,7 @@
     els.searchInput?.addEventListener("input", () => {
       state.filters.search = els.searchInput.value.trim().toLowerCase();
       applyFilters();
+      scheduleSearchTracking(state.filters.search);
     });
     els.detailClose?.addEventListener("click", closeDetail);
     els.detailOverlay?.addEventListener("click", (event) => {
@@ -294,6 +299,9 @@
         state.filters.category = category;
         renderFilters();
         applyFilters();
+        trackCatalogEvent("category_filter", {
+          metadata: { category }
+        });
       });
       els.categoryFilters.appendChild(button);
     });
@@ -377,6 +385,7 @@
     renderDetailSpecs(product);
     updateCalculator();
     els.detailOverlay?.classList.add("open");
+    trackProductEvent("product_detail", product);
   }
 
   function closeDetail() {
@@ -408,6 +417,9 @@
       button.addEventListener("click", () => {
         state.activeMediaIndex = index;
         renderDetailMedia();
+        trackProductEvent("product_media", state.activeProduct, {
+          metadata: { media_type: item.type, media_index: index }
+        });
       });
       els.detailThumbs.appendChild(button);
     });
@@ -466,6 +478,10 @@
     renderCart();
     closeDetail();
     openCartDrawer();
+    trackProductEvent("add_to_cart", product, {
+      quantity: qty,
+      value_amount: qty * getPackSize(product) * parsePrice(product.price)
+    });
   }
 
   function renderCart() {
@@ -507,6 +523,7 @@
       remove.addEventListener("click", () => {
         state.cart.delete(entry.key);
         renderCart();
+        trackProductEvent("remove_from_cart", entry.product);
       });
       els.cartLines?.appendChild(line);
     });
@@ -532,6 +549,10 @@
       entry.quantity = qty;
     }
     renderCart();
+    trackProductEvent("cart_quantity", entry.product, {
+      quantity: qty,
+      value_amount: qty * getPackSize(entry.product) * parsePrice(entry.product.price)
+    });
   }
 
   async function submitOrder(event, forcedPayload) {
@@ -542,6 +563,9 @@
     const apiBaseUrl = sanitizeBaseUrl(metadata.apiBaseUrl);
     if (!apiBaseUrl || state.isOffline) {
       enqueueOfflineOrder(payload);
+      trackCatalogEvent("offline_order_queued", {
+        metadata: { item_count: payload.items.length, source_channel: payload.source_channel }
+      });
       if (!forcedPayload) {
         state.cart.clear();
         renderCart();
@@ -556,6 +580,11 @@
     const submitButton = byId("checkoutButton");
     if (submitButton && !forcedPayload) submitButton.disabled = true;
     if (els.checkoutStatus && !forcedPayload) els.checkoutStatus.textContent = "Enviando pedido...";
+    if (!forcedPayload) {
+      trackCatalogEvent("order_submit_attempt", {
+        metadata: { item_count: payload.items.length, source_channel: payload.source_channel }
+      });
+    }
 
     try {
       const response = await fetch(`${apiBaseUrl}/submit_order.php`, {
@@ -576,10 +605,17 @@
         renderCart();
         els.checkoutForm?.reset();
         if (els.checkoutStatus) els.checkoutStatus.textContent = `Pedido registrado con numero ${result.order.order_number}.`;
+        trackCatalogEvent("order_submit_success", {
+          value_amount: result.order.total || 0,
+          metadata: { order_number: result.order.order_number, item_count: payload.items.length }
+        });
       }
       return result;
     } catch (error) {
       if (forcedPayload) throw error;
+      trackCatalogEvent("order_submit_failed", {
+        metadata: { message: error.message || "order failed", server: Boolean(error.serverResponse) }
+      });
       if (error.serverResponse) {
         if (els.checkoutStatus) {
           els.checkoutStatus.textContent = error.details ? `${error.message}: ${error.details}` : error.message;
@@ -587,6 +623,9 @@
         return;
       }
       enqueueOfflineOrder({ ...payload, source_channel: "offline-sync" });
+      trackCatalogEvent("offline_order_queued", {
+        metadata: { item_count: payload.items.length, reason: "network-fallback" }
+      });
       state.cart.clear();
       renderCart();
       els.checkoutForm?.reset();
@@ -691,6 +730,9 @@
     els.cartDrawer?.classList.add("open");
     els.cartDrawerBackdrop?.classList.add("open");
     document.body.classList.add("drawer-open");
+    trackCatalogEvent("cart_open", {
+      metadata: { item_count: state.cart.size }
+    });
   }
 
   function closeCartDrawer() {
@@ -720,6 +762,90 @@
 
   function getShareToken() {
     return new URLSearchParams(window.location.search).get("token") || "";
+  }
+
+  function scheduleSearchTracking(searchTerm) {
+    if (searchTrackTimer) window.clearTimeout(searchTrackTimer);
+    const normalized = String(searchTerm || "").trim();
+    if (normalized.length < 2) return;
+    searchTrackTimer = window.setTimeout(() => {
+      trackCatalogEvent("search", {
+        search_term: normalized,
+        metadata: {
+          results_count: state.filtered.length,
+          category: state.filters.category
+        }
+      });
+    }, 650);
+  }
+
+  function trackProductEvent(eventType, product, extra = {}) {
+    if (!product) return;
+    trackCatalogEvent(eventType, {
+      ...extra,
+      product: {
+        item_code: product.item || "",
+        item_name: product.description || product.shortDescription || product.item || "",
+        category: getProductCategory(product)
+      }
+    });
+  }
+
+  function trackCatalogEvent(eventType, details = {}) {
+    const apiBaseUrl = sanitizeBaseUrl(metadata.apiBaseUrl);
+    if (!apiBaseUrl || !metadata.slug || state.isOffline) return;
+
+    const payload = {
+      slug: metadata.slug || "",
+      share_token: getShareToken(),
+      event_type: eventType,
+      visitor_id: visitorId,
+      session_id: sessionId,
+      path: `${window.location.pathname}${window.location.search}`,
+      source: "catalog-public",
+      ...details
+    };
+    const url = `${apiBaseUrl}/track_event.php`;
+
+    try {
+      const body = JSON.stringify(payload);
+      if (navigator.sendBeacon) {
+        const blob = new Blob([body], { type: "application/json" });
+        if (navigator.sendBeacon(url, blob)) return;
+      }
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        keepalive: true
+      }).catch(() => {});
+    } catch (error) {
+    }
+  }
+
+  function stableClientId(storageKey, prefix) {
+    try {
+      const existing = localStorage.getItem(storageKey);
+      if (existing) return existing;
+      const next = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem(storageKey, next);
+      return next;
+    } catch (error) {
+      return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+  }
+
+  function stableSessionId() {
+    try {
+      const key = `catalog-session-id:${metadata.slug || "catalog"}`;
+      const existing = sessionStorage.getItem(key);
+      if (existing) return existing;
+      const next = `session-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      sessionStorage.setItem(key, next);
+      return next;
+    } catch (error) {
+      return `session-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
   }
 
   function sanitizeNumber(value) {

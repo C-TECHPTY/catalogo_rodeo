@@ -25,10 +25,14 @@ if ($schemaReady) {
         $conditions[] = 'c.seller_name = :seller_name';
         $params['seller_name'] = vendor_current_user()['seller_display_name'] ?? '';
     }
+    if ($hasLinkSellerId) {
+        $conditions[] = 'EXISTS (SELECT 1 FROM catalog_share_links lx WHERE lx.catalog_id = c.id AND lx.seller_id = :exists_link_seller_id)';
+        $params['exists_link_seller_id'] = $sellerId;
+    }
     $where = $conditions ? 'WHERE ' . implode(' OR ', $conditions) : '';
     $orderBy = vendor_column_exists('catalogs', 'updated_at') ? 'c.updated_at DESC' : 'c.id DESC';
     $stmt = db()->prepare(
-        "SELECT c.*, {$linksSelect}
+        "SELECT DISTINCT c.*, {$linksSelect}
          FROM catalogs c
          {$where}
          ORDER BY {$orderBy}"

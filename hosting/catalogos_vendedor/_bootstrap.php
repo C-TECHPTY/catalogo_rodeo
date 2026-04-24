@@ -54,7 +54,10 @@ function vendor_current_user(): ?array
 
     $hasSellerId = vendor_column_exists('catalog_users', 'seller_id');
     $hasSellers = vendor_table_exists('sellers');
-    $sellerSelect = $hasSellerId && $hasSellers ? ', s.name AS seller_display_name' : ", '' AS seller_display_name";
+    $hasSellerPhoto = $hasSellerId && $hasSellers && vendor_column_exists('sellers', 'photo_path');
+    $sellerSelect = $hasSellerId && $hasSellers
+        ? ', s.name AS seller_display_name' . ($hasSellerPhoto ? ', s.photo_path AS seller_photo_path' : ", '' AS seller_photo_path")
+        : ", '' AS seller_display_name, '' AS seller_photo_path";
     $sellerJoin = $hasSellerId && $hasSellers ? ' LEFT JOIN sellers s ON s.id = u.seller_id' : '';
     $statement = db()->prepare(
         "SELECT u.*{$sellerSelect}
@@ -77,6 +80,7 @@ function vendor_current_user(): ?array
         'role' => $row['role'],
         'seller_id' => $hasSellerId && !empty($row['seller_id']) ? (int) $row['seller_id'] : null,
         'seller_display_name' => $row['seller_display_name'] ?? '',
+        'seller_photo_path' => $row['seller_photo_path'] ?? '',
     ];
 
     return $_SESSION['catalog_admin_user'];
@@ -136,6 +140,9 @@ function vendor_header(string $title, string $active = 'index.php'): void
     vendor_require_panel_login();
     $user = vendor_current_user();
     $flash = flash_get();
+    $companyName = app_setting('branding_company_name', (string) catalog_config('app_name', 'Catalogo Rodeo'));
+    $companyLogoUrl = panel_media_url(app_setting('branding_company_logo'));
+    $sellerPhotoUrl = panel_media_url((string) ($user['seller_photo_path'] ?? ''));
     ?>
     <!DOCTYPE html>
     <html lang="es">
@@ -149,6 +156,12 @@ function vendor_header(string $title, string $active = 'index.php'): void
         <div class="shell">
             <aside class="sidebar">
                 <div class="brand">
+                    <?php if ($companyLogoUrl !== ''): ?>
+                        <img class="brand__logo" src="<?= html_escape($companyLogoUrl) ?>" alt="<?= html_escape($companyName) ?>">
+                    <?php endif; ?>
+                    <?php if ($sellerPhotoUrl !== ''): ?>
+                        <img class="seller-avatar seller-avatar--sidebar" src="<?= html_escape($sellerPhotoUrl) ?>" alt="<?= html_escape($user['seller_display_name'] ?: $user['full_name']) ?>">
+                    <?php endif; ?>
                     <h1>Panel vendedor</h1>
                     <p><?= html_escape($user['seller_display_name'] ?: $user['full_name']) ?></p>
                 </div>

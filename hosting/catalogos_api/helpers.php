@@ -698,6 +698,132 @@ function update_app_settings(array $settings): void
     }
 }
 
+function panel_uploads_root(): string
+{
+    return dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads';
+}
+
+function normalize_panel_upload_dir(string $relativeDir): string
+{
+    $relativeDir = trim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $relativeDir), DIRECTORY_SEPARATOR);
+    $uploadsPrefix = 'uploads' . DIRECTORY_SEPARATOR;
+    if (str_starts_with($relativeDir, $uploadsPrefix)) {
+        $relativeDir = substr($relativeDir, strlen($uploadsPrefix));
+    }
+    if ($relativeDir === 'uploads') {
+        return '';
+    }
+    return $relativeDir;
+}
+
+function ensure_panel_upload_dir(string $relativeDir): string
+{
+    $relativeDir = normalize_panel_upload_dir($relativeDir);
+    $fullPath = panel_uploads_root();
+    if ($relativeDir !== '') {
+        $fullPath .= DIRECTORY_SEPARATOR . $relativeDir;
+    }
+
+    if (!is_dir($fullPath)) {
+        mkdir($fullPath, 0775, true);
+    }
+
+    return $fullPath;
+}
+
+function panel_media_url(?string $relativePath): string
+{
+    $relativePath = trim((string) $relativePath);
+    if ($relativePath === '') {
+        return '';
+    }
+
+    $normalizedPath = ltrim(str_replace('\\', '/', $relativePath), '/');
+    $defaultFullPath = dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $normalizedPath);
+    if (is_file($defaultFullPath)) {
+        return '../' . $normalizedPath;
+    }
+
+    if (str_starts_with($normalizedPath, 'uploads/')) {
+        $legacyPath = 'uploads/' . $normalizedPath;
+        $legacyFullPath = dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $legacyPath);
+        if (is_file($legacyFullPath)) {
+            return '../' . $legacyPath;
+        }
+    }
+
+    return '../' . $normalizedPath;
+}
+
+function delete_panel_file(?string $relativePath): void
+{
+    $relativePath = trim((string) $relativePath);
+    if ($relativePath === '') {
+        return;
+    }
+
+    $candidatePaths = [
+        dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $relativePath),
+    ];
+    if (str_starts_with(str_replace('\\', '/', $relativePath), 'uploads/')) {
+        $candidatePaths[] = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $relativePath);
+    }
+
+    foreach ($candidatePaths as $fullPath) {
+        if (is_file($fullPath)) {
+            @unlink($fullPath);
+            break;
+        }
+    }
+}
+
+function save_uploaded_image(string $fieldName, string $relativeDir, string $filePrefix = 'image'): ?string
+{
+    if (empty($_FILES[$fieldName]) || !is_array($_FILES[$fieldName])) {
+        return null;
+    }
+
+    $file = $_FILES[$fieldName];
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return null;
+    }
+
+    if (($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+        throw new RuntimeException('No se pudo subir la imagen seleccionada.');
+    }
+
+    if (!is_uploaded_file((string) ($file['tmp_name'] ?? ''))) {
+        throw new RuntimeException('La carga de imagen no es valida.');
+    }
+
+    $mime = mime_content_type((string) $file['tmp_name']) ?: '';
+    $allowed = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        'image/gif' => 'gif',
+    ];
+    if (!isset($allowed[$mime])) {
+        throw new RuntimeException('Solo se permiten imagenes JPG, PNG, WEBP o GIF.');
+    }
+
+    $normalizedDir = normalize_panel_upload_dir($relativeDir);
+    $targetDir = ensure_panel_upload_dir($normalizedDir);
+    $filename = slugify($filePrefix) . '-' . date('YmdHis') . '-' . substr(bin2hex(random_bytes(6)), 0, 8) . '.' . $allowed[$mime];
+    $targetPath = $targetDir . DIRECTORY_SEPARATOR . $filename;
+    if (!move_uploaded_file((string) $file['tmp_name'], $targetPath)) {
+        throw new RuntimeException('No se pudo guardar la imagen en el servidor.');
+    }
+
+    $relativeDir = trim(str_replace('\\', '/', $normalizedDir), '/');
+    if ($relativeDir !== '') {
+        $relativeDir = 'uploads/' . $relativeDir;
+    } else {
+        $relativeDir = 'uploads';
+    }
+    return ($relativeDir !== '' ? $relativeDir . '/' : '') . $filename;
+}
+
 function send_notification_mail(string $subject, string $message, array $recipients = [], ?int $orderId = null, array $attachments = []): string
 {
     $finalRecipients = array_values(array_unique(array_filter(array_map('trim', $recipients))));

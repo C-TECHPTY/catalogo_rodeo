@@ -4,6 +4,8 @@ declare(strict_types=1);
 require __DIR__ . '/_bootstrap.php';
 admin_require_login(['admin', 'sales']);
 
+$hasSellerPhoto = admin_column_exists('sellers', 'photo_path');
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf_or_abort();
     $action = (string) ($_POST['action'] ?? 'create');
@@ -26,22 +28,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
+        try {
+            $photoPath = null;
+            if ($hasSellerPhoto) {
+                $removePhoto = isset($_POST['remove_photo']);
+                $prefix = $data['code'] !== '' ? $data['code'] : $data['name'];
+                $photoPath = save_uploaded_image('photo_file', 'uploads/sellers', 'seller-' . $prefix);
+
+                if ($action === 'update' && $sellerId > 0) {
+                    $existingPhotoStmt = db()->prepare('SELECT photo_path FROM sellers WHERE id = :id LIMIT 1');
+                    $existingPhotoStmt->execute(['id' => $sellerId]);
+                    $existingPhoto = (string) $existingPhotoStmt->fetchColumn();
+                    if ($removePhoto) {
+                        delete_panel_file($existingPhoto);
+                        $data['photo_path'] = '';
+                    } elseif ($photoPath !== null) {
+                        delete_panel_file($existingPhoto);
+                        $data['photo_path'] = $photoPath;
+                    }
+                } elseif ($photoPath !== null) {
+                    $data['photo_path'] = $photoPath;
+                }
+            }
+        } catch (Throwable $exception) {
+            flash_set('error', $exception->getMessage());
+            header('Location: sellers.php' . ($sellerId ? '?edit=' . $sellerId : ''));
+            exit;
+        }
+
         if ($action === 'update') {
             $data['id'] = $sellerId;
-            db()->prepare(
-                'UPDATE sellers
-                 SET code = :code, name = :name, email = :email, phone = :phone,
-                     territory = :territory, notes = :notes, is_active = :is_active, updated_at = NOW()
-                 WHERE id = :id'
-            )->execute($data);
+            $sql = 'UPDATE sellers
+                    SET code = :code, name = :name, email = :email, phone = :phone,
+                        territory = :territory, notes = :notes, is_active = :is_active';
+            if ($hasSellerPhoto && array_key_exists('photo_path', $data)) {
+                $sql .= ', photo_path = :photo_path';
+            }
+            $sql .= ', updated_at = NOW() WHERE id = :id';
+            db()->prepare($sql)->execute($data);
             audit_log('seller.updated', 'sellers', $sellerId);
             flash_set('success', 'Vendedor actualizado.');
         } else {
+            if ($hasSellerPhoto) {
+                $insertColumns = 'code, name, email, phone, territory, notes, is_active, photo_path';
+                $insertValues = ':code, :name, :email, :phone, :territory, :notes, :is_active, :photo_path';
+                $data['photo_path'] = (string) ($data['photo_path'] ?? '');
+            } else {
+                $insertColumns = 'code, name, email, phone, territory, notes, is_active';
+                $insertValues = ':code, :name, :email, :phone, :territory, :notes, :is_active';
+            }
             db()->prepare(
-                'INSERT INTO sellers (code, name, email, phone, territory, notes, is_active)
-                 VALUES (:code, :name, :email, :phone, :territory, :notes, :is_active)'
+                "INSERT INTO sellers ({$insertColumns})
+                 VALUES ({$insertValues})"
             )->execute($data);
-            audit_log('seller.created', 'sellers', (int) db()->lastInsertId());
+            $newSellerId = (int) db()->lastInsertId();
+            audit_log('seller.created', 'sellers', $newSellerId);
             flash_set('success', 'Vendedor creado.');
         }
     }
@@ -107,7 +148,7 @@ admin_header('Vendedores', 'sellers.php');
             <strong><?= $editSeller ? 'Editar vendedor' : 'Nuevo vendedor' ?></strong>
             <?php if ($editSeller): ?><a class="button" href="sellers.php">Nuevo</a><?php endif; ?>
         </div>
-        <form class="form-grid" method="post">
+        <form class="form-grid" method="post" enctype="multipart/form-data">
             <?= csrf_field() ?>
             <input type="hidden" name="action" value="<?= $editSeller ? 'update' : 'create' ?>">
             <input type="hidden" name="seller_id" value="<?= (int) ($editSeller['id'] ?? 0) ?>">
@@ -117,6 +158,18 @@ admin_header('Vendedores', 'sellers.php');
             <label><span>Telefono</span><input type="text" name="phone" value="<?= html_escape($editSeller['phone'] ?? '') ?>"></label>
             <label><span>Territorio</span><input type="text" name="territory" value="<?= html_escape($editSeller['territory'] ?? '') ?>"></label>
             <label class="checkbox-line"><input type="checkbox" name="is_active" <?= !$editSeller || (int) $editSeller['is_active'] === 1 ? 'checked' : '' ?>><span>Activo</span></label>
+            <?php if ($hasSellerPhoto): ?>
+                <label class="wide">
+                    <span>Foto del vendedor</span>
+                    <input type="file" name="photo_file" accept="image/*">
+                </label>
+                <?php if (!empty($editSeller['photo_path'])): ?>
+                    <div class="wide seller-photo-editor">
+                        <img class="seller-avatar seller-avatar--large" src="<?= html_escape(panel_media_url((string) $editSeller['photo_path'])) ?>" alt="<?= html_escape($editSeller['name'] ?? 'Vendedor') ?>">
+                        <label class="checkbox-line"><input type="checkbox" name="remove_photo"><span>Quitar foto actual</span></label>
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
             <label class="wide"><span>Notas</span><textarea name="notes"><?= html_escape($editSeller['notes'] ?? '') ?></textarea></label>
             <div class="wide"><button class="button--primary" type="submit"><?= $editSeller ? 'Guardar vendedor' : 'Crear vendedor' ?></button></div>
         </form>
@@ -127,9 +180,16 @@ admin_header('Vendedores', 'sellers.php');
             <?php foreach ($sellers as $seller): ?>
                 <div class="list-item">
                     <div class="toolbar">
-                        <div>
+                        <div class="seller-card">
+                            <?php if ($hasSellerPhoto && !empty($seller['photo_path'])): ?>
+                                <img class="seller-avatar" src="<?= html_escape(panel_media_url((string) $seller['photo_path'])) ?>" alt="<?= html_escape($seller['name']) ?>">
+                            <?php else: ?>
+                                <div class="seller-avatar seller-avatar--fallback"><?= html_escape(strtoupper(substr((string) $seller['name'], 0, 1))) ?></div>
+                            <?php endif; ?>
+                            <div>
                             <strong><?= html_escape($seller['name']) ?></strong>
                             <div class="muted"><?= html_escape($seller['code']) ?> - <?= html_escape($seller['territory']) ?></div>
+                            </div>
                         </div>
                         <?= admin_status_badge((int) $seller['is_active'] === 1 ? 'active' : 'inactive') ?>
                     </div>

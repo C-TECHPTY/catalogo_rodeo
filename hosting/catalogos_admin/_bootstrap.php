@@ -63,6 +63,7 @@ function admin_menu_items(): array
             'dashboard.php' => 'Dashboard',
             'catalogos.php' => 'Catalogos',
             'pedidos.php' => 'Pedidos',
+            'inteligencia.php' => 'Inteligencia',
             'sellers.php' => 'Vendedores',
             'usuarios.php' => 'Usuarios',
             'links.php' => 'Links / Enlaces',
@@ -183,6 +184,8 @@ function admin_header(string $title, string $active = 'dashboard.php'): void
     start_app_session();
     $user = current_user();
     $flash = flash_get();
+    $companyName = app_setting('branding_company_name', (string) catalog_config('app_name', 'Catalogo Rodeo'));
+    $companyLogoUrl = panel_media_url(app_setting('branding_company_logo'));
     ?>
     <!DOCTYPE html>
     <html lang="es">
@@ -197,7 +200,10 @@ function admin_header(string $title, string $active = 'dashboard.php'): void
         <div class="shell">
             <aside class="sidebar">
                 <div class="brand">
-                    <h1>Catalogo Rodeo</h1>
+                    <?php if ($companyLogoUrl !== ''): ?>
+                        <img class="brand__logo" src="<?= html_escape($companyLogoUrl) ?>" alt="<?= html_escape($companyName) ?>">
+                    <?php endif; ?>
+                    <h1><?= html_escape($companyName) ?></h1>
                     <p>Plataforma comercial B2B con trazabilidad, links seguros y pedidos operativos.</p>
                 </div>
                 <nav class="nav">

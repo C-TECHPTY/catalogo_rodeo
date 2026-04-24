@@ -46,7 +46,14 @@ vendor_header('Mis links', 'links.php');
                     <td><?= html_escape($link['client_name']) ?></td>
                     <td><?= (int) $link['open_count'] ?></td>
                     <td><?= html_escape($link['last_opened_at']) ?></td>
-                    <td><?php if ($shareUrl !== ''): ?><a class="button" href="<?= html_escape($shareUrl) ?>" target="_blank">Copiar / abrir</a><?php endif; ?></td>
+                    <td>
+                        <?php if ($shareUrl !== ''): ?>
+                            <div class="toolbar__actions">
+                                <button type="button" class="button vendor-copy-link" data-link="<?= html_escape($shareUrl) ?>">Copiar</button>
+                                <a class="button" href="<?= html_escape($shareUrl) ?>" target="_blank" rel="noreferrer">Ver</a>
+                            </div>
+                        <?php endif; ?>
+                    </td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
@@ -54,4 +61,37 @@ vendor_header('Mis links', 'links.php');
     </div>
     <?php endif; ?>
 </section>
+<script>
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest(".vendor-copy-link");
+  if (!button) return;
+  const link = button.getAttribute("data-link") || "";
+  if (!link) return;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(link);
+    } else {
+      const input = document.createElement("input");
+      input.value = link;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      input.remove();
+    }
+    const previous = button.textContent;
+    button.textContent = "Se ha copiado el link";
+    button.disabled = true;
+    window.setTimeout(() => {
+      button.textContent = previous;
+      button.disabled = false;
+    }, 1800);
+  } catch (error) {
+    const previous = button.textContent;
+    button.textContent = "No se pudo copiar";
+    window.setTimeout(() => {
+      button.textContent = previous;
+    }, 1800);
+  }
+});
+</script>
 <?php vendor_footer(); ?>

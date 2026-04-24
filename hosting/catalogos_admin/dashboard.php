@@ -71,6 +71,27 @@ if ($hasAccessLogs && $hasCatalogs) {
 
 admin_header('Dashboard', 'dashboard.php');
 ?>
+<section class="dashboard-hero">
+    <div class="dashboard-hero__content">
+        <span class="pill">Operacion central</span>
+        <h3><?= html_escape(app_setting('branding_company_name', (string) catalog_config('app_name', 'Catalogo Rodeo B2B'))) ?></h3>
+        <p>Resumen ejecutivo del catalogo, pedidos, accesos y red comercial en un mismo panel.</p>
+    </div>
+    <div class="dashboard-hero__stats">
+        <div class="hero-mini-card">
+            <span>Catalogos</span>
+            <strong><?= $stats['catalogs_active'] ?></strong>
+        </div>
+        <div class="hero-mini-card">
+            <span>Pedidos</span>
+            <strong><?= $stats['orders_recent'] ?></strong>
+        </div>
+        <div class="hero-mini-card">
+            <span>Accesos hoy</span>
+            <strong><?= $stats['access_today'] ?></strong>
+        </div>
+    </div>
+</section>
 <div class="grid grid--cards">
     <div class="card"><div class="stat__label">Catalogos activos</div><div class="stat__value"><?= $stats['catalogs_active'] ?></div></div>
     <div class="card"><div class="stat__label">Pedidos 30 dias</div><div class="stat__value"><?= $stats['orders_recent'] ?></div></div>
@@ -104,6 +125,9 @@ admin_header('Dashboard', 'dashboard.php');
                     </div>
                 </div>
             <?php endforeach; ?>
+            <?php if (!$recentOrders): ?>
+                <div class="list-item"><div class="muted">Todavia no hay pedidos recientes para mostrar.</div></div>
+            <?php endif; ?>
         </div>
     </section>
     <section class="card">
@@ -116,6 +140,9 @@ admin_header('Dashboard', 'dashboard.php');
                     <div class="muted"><?= html_escape($access['visited_at']) ?></div>
                 </div>
             <?php endforeach; ?>
+            <?php if (!$recentAccess): ?>
+                <div class="list-item"><div class="muted">Todavia no hay accesos recientes para mostrar.</div></div>
+            <?php endif; ?>
         </div>
     </section>
 </div>
