@@ -182,6 +182,51 @@
                 </section>
 
                 <section class="controls-section manual-only">
+                    <h2>Fuente de imagenes</h2>
+                    <div class="controls-grid">
+                        <label class="control-field control-field--wide">
+                            <span>Modo de imagen</span>
+                            <select id="imageSourceMode">
+                                <option value="local">Local actual</option>
+                                <option value="remote">Remota</option>
+                                <option value="hybrid">Hibrida inteligente</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>URL base imagenes editadas</span>
+                            <input id="imageSourceEditedBaseUrl" type="text" value="" placeholder="https://imagenes.rodeoimportzl.com/productos/editadas">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>URL base imagenes originales</span>
+                            <input id="imageSourceOriginalBaseUrl" type="text" value="" placeholder="https://imagenes.rodeoimportzl.com/productos/originales">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>URL base galeria</span>
+                            <input id="imageSourceGalleryBaseUrl" type="text" value="" placeholder="https://imagenes.rodeoimportzl.com/productos/galeria">
+                        </label>
+
+                        <label class="control-field">
+                            <span>Extension por defecto</span>
+                            <select id="imageSourceDefaultExtension">
+                                <option value="jpg">jpg</option>
+                                <option value="jpeg">jpeg</option>
+                                <option value="png">png</option>
+                                <option value="webp">webp</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Patron de nombre</span>
+                            <input id="imageSourcePattern" type="text" value="{ITEM}.{EXT}" placeholder="{ITEM}.{EXT}">
+                        </label>
+                    </div>
+                    <p id="imageSourceStatus" class="status-message">Local actual mantiene el flujo existente. Remota usa URL externa. Hibrida prueba remota y conserva fallback local.</p>
+                </section>
+
+                <section class="controls-section manual-only">
                     <h2>Promocion visual</h2>
                     <div class="controls-grid">
                         <label class="control-field control-field--wide">

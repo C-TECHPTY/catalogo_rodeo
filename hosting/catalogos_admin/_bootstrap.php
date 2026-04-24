@@ -1,6 +1,23 @@
 <?php
 declare(strict_types=1);
 
+/**
+ * Catálogo Rodeo B2B
+ * Nombre actual/provisional del sistema.
+ *
+ * Autor principal: Nelson Sánchez
+ * Año: 2026
+ *
+ * Sistema desarrollado para generación de catálogos digitales,
+ * gestión visual de productos, publicación web y pedidos comerciales.
+ *
+ * Todos los derechos reservados.
+ *
+ * Nota:
+ * Este encabezado documenta autoría y evolución del sistema.
+ * No modifica el funcionamiento del código.
+ */
+
 require dirname(__DIR__) . '/catalogos_api/bootstrap.php';
 
 function admin_table_exists(string $tableName): bool

@@ -1,9 +1,27 @@
 
+/**
+ * Catálogo Rodeo B2B
+ * Nombre actual/provisional del sistema.
+ *
+ * Autor principal: Nelson Sánchez
+ * Año: 2026
+ *
+ * Sistema desarrollado para generación de catálogos digitales,
+ * gestión visual de productos, publicación web y pedidos comerciales.
+ *
+ * Todos los derechos reservados.
+ *
+ * Nota:
+ * Este encabezado documenta autoría y evolución del sistema.
+ * No modifica el funcionamiento del código.
+ */
+
 (function () {
 const desktopApi = window.catalogDesktop || null;
 const isDesktop = Boolean(desktopApi?.isDesktop);
 const LAYOUT_STORAGE_KEY = "catalogLayoutPresetsV1";
 const HOSTING_SETTINGS_STORAGE_KEY = "catalogHostingSettingsV1";
+const IMAGE_SOURCE_SETTINGS_STORAGE_KEY = "catalogImageSourceSettingsV1";
 const DEFAULT_HOSTING_SETTINGS = {
 autoSave:true,
 protocol:"ftp",
@@ -17,9 +35,18 @@ publicBaseUrl:"",
 apiBaseUrl:"",
 settingsPath:""
 };
+const DEFAULT_IMAGE_SOURCE_SETTINGS = {
+mode:"local",
+editedBaseUrl:"",
+originalBaseUrl:"",
+galleryBaseUrl:"",
+defaultExtension:"jpg",
+namePattern:"{ITEM}.{EXT}",
+gallerySlots:3
+};
 const LAYOUT_BLOCKS = { coverTitle:"Portada titulo", pageHeader:"Encabezado", pageLogo:"Logo pagina", productsGrid:"Bloque productos", productImage:"Imagen producto", productCode:"Codigo producto", productPrice:"Precio", productDescription:"Descripcion", productMeta:"Datos tecnicos", pageFooter:"Footer" };
 const initialHostingSettings = loadHostingSettings();
-const state = { mode:"manual", previewMode:"web", records:[], sourceExcelName:"", imageFiles:[], imageMap:new Map(), imageUrls:[], imageSourceMap:new Map(), extraMediaFiles:[], extraMediaMap:new Map(), title:"Acenox Catalogo Comercial", footerText:"Catalogo comercial interno Acenox", includeCover:true, template:"classic", productsPerPage:6, primaryColor:"#b7192e", secondaryColor:"#1d1d1b", coverImageUrl:"", coverImagePath:"", pageLogoUrl:"", pageLogoPath:"", pageLogoPosition:"right", pageBackgroundUrl:"", pageBackgroundPath:"", pageBackgroundOpacity:0.12, heroImageUrl:"", heroImagePath:"", promotion:{ title:"Oferta destacada para compras mayoristas", text:"Configura una imagen liviana o video opcional sin afectar la carga movil.", imageUrl:"", imagePath:"", videoUrl:"", videoPath:"", linkLabel:"Consultar promocion", linkUrl:"" }, webExport:{ slug:"catalogo-publicable", slugEdited:false, expiryDays:30, outputDir:"", baseUrl:initialHostingSettings.publicBaseUrl, apiBaseUrl:initialHostingSettings.apiBaseUrl, generatedLink:"", hosting:initialHostingSettings }, layoutPresets:loadLayoutPresets(), activeLayoutPresetId:"default", layoutEditor:{ enabled:false, selectedBlock:"coverTitle", drag:null }, batch:{ excelPath:"", imagesRoot:"", outputRoot:"", template:"editorial", quality:0.72, primaryColor:"#b7192e", secondaryColor:"#1d1d1b", logoPosition:"right", categories:[], previewIndex:-1, progress:{ completed:0, total:0 } } };
+const state = { mode:"manual", previewMode:"web", records:[], sourceExcelName:"", imageFiles:[], imageMap:new Map(), imageUrls:[], imageSourceMap:new Map(), extraMediaFiles:[], extraMediaMap:new Map(), remoteImageCheckCache:new Map(), title:"Acenox Catalogo Comercial", footerText:"Catalogo comercial interno Acenox", includeCover:true, template:"classic", productsPerPage:6, primaryColor:"#b7192e", secondaryColor:"#1d1d1b", coverImageUrl:"", coverImagePath:"", pageLogoUrl:"", pageLogoPath:"", pageLogoPosition:"right", pageBackgroundUrl:"", pageBackgroundPath:"", pageBackgroundOpacity:0.12, heroImageUrl:"", heroImagePath:"", imageSource:loadImageSourceSettings(), promotion:{ title:"Oferta destacada para compras mayoristas", text:"Configura una imagen liviana o video opcional sin afectar la carga movil.", imageUrl:"", imagePath:"", videoUrl:"", videoPath:"", linkLabel:"Consultar promocion", linkUrl:"" }, webExport:{ slug:"catalogo-publicable", slugEdited:false, expiryDays:30, outputDir:"", baseUrl:initialHostingSettings.publicBaseUrl, apiBaseUrl:initialHostingSettings.apiBaseUrl, generatedLink:"", hosting:initialHostingSettings }, layoutPresets:loadLayoutPresets(), activeLayoutPresetId:"default", layoutEditor:{ enabled:false, selectedBlock:"coverTitle", drag:null }, batch:{ excelPath:"", imagesRoot:"", outputRoot:"", template:"editorial", quality:0.72, primaryColor:"#b7192e", secondaryColor:"#1d1d1b", logoPosition:"right", categories:[], previewIndex:-1, progress:{ completed:0, total:0 } } };
 const REQUIRED_ALIASES = { item:["ITEM"], description:["DESCRIPCION","DESCRIPCION ","NOMBRE","PRODUCTO"], price:["PRECIO","PRICE","PVP"], available:["DISPONIBLE","DISP.","DISP","STOCK","EXISTENCIA"], barcode:["CBARRA","CB","CODIGOBARRAS","CODIGO DE BARRAS"], package:["EMPAQUE","PACK","PAQUETE"], um:["UM"], ctn:["CTN"], cub:["CUB.","CUB","CUBICAJE"] };
 const TEMPLATE_DEFS = {
 classic: templateDef("catalog-page--classic","cover-page--classic","Clasica original","Catalogo comercial","Coleccion general",renderClassicCard),
@@ -58,6 +85,13 @@ const pageBackgroundOpacityInput = byId("pageBackgroundOpacity");
 const excelInput = byId("excelFile");
 const imageInput = byId("imageFiles");
 const extraMediaInput = byId("extraMediaFiles");
+const imageSourceModeInput = byId("imageSourceMode");
+const imageSourceEditedBaseUrlInput = byId("imageSourceEditedBaseUrl");
+const imageSourceOriginalBaseUrlInput = byId("imageSourceOriginalBaseUrl");
+const imageSourceGalleryBaseUrlInput = byId("imageSourceGalleryBaseUrl");
+const imageSourceDefaultExtensionInput = byId("imageSourceDefaultExtension");
+const imageSourcePatternInput = byId("imageSourcePattern");
+const imageSourceStatus = byId("imageSourceStatus");
 const heroImageFileInput = byId("heroImageFile");
 const promoTitleInput = byId("promoTitleInput");
 const promoTextInput = byId("promoTextInput");
@@ -139,6 +173,7 @@ syncLayoutEditorControls();
 Object.keys(LAYOUT_BLOCKS).forEach(applyLayoutStyleToDom);
 syncHostingInputs();
 initializePublicationSettings();
+syncImageSourceInputs();
 updateGeneratedLinkPreview();
 renderBatchCategoryList();
 setPreviewMode("web");
@@ -165,6 +200,12 @@ pageBackgroundOpacityInput?.addEventListener("input", () => { state.pageBackgrou
 excelInput?.addEventListener("change", async () => { const file = excelInput.files?.[0]; if (file) await loadRecordsFromFile(file); });
 imageInput?.addEventListener("change", () => { state.imageFiles = Array.from(imageInput.files || []); reindexMainImages(); refreshCatalogIfReady(); });
 extraMediaInput?.addEventListener("change", () => { state.extraMediaFiles = Array.from(extraMediaInput.files || []); reindexExtraMedia(); });
+imageSourceModeInput?.addEventListener("change", () => updateImageSourceSettings({ mode:imageSourceModeInput.value || "local" }));
+imageSourceEditedBaseUrlInput?.addEventListener("input", () => updateImageSourceSettings({ editedBaseUrl:imageSourceEditedBaseUrlInput.value }));
+imageSourceOriginalBaseUrlInput?.addEventListener("input", () => updateImageSourceSettings({ originalBaseUrl:imageSourceOriginalBaseUrlInput.value }));
+imageSourceGalleryBaseUrlInput?.addEventListener("input", () => updateImageSourceSettings({ galleryBaseUrl:imageSourceGalleryBaseUrlInput.value }));
+imageSourceDefaultExtensionInput?.addEventListener("change", () => updateImageSourceSettings({ defaultExtension:imageSourceDefaultExtensionInput.value || "jpg" }));
+imageSourcePatternInput?.addEventListener("input", () => updateImageSourceSettings({ namePattern:imageSourcePatternInput.value }));
 heroImageFileInput?.addEventListener("change", () => { const file = heroImageFileInput.files?.[0]; state.heroImageUrl = replaceObjectUrl(state.heroImageUrl, file); state.heroImagePath = file?.path || ""; renderWebPreview(); });
 promoTitleInput?.addEventListener("input", () => { state.promotion.title = promoTitleInput.value.trim(); renderWebPreview(); });
 promoTextInput?.addEventListener("input", () => { state.promotion.text = promoTextInput.value.trim(); renderWebPreview(); });
@@ -204,6 +245,7 @@ printButton?.addEventListener("click", async () => {
 if (!state.records.length) return setStatus("Carga el Excel antes de imprimir.", true);
 setPreviewMode("pdf");
 renderCatalog();
+await hydrateDynamicImages(catalogRoot);
 await waitForImagesToLoad(catalogRoot);
 if (isDesktop && desktopApi?.exportCurrentPdf) {
 try {
@@ -257,7 +299,7 @@ setBatchStatus(`PDF generados: ${okCount}. Fallos: ${results.length - okCount}.`
 function bindDesktopExportReceiver() {
 if (!isDesktop || !desktopApi.onExportPayload) return;
 desktopApi.onExportPayload(async (payload) => {
-try { await renderExportJob(payload); await waitForImagesToLoad(catalogRoot); desktopApi.notifyExportReady(payload.jobId); } catch (error) { console.error(error); }
+try { await renderExportJob(payload); await hydrateDynamicImages(catalogRoot); await waitForImagesToLoad(catalogRoot); desktopApi.notifyExportReady(payload.jobId); } catch (error) { console.error(error); }
 });
 }
 
@@ -309,12 +351,13 @@ webPreviewRoot.innerHTML = `
   </section>
   <section class="web-preview-grid">${products.map(renderWebPreviewCard).join("")}</section>
 </div>`;
+hydrateDynamicImages(webPreviewRoot);
 }
 
 function renderWebPreviewCard(product) {
-const image = state.imageMap.get(normalizeIdentifier(product.item)) || "";
+const image = resolveProductImage(product);
 return `<article class="web-preview-card">
-  <div class="web-preview-card__media">${image ? `<img src="${escapeHtml(image)}" alt="">` : "Sin imagen"}</div>
+  <div class="web-preview-card__media">${image.isPlaceholder ? "Sin imagen" : `<img src="${escapeHtml(image.url)}" alt="" data-image-candidates="${escapeHtml(encodeDynamicCandidates(image.candidates))}">`}</div>
   <div class="web-preview-card__body">
     <span>${escapeHtml(product.item || "SKU")}</span>
     <strong>${escapeHtml(product.shortDescription || product.description || "Producto")}</strong>
@@ -529,19 +572,40 @@ records.forEach((record, recordIndex) => {
 const normalizedItem = normalizeIdentifier(record.item);
 const exportBaseName = buildExportAssetBaseName(record.item, normalizedItem, recordIndex);
 const sourcePath = state.imageSourceMap.get(normalizedItem);
-if (sourcePath) {
+let localMainRelative = "";
+if (sourcePath && state.imageSource.mode !== "remote") {
 const ext = getWebImageExtension(sourcePath);
 const relativePath = `media/main/${exportBaseName}${ext}`;
 assets.push({ sourcePath, relativePath });
 exportImageMap.set(normalizedItem, `./${relativePath}`);
+localMainRelative = `./${relativePath}`;
 }
 const extras = state.extraMediaMap.get(normalizedItem) || { gallery:[], videoPath:"" };
-const gallery = extras.gallery.map((filePath, index) => {
+const localGallery = extras.gallery.map((filePath, index) => {
+if (state.imageSource.mode === "remote") return "";
 const ext = getWebImageExtension(filePath);
 const relativePath = `media/extra/${exportBaseName}_${index + 1}${ext}`;
 assets.push({ sourcePath:filePath, relativePath });
 return `./${relativePath}`;
-});
+}).filter(Boolean);
+const mainImageCandidates = [];
+if (state.imageSource.mode === "remote" || state.imageSource.mode === "hybrid") {
+mainImageCandidates.push(...buildRemoteMainCandidates(record.item));
+}
+if (state.imageSource.mode === "local" && localMainRelative) mainImageCandidates.push(localMainRelative);
+if (state.imageSource.mode === "hybrid" && localMainRelative) mainImageCandidates.push(localMainRelative);
+const galleryCandidateGroups = [];
+if (state.imageSource.mode === "remote" || state.imageSource.mode === "hybrid") {
+galleryCandidateGroups.push(...buildRemoteGalleryCandidateGroups(record.item, localGallery.length));
+}
+if (state.imageSource.mode === "local") {
+localGallery.forEach((localUrl) => galleryCandidateGroups.push([localUrl]));
+} else if (state.imageSource.mode === "hybrid") {
+for (let index = 0; index < Math.max(galleryCandidateGroups.length, localGallery.length); index += 1) {
+if (!galleryCandidateGroups[index]) galleryCandidateGroups[index] = [];
+if (localGallery[index]) galleryCandidateGroups[index].push(localGallery[index]);
+}
+}
 let video = "";
 if (extras.videoPath) {
 const ext = getPathExtension(extras.videoPath) || ".mp4";
@@ -550,7 +614,7 @@ assets.push({ sourcePath:extras.videoPath, relativePath });
 video = `./${relativePath}`;
 }
 const packageQty = parsePackageQty(record.package);
-mediaCatalog[record.item] = { item:record.item, description:record.description, shortDescription:record.shortDescription, price:record.price, available:record.available, package:record.package, empaque:record.package, packageQty, mainImage:exportImageMap.get(normalizedItem) || "", gallery, video };
+mediaCatalog[record.item] = { item:record.item, description:record.description, shortDescription:record.shortDescription, price:record.price, available:record.available, package:record.package, empaque:record.package, packageQty, imageSourceMode:state.imageSource.mode, mainImage:mainImageCandidates[0] || localMainRelative || "", mainImageCandidates:dedupeStringList(mainImageCandidates), gallery:galleryCandidateGroups.map((group) => group[0]).filter(Boolean), galleryCandidateGroups:galleryCandidateGroups.map((group) => dedupeStringList(group)), video };
 });
 const coverRelative = state.coverImagePath ? `media/brand/cover${getWebImageExtension(state.coverImagePath)}` : "";
 const logoRelative = state.pageLogoPath ? `media/brand/logo${getWebLogoExtension(state.pageLogoPath)}` : "";
@@ -616,6 +680,7 @@ expiryDays: state.webExport.expiryDays || 30,
 expiryLabel: `${state.webExport.expiryDays || 30} dias`,
   coverImage: coverRelative ? `./${coverRelative}` : "",
   logoUrl: logoRelative ? `./${logoRelative}` : "",
+imageSource: { ...state.imageSource },
 catalog: records.map((record) => ({ item:record.item, description:record.description, shortDescription:record.shortDescription, price:record.price, available:record.available, package:record.package, empaque:record.package, packageQty:parsePackageQty(record.package), packageLabel:record.package, saleUnit:record.saleUnit || record.um || "bulto", minimumOrder:record.minimumOrder || 1, multipleQty:record.multipleQty || 1, brand:record.brand || "", material:record.material || "", size:record.size || record.measureBadge || "", category:record.category || "General", media:mediaCatalog[record.item] || { gallery:[], video:"" } })),
 },
 assets: dedupeAssets(assets),
@@ -624,6 +689,8 @@ assets: dedupeAssets(assets),
 
 function dedupeAssets(assets) { const seen = new Set(); return assets.filter((asset) => { const key = `${asset.sourcePath}|${asset.relativePath}`; if (!asset.sourcePath || seen.has(key)) return false; seen.add(key); return true; }); }
 function confirmMissingMainImages() {
+if (state.imageSource.mode === "remote") return true;
+if (state.imageSource.mode === "hybrid" && (state.imageSource.editedBaseUrl || state.imageSource.originalBaseUrl)) return true;
 const total = state.records.length;
 const indexed = state.imageSourceMap.size;
 if (!total || indexed >= total) return true;
@@ -691,6 +758,8 @@ if (testHostingButton) testHostingButton.disabled = false;
 function sanitizeRemoteDir(value) { const raw = String(value ?? "").trim().replace(/\\/g, "/"); if (!raw || raw === "." || raw === "/") return ""; const normalized = raw.replace(/\/+$/, ""); return normalized === "." ? "" : normalized; }
 function buildRemoteCatalogDir(remoteDir, slug) { const baseDir = sanitizeRemoteDir(remoteDir); return baseDir ? `${baseDir}/${slug}` : slug; }
 function loadHostingSettings() { try { const raw = window.localStorage?.getItem(HOSTING_SETTINGS_STORAGE_KEY); if (!raw) return { ...DEFAULT_HOSTING_SETTINGS }; return normalizeHostingSettings(JSON.parse(raw)); } catch (error) { console.error(error); return { ...DEFAULT_HOSTING_SETTINGS }; } }
+// Modulo de fuente de imagenes hibridas: mantiene Local actual y agrega modos Remoto e Hibrido.
+function loadImageSourceSettings() { try { const raw = window.localStorage?.getItem(IMAGE_SOURCE_SETTINGS_STORAGE_KEY); if (!raw) return { ...DEFAULT_IMAGE_SOURCE_SETTINGS }; return normalizeImageSourceSettings(JSON.parse(raw)); } catch (error) { console.error(error); return { ...DEFAULT_IMAGE_SOURCE_SETTINGS }; } }
 async function initializePublicationSettings() {
 if (!isDesktop || !desktopApi?.loadPublicationSettings) return updateSettingsPathLabel();
 try {
@@ -706,6 +775,75 @@ console.error(error);
 setWebExportStatus(`No se pudo cargar la configuracion local: ${error.message}`, true);
 }
 }
+function normalizeImageSourceSettings(value = {}) {
+const source = value && typeof value === "object" ? value : {};
+const mode = ["local","remote","hybrid"].includes(source.mode) ? source.mode : DEFAULT_IMAGE_SOURCE_SETTINGS.mode;
+const extension = ["jpg","jpeg","png","webp"].includes(String(source.defaultExtension || "").toLowerCase()) ? String(source.defaultExtension || "").toLowerCase() : DEFAULT_IMAGE_SOURCE_SETTINGS.defaultExtension;
+const pattern = String(source.namePattern || DEFAULT_IMAGE_SOURCE_SETTINGS.namePattern).trim() || DEFAULT_IMAGE_SOURCE_SETTINGS.namePattern;
+return {
+mode,
+editedBaseUrl:sanitizeBaseUrl(source.editedBaseUrl || ""),
+originalBaseUrl:sanitizeBaseUrl(source.originalBaseUrl || ""),
+galleryBaseUrl:sanitizeBaseUrl(source.galleryBaseUrl || ""),
+defaultExtension:extension,
+namePattern:pattern.includes("{ITEM}") ? pattern : DEFAULT_IMAGE_SOURCE_SETTINGS.namePattern,
+gallerySlots:Math.max(1, Number(source.gallerySlots || DEFAULT_IMAGE_SOURCE_SETTINGS.gallerySlots) || DEFAULT_IMAGE_SOURCE_SETTINGS.gallerySlots)
+};
+}
+function saveImageSourceSettings() {
+try {
+window.localStorage?.setItem(IMAGE_SOURCE_SETTINGS_STORAGE_KEY, JSON.stringify(state.imageSource));
+} catch (error) {
+console.error(error);
+}
+}
+function syncImageSourceInputs() {
+if (imageSourceModeInput) imageSourceModeInput.value = state.imageSource.mode || "local";
+if (imageSourceEditedBaseUrlInput) imageSourceEditedBaseUrlInput.value = state.imageSource.editedBaseUrl || "";
+if (imageSourceOriginalBaseUrlInput) imageSourceOriginalBaseUrlInput.value = state.imageSource.originalBaseUrl || "";
+if (imageSourceGalleryBaseUrlInput) imageSourceGalleryBaseUrlInput.value = state.imageSource.galleryBaseUrl || "";
+if (imageSourceDefaultExtensionInput) imageSourceDefaultExtensionInput.value = state.imageSource.defaultExtension || "jpg";
+if (imageSourcePatternInput) imageSourcePatternInput.value = state.imageSource.namePattern || "{ITEM}.{EXT}";
+if (imageSourceStatus) {
+const modeLabels = { local:"Local actual: usa solo imagenes cargadas en la app.", remote:"Remota: genera URLs externas y no sube imagenes principales.", hybrid:"Hibrida inteligente: intenta remotas y conserva fallback local." };
+imageSourceStatus.textContent = modeLabels[state.imageSource.mode] || modeLabels.local;
+}
+}
+function updateImageSourceSettings(changes = {}) {
+state.imageSource = normalizeImageSourceSettings({ ...state.imageSource, ...changes });
+syncImageSourceInputs();
+saveImageSourceSettings();
+refreshCatalogIfReady();
+}
+function buildImageFileName(item, extension, pattern = "{ITEM}.{EXT}") {
+const safeItem = String(item || "").trim();
+const safeExt = String(extension || state.imageSource.defaultExtension || "jpg").replace(/^\./, "").toLowerCase();
+return pattern.replace(/\{ITEM\}/g, safeItem).replace(/\{EXT\}/g, safeExt);
+}
+function joinUrl(baseUrl, fileName) {
+return baseUrl ? `${sanitizeBaseUrl(baseUrl)}/${String(fileName || "").replace(/^\/+/, "")}` : "";
+}
+function buildRemoteMainCandidates(item) {
+const config = state.imageSource;
+const candidates = [];
+const fileName = buildImageFileName(item, config.defaultExtension, config.namePattern);
+if (config.editedBaseUrl) candidates.push(joinUrl(config.editedBaseUrl, fileName));
+if (config.mode === "hybrid" && config.originalBaseUrl) candidates.push(joinUrl(config.originalBaseUrl, fileName));
+if (config.mode === "remote" && config.originalBaseUrl) candidates.push(joinUrl(config.originalBaseUrl, fileName));
+return dedupeStringList(candidates);
+}
+function buildRemoteGalleryCandidateGroups(item, totalLocalGallery = 0) {
+const config = state.imageSource;
+const maxSlots = Math.max(totalLocalGallery, config.gallerySlots || 3);
+const groups = [];
+if (!config.galleryBaseUrl) return groups;
+for (let index = 1; index <= maxSlots; index += 1) {
+const fileName = `${String(item || "").trim()}-${index}.${String(config.defaultExtension || "jpg").replace(/^\./, "")}`;
+groups.push([joinUrl(config.galleryBaseUrl, fileName)]);
+}
+return groups;
+}
+function dedupeStringList(values) { return [...new Set((values || []).filter(Boolean).map((value) => String(value).trim()).filter(Boolean))]; }
 function normalizeHostingSettings(value = {}) {
 const source = value && typeof value === "object" ? value : {};
 return {
@@ -873,6 +1011,7 @@ if (state.includeCover) fragments.push(renderCover());
 pages.forEach((pageProducts, index) => { fragments.push(renderPage(pageProducts, index + 1, pages.length)); });
 catalogRoot.innerHTML = fragments.join("");
 refreshLayoutEditorOverlay();
+hydrateDynamicImages(catalogRoot);
 }
 
 function renderCover() {
@@ -954,8 +1093,8 @@ function renderCampinCard(product, image, metaItems) {
   return `<article class="product-card product-card--campin1" data-item="${escapeHtml(product.item)}"><div class="product-card__campin-visual product-card__image-wrap" data-layout-block="productImage">${renderMeasureBadge(product)}${renderImage(image, product.item)}</div><div class="product-card__campin-body"><h3 class="product-card__headline" data-layout-block="productCode">${escapeHtml(product.shortTitle || summarizeTitle(product.description || product.item || ""))}</h3><p class="product-card__description product-card__description--single" data-layout-block="productDescription">${escapeHtml(product.shortDescription || summarizeDescription(product.description || ""))}</p><div class="product-card__campin-row"><span class="product-card__code" data-layout-block="productCode">ITEM: ${escapeHtml(product.item)}</span><span class="product-card__price" data-layout-block="productPrice">${escapeHtml(product.price || "$0.00")}</span></div><div class="product-card__campin-meta" data-layout-block="productMeta"><span class="product-card__campin-pill">${escapeHtml(product.available ? `Disponible: ${product.available}` : "Sin dato")}</span>${metaItems.slice(1, 2).map((item) => `<span class="product-card__campin-pill">${escapeHtml(item.label)}: ${escapeHtml(item.value)}</span>`).join("")}</div></div></article>`;
   }
 
-function resolveProductImage(product) { const imageUrl = state.imageMap.get(normalizeIdentifier(product.item)) || PLACEHOLDER_DATA_URI; return { url:imageUrl, isPlaceholder:imageUrl === PLACEHOLDER_DATA_URI }; }
-function renderImage(image, altText) { return image.isPlaceholder ? `<div class="product-card__placeholder">Imagen no disponible</div>` : `<img class="product-card__image" src="${image.url}" alt="${escapeHtml(altText)}">`; }
+function resolveProductImage(product) { const normalizedItem = normalizeIdentifier(product.item); const localImageUrl = state.imageMap.get(normalizedItem) || ""; const remoteCandidates = (state.imageSource.mode === "remote" || state.imageSource.mode === "hybrid") ? buildRemoteMainCandidates(product.item) : []; const candidates = state.imageSource.mode === "local" ? [localImageUrl] : (state.imageSource.mode === "remote" ? remoteCandidates : [...remoteCandidates, localImageUrl]); const imageUrl = dedupeStringList(candidates)[0] || PLACEHOLDER_DATA_URI; return { url:imageUrl, isPlaceholder:imageUrl === PLACEHOLDER_DATA_URI, candidates:dedupeStringList(candidates) }; }
+function renderImage(image, altText) { return image.isPlaceholder ? `<div class="product-card__placeholder">Imagen no disponible</div>` : `<img class="product-card__image" src="${escapeHtml(image.url)}" alt="${escapeHtml(altText)}" data-image-candidates="${escapeHtml(encodeDynamicCandidates(image.candidates))}">`; }
 function renderMeasureBadge(product) { return product.measureBadge ? `<span class="product-card__measure">${escapeHtml(product.measureBadge)}</span>` : ""; }
 function buildMetaItems(product) { return [{ label:"Disp", value:product.available }, { label:"CB", value:product.barcode }, { label:"Emp", value:product.package }, { label:"UM", value:product.um }, { label:"CTN", value:product.ctn }, { label:"CUB", value:product.cub }].filter((item) => item.value); }
 function renderMetaChips(metaItems) { return !metaItems.length ? "" : `<div class="product-card__meta" data-layout-block="productMeta">${metaItems.map((item) => `<span class="product-card__chip"><span>${escapeHtml(item.label)}</span> ${escapeHtml(item.value)}</span>`).join("")}</div>`; }
@@ -990,6 +1129,47 @@ async function compressImagePath(filePath, quality, maxDimension) { const lower 
 function loadImage(src) { return new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = () => reject(new Error(`No se pudo cargar la imagen: ${src}`)); image.src = src; }); }
 function replaceObjectUrl(currentUrl, file) { if (currentUrl && currentUrl.startsWith("blob:")) URL.revokeObjectURL(currentUrl); return file ? URL.createObjectURL(file) : ""; }
 function revokeObjectUrls(urls) { urls.forEach((url) => { if (url.startsWith("blob:")) URL.revokeObjectURL(url); }); }
+function encodeDynamicCandidates(candidates) { return encodeURIComponent(JSON.stringify(dedupeStringList(candidates))); }
+function decodeDynamicCandidates(value) { try { return JSON.parse(decodeURIComponent(String(value || ""))); } catch (error) { return []; } }
+async function hydrateDynamicImages(container) {
+if (!container) return;
+const images = Array.from(container.querySelectorAll("img[data-image-candidates]"));
+await Promise.all(images.map(async (img) => {
+const candidates = decodeDynamicCandidates(img.dataset.imageCandidates);
+if (!candidates.length) return;
+const resolved = await resolveFirstAvailableImageUrl(candidates);
+img.src = resolved || PLACEHOLDER_DATA_URI;
+}));
+}
+async function resolveFirstAvailableImageUrl(candidates) {
+for (const candidate of dedupeStringList(candidates)) {
+if (!candidate) continue;
+if (candidate.startsWith("blob:") || candidate.startsWith("data:") || candidate.startsWith("file:") || candidate.startsWith("./")) return candidate;
+const exists = await checkRemoteImageAvailability(candidate);
+if (exists) return candidate;
+}
+return "";
+}
+async function checkRemoteImageAvailability(url) {
+if (state.remoteImageCheckCache.has(url)) return state.remoteImageCheckCache.get(url);
+const promise = (async () => {
+try {
+const response = await fetch(url, { method:"HEAD", cache:"no-store" });
+if (response.ok) return true;
+} catch (error) {
+}
+return new Promise((resolve) => {
+const image = new Image();
+image.onload = () => resolve(true);
+image.onerror = () => resolve(false);
+image.src = `${url}${url.includes("?") ? "&" : "?"}__probe=${Date.now()}`;
+});
+})();
+state.remoteImageCheckCache.set(url, promise);
+const result = await promise;
+state.remoteImageCheckCache.set(url, Promise.resolve(result));
+return result;
+}
 function recommendedProductsPerPage(template) { if (template === "campin1") return 5; return isHorizontalTemplate(template) ? 4 : 6; }
 function isHorizontalTemplate(template) { return template === "horizon" || template === "ledger"; }
 function getCurrentTemplate() { return TEMPLATE_DEFS[state.template] || TEMPLATE_DEFS.classic; }

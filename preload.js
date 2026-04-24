@@ -1,3 +1,20 @@
+/**
+ * Catálogo Rodeo B2B
+ * Nombre actual/provisional del sistema.
+ *
+ * Autor principal: Nelson Sánchez
+ * Año: 2026
+ *
+ * Sistema desarrollado para generación de catálogos digitales,
+ * gestión visual de productos, publicación web y pedidos comerciales.
+ *
+ * Todos los derechos reservados.
+ *
+ * Nota:
+ * Este encabezado documenta autoría y evolución del sistema.
+ * No modifica el funcionamiento del código.
+ */
+
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("catalogDesktop", {
