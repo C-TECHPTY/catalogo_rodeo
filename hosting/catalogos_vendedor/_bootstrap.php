@@ -121,6 +121,9 @@ if (!function_exists('admin_state_label')) {
             'invoiced' => 'Facturado',
             'completed' => 'Completado',
             'cancelled' => 'Cancelado',
+            'sent' => 'Enviado',
+            'failed' => 'Fallido',
+            'approved' => 'Aprobado',
         ];
         return $labels[$status] ?? $status;
     }
@@ -170,6 +173,7 @@ function vendor_header(string $title, string $active = 'index.php'): void
                     <a class="<?= $active === 'catalogos.php' ? 'active' : '' ?>" href="catalogos.php">Catalogos</a>
                     <a class="<?= $active === 'links.php' ? 'active' : '' ?>" href="links.php">Links</a>
                     <a class="<?= $active === 'pedidos.php' ? 'active' : '' ?>" href="pedidos.php">Pedidos</a>
+                    <?php if (app_setting('campaigns_enabled', '1') === '1' && is_file(__DIR__ . '/campaigns.php')): ?><a class="<?= $active === 'campaigns.php' ? 'active' : '' ?>" href="campaigns.php">Campañas</a><?php endif; ?>
                     <a href="../catalogos_admin/dashboard.php">Volver a admin</a>
                 </nav>
                 <div class="sidebar-footer"><a href="../catalogos_admin/logout.php" style="color:#fff;">Cerrar sesion</a></div>

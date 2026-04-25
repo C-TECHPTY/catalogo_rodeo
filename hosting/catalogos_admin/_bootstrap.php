@@ -88,6 +88,11 @@ function admin_menu_items(): array
             'configuracion.php' => 'Configuracion',
             'exportaciones.php' => 'Exportaciones',
         ];
+        if (app_setting('campaigns_enabled', '1') === '1') {
+            $items = array_slice($items, 0, 4, true)
+                + ['campaigns/index.php' => 'Campañas']
+                + array_slice($items, 4, null, true);
+        }
     }
 
     return array_filter($items, static fn(string $file): bool => is_file(__DIR__ . '/' . $file), ARRAY_FILTER_USE_KEY);
@@ -190,6 +195,7 @@ function admin_state_label(string $status): string
         'queued' => 'En cola',
         'sent' => 'Enviado',
         'failed' => 'Fallido',
+        'approved' => 'Aprobado',
         'none' => 'Sin link',
     ];
 
@@ -201,8 +207,17 @@ function admin_header(string $title, string $active = 'dashboard.php'): void
     start_app_session();
     $user = current_user();
     $flash = flash_get();
+    $currentDir = realpath(dirname((string) ($_SERVER['SCRIPT_FILENAME'] ?? __DIR__))) ?: __DIR__;
+    $adminRoot = realpath(__DIR__) ?: __DIR__;
+    $relativeDir = trim(str_replace('\\', '/', substr($currentDir, strlen($adminRoot))), '/');
+    $depth = $relativeDir === '' ? 0 : count(explode('/', $relativeDir));
+    $adminPrefix = str_repeat('../', $depth);
+    $siblingPrefix = str_repeat('../', $depth + 1);
     $companyName = app_setting('branding_company_name', (string) catalog_config('app_name', 'Catalogo Rodeo'));
     $companyLogoUrl = panel_media_url(app_setting('branding_company_logo'));
+    if ($depth > 0 && $companyLogoUrl !== '' && !preg_match('#^https?://#i', $companyLogoUrl)) {
+        $companyLogoUrl = $adminPrefix . $companyLogoUrl;
+    }
     ?>
     <!DOCTYPE html>
     <html lang="es">
@@ -210,7 +225,7 @@ function admin_header(string $title, string $active = 'dashboard.php'): void
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title><?= html_escape($title) ?></title>
-        <link rel="stylesheet" href="../assets/admin.css">
+        <link rel="stylesheet" href="<?= html_escape($siblingPrefix) ?>assets/admin.css">
     </head>
     <body>
     <?php if ($user): ?>
@@ -225,7 +240,7 @@ function admin_header(string $title, string $active = 'dashboard.php'): void
                 </div>
                 <nav class="nav">
                     <?php foreach (admin_menu_items() as $href => $label): ?>
-                        <a class="<?= $active === $href ? 'active' : '' ?>" href="<?= html_escape($href) ?>">
+                        <a class="<?= $active === $href ? 'active' : '' ?>" href="<?= html_escape($adminPrefix . $href) ?>">
                             <span><?= html_escape($label) ?></span>
                         </a>
                     <?php endforeach; ?>
@@ -233,7 +248,7 @@ function admin_header(string $title, string $active = 'dashboard.php'): void
                 <div class="sidebar-footer">
                     <div><strong><?= html_escape($user['full_name'] ?: $user['username']) ?></strong></div>
                     <div><?= html_escape($user['role']) ?></div>
-                    <div style="margin-top:12px;"><a href="logout.php" style="color:#fff;">Cerrar sesion</a></div>
+                    <div style="margin-top:12px;"><a href="<?= html_escape($adminPrefix) ?>logout.php" style="color:#fff;">Cerrar sesion</a></div>
                 </div>
             </aside>
             <main class="main">
@@ -244,7 +259,7 @@ function admin_header(string $title, string $active = 'dashboard.php'): void
                     </div>
                     <div class="topbar__actions">
                         <span class="pill"><?= html_escape(date('Y-m-d H:i')) ?></span>
-                        <a class="button" href="../catalogos_vendedor/index.php">Vista vendedor</a>
+                        <a class="button" href="<?= html_escape($siblingPrefix) ?>catalogos_vendedor/index.php">Vista vendedor</a>
                     </div>
                 </div>
                 <?php if ($flash): ?>
