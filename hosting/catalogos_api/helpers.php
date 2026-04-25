@@ -824,7 +824,7 @@ function save_uploaded_image(string $fieldName, string $relativeDir, string $fil
     return ($relativeDir !== '' ? $relativeDir . '/' : '') . $filename;
 }
 
-function send_notification_mail(string $subject, string $message, array $recipients = [], ?int $orderId = null, array $attachments = []): string
+function send_notification_mail(string $subject, string $message, array $recipients = [], ?int $orderId = null, array $attachments = [], string $htmlMessage = ''): string
 {
     $finalRecipients = array_values(array_unique(array_filter(array_map('trim', $recipients))));
     if (!$finalRecipients) {
@@ -834,6 +834,7 @@ function send_notification_mail(string $subject, string $message, array $recipie
     $fromName = (string) catalog_config('mail.from_name', 'Catalog Platform');
     $fromEmail = (string) catalog_config('mail.from_email', 'no-reply@example.com');
     $boundary = 'catalog-mail-' . bin2hex(random_bytes(12));
+    $alternativeBoundary = 'catalog-alt-' . bin2hex(random_bytes(12));
     $headers = [
         'MIME-Version: 1.0',
         'Content-Type: multipart/mixed; boundary="' . $boundary . '"',
@@ -846,11 +847,30 @@ function send_notification_mail(string $subject, string $message, array $recipie
 
     $body = [];
     $body[] = '--' . $boundary;
-    $body[] = 'Content-Type: text/plain; charset=UTF-8';
-    $body[] = 'Content-Transfer-Encoding: 8bit';
-    $body[] = '';
-    $body[] = $message;
-    $body[] = '';
+    if ($htmlMessage !== '') {
+        $body[] = 'Content-Type: multipart/alternative; boundary="' . $alternativeBoundary . '"';
+        $body[] = '';
+        $body[] = '--' . $alternativeBoundary;
+        $body[] = 'Content-Type: text/plain; charset=UTF-8';
+        $body[] = 'Content-Transfer-Encoding: 8bit';
+        $body[] = '';
+        $body[] = $message;
+        $body[] = '';
+        $body[] = '--' . $alternativeBoundary;
+        $body[] = 'Content-Type: text/html; charset=UTF-8';
+        $body[] = 'Content-Transfer-Encoding: 8bit';
+        $body[] = '';
+        $body[] = $htmlMessage;
+        $body[] = '';
+        $body[] = '--' . $alternativeBoundary . '--';
+        $body[] = '';
+    } else {
+        $body[] = 'Content-Type: text/plain; charset=UTF-8';
+        $body[] = 'Content-Transfer-Encoding: 8bit';
+        $body[] = '';
+        $body[] = $message;
+        $body[] = '';
+    }
 
     $attachmentMeta = [];
     foreach ($attachments as $attachment) {
@@ -1210,6 +1230,7 @@ function generate_order_export_files(array $order, array $items): array
 
 function build_order_csv_string(array $order, array $rows): string
 {
+    $rows = hydrate_order_item_image_urls($order, $rows);
     $stream = fopen('php://temp', 'r+');
     if ($stream === false) {
         throw new RuntimeException('No se pudo preparar el archivo CSV temporal.');
@@ -1230,10 +1251,11 @@ function build_order_csv_string(array $order, array $rows): string
     fputcsv($stream, ['Fecha', $order['created_at'] ?? date('Y-m-d H:i:s')]);
     fputcsv($stream, ['Total', number_format((float) ($order['total'] ?? 0), 2, '.', '')]);
     fputcsv($stream, []);
-    fputcsv($stream, ['ITEM', 'Descripcion', 'Cantidad', 'Unidad de venta', 'Empaque', 'Piezas', 'Precio unitario', 'Total linea']);
+    fputcsv($stream, ['URL_IMAGEN', 'ITEM', 'Descripcion', 'Cantidad', 'Unidad de venta', 'Empaque', 'Piezas', 'Precio unitario', 'Total linea']);
 
     foreach ($rows as $row) {
         fputcsv($stream, [
+            safeImageUrl((string) ($row['image_url'] ?? ''), 'https://rodeoimportzl.com/catalogos_admin/assets/no-image.png'),
             $row['item_code'] ?? '',
             $row['description'] ?? '',
             format_plain_number((float) ($row['quantity'] ?? 0)),
@@ -1253,29 +1275,39 @@ function build_order_csv_string(array $order, array $rows): string
 
 function build_order_xlsx_file(array $order, array $rows, string $targetPath): bool
 {
+    $rows = hydrate_order_item_image_urls($order, $rows);
     $headerRow = 14;
     $dataStartRow = 15;
     $dataEndRow = $dataStartRow + max(count($rows) - 1, 0);
     $totalRow = $dataEndRow + 2;
 
-    $sheetXml = build_order_sheet_xml($order, $rows, $headerRow, $dataEndRow, $totalRow);
+    $embeddedImages = prepare_order_xlsx_images($rows, $dataStartRow);
+    $sheetXml = build_order_sheet_xml($order, $rows, $headerRow, $dataEndRow, $totalRow, $embeddedImages);
     $zip = new ZipArchive();
     if ($zip->open($targetPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
         return false;
     }
 
-    $zip->addFromString('[Content_Types].xml', build_order_content_types_xml());
+    $zip->addFromString('[Content_Types].xml', build_order_content_types_xml($embeddedImages));
     $zip->addFromString('_rels/.rels', build_order_root_rels_xml());
     $zip->addFromString('xl/workbook.xml', build_order_workbook_xml());
     $zip->addFromString('xl/_rels/workbook.xml.rels', build_order_workbook_rels_xml());
     $zip->addFromString('xl/styles.xml', build_order_styles_xml());
     $zip->addFromString('xl/worksheets/sheet1.xml', $sheetXml);
+    if ($embeddedImages) {
+        $zip->addFromString('xl/worksheets/_rels/sheet1.xml.rels', build_order_sheet_rels_xml());
+        $zip->addFromString('xl/drawings/drawing1.xml', build_order_drawing_xml($embeddedImages));
+        $zip->addFromString('xl/drawings/_rels/drawing1.xml.rels', build_order_drawing_rels_xml($embeddedImages));
+        foreach ($embeddedImages as $image) {
+            $zip->addFromString('xl/media/' . $image['name'], $image['content']);
+        }
+    }
     $zip->close();
 
     return is_file($targetPath);
 }
 
-function build_order_sheet_xml(array $order, array $rows, int $headerRow, int $dataEndRow, int $totalRow): string
+function build_order_sheet_xml(array $order, array $rows, int $headerRow, int $dataEndRow, int $totalRow, array $embeddedImages = []): string
 {
     $cells = [];
     $salesContact = sales_contact_info();
@@ -1301,44 +1333,49 @@ function build_order_sheet_xml(array $order, array $rows, int $headerRow, int $d
         ]);
     }
 
-    $headers = ['ITEM', 'Descripcion', 'Cantidad', 'Unidad', 'Empaque', 'Piezas', 'Precio Unitario', 'Total Linea'];
+    $headers = ['Imagen', 'ITEM', 'Descripcion', 'Cantidad', 'Unidad', 'Empaque', 'Piezas', 'Precio Unitario', 'Total Linea'];
     $headerCells = [];
-    foreach (range('A', 'H') as $index => $column) {
+    foreach (range('A', 'I') as $index => $column) {
         $headerCells[] = build_order_text_cell($column . $headerRow, $headers[$index], 1);
     }
     $cells[] = build_order_sheet_row($headerRow, $headerCells);
 
     $rowNumber = $headerRow + 1;
     foreach ($rows as $row) {
+        $hasImage = trim((string) ($row['image_url'] ?? '')) !== '';
         $cells[] = build_order_sheet_row($rowNumber, [
-            build_order_text_cell('A' . $rowNumber, (string) ($row['item_code'] ?? ''), 2),
-            build_order_text_cell('B' . $rowNumber, (string) ($row['description'] ?? ''), 2),
-            build_order_number_cell('C' . $rowNumber, (float) ($row['quantity'] ?? 0), 3),
-            build_order_text_cell('D' . $rowNumber, (string) ($row['sale_unit'] ?? ''), 2),
-            build_order_text_cell('E' . $rowNumber, trim((string) (($row['package_label'] ?? '') . ' ' . format_plain_number((float) ($row['package_qty'] ?? 0)))), 2),
-            build_order_number_cell('F' . $rowNumber, (float) ($row['pieces_total'] ?? 0), 3),
-            build_order_number_cell('G' . $rowNumber, (float) ($row['unit_price'] ?? 0), 4),
-            build_order_number_cell('H' . $rowNumber, (float) ($row['line_total'] ?? 0), 4),
-        ]);
+            build_order_text_cell('A' . $rowNumber, $hasImage ? '' : 'Sin imagen', 3),
+            build_order_text_cell('B' . $rowNumber, (string) ($row['item_code'] ?? ''), 2),
+            build_order_text_cell('C' . $rowNumber, (string) ($row['description'] ?? ''), 2),
+            build_order_number_cell('D' . $rowNumber, (float) ($row['quantity'] ?? 0), 3),
+            build_order_text_cell('E' . $rowNumber, (string) ($row['sale_unit'] ?? ''), 2),
+            build_order_text_cell('F' . $rowNumber, trim((string) (($row['package_label'] ?? '') . ' ' . format_plain_number((float) ($row['package_qty'] ?? 0)))), 2),
+            build_order_number_cell('G' . $rowNumber, (float) ($row['pieces_total'] ?? 0), 3),
+            build_order_number_cell('H' . $rowNumber, (float) ($row['unit_price'] ?? 0), 4),
+            build_order_number_cell('I' . $rowNumber, (float) ($row['line_total'] ?? 0), 4),
+        ], $hasImage ? 48 : null);
         $rowNumber++;
     }
 
     $cells[] = build_order_sheet_row($totalRow, [
-        build_order_text_cell('G' . $totalRow, 'Total General', 5),
-        build_order_number_cell('H' . $totalRow, (float) ($order['total'] ?? 0), 6),
+        build_order_text_cell('H' . $totalRow, 'Total General', 5),
+        build_order_number_cell('I' . $totalRow, (float) ($order['total'] ?? 0), 6),
     ]);
 
+    $drawingXml = $embeddedImages ? '<drawing r:id="rId1"/>' : '';
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
         . '<sheetViews><sheetView workbookViewId="0"/></sheetViews>'
         . '<sheetFormatPr defaultRowHeight="18"/>'
         . '<cols>'
-        . '<col min="1" max="1" width="18" customWidth="1"/>'
-        . '<col min="2" max="2" width="42" customWidth="1"/>'
-        . '<col min="3" max="8" width="16" customWidth="1"/>'
+        . '<col min="1" max="1" width="12" customWidth="1"/>'
+        . '<col min="2" max="2" width="18" customWidth="1"/>'
+        . '<col min="3" max="3" width="42" customWidth="1"/>'
+        . '<col min="4" max="9" width="16" customWidth="1"/>'
         . '</cols>'
         . '<sheetData>' . implode('', $cells) . '</sheetData>'
-        . '<autoFilter ref="A' . $headerRow . ':H' . max($headerRow, $dataEndRow) . '"/>'
+        . '<autoFilter ref="A' . $headerRow . ':I' . max($headerRow, $dataEndRow) . '"/>'
+        . $drawingXml
         . '</worksheet>';
 }
 
@@ -1376,14 +1413,28 @@ function build_order_styles_xml(): string
         . '</styleSheet>';
 }
 
-function build_order_content_types_xml(): string
+function build_order_content_types_xml(array $embeddedImages = []): string
 {
+    $imageDefaults = [];
+    foreach ($embeddedImages as $image) {
+        $extension = strtolower((string) ($image['extension'] ?? ''));
+        if ($extension === 'jpg') {
+            $extension = 'jpeg';
+        }
+        if ($extension !== '' && !isset($imageDefaults[$extension])) {
+            $contentType = $extension === 'png' ? 'image/png' : 'image/jpeg';
+            $imageDefaults[$extension] = '<Default Extension="' . xml_escape_value($extension) . '" ContentType="' . xml_escape_value($contentType) . '"/>';
+        }
+    }
+
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         . '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
         . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
         . '<Default Extension="xml" ContentType="application/xml"/>'
+        . implode('', $imageDefaults)
         . '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
         . '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        . ($embeddedImages ? '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>' : '')
         . '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
         . '</Types>';
 }
@@ -1413,9 +1464,54 @@ function build_order_workbook_rels_xml(): string
         . '</Relationships>';
 }
 
-function build_order_sheet_row(int $rowNumber, array $cells): string
+function build_order_sheet_rels_xml(): string
 {
-    return '<row r="' . $rowNumber . '">' . implode('', $cells) . '</row>';
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>'
+        . '</Relationships>';
+}
+
+function build_order_drawing_rels_xml(array $embeddedImages): string
+{
+    $relationships = [];
+    foreach ($embeddedImages as $image) {
+        $relationships[] = '<Relationship Id="rId' . (int) $image['id'] . '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/' . xml_escape_value((string) $image['name']) . '"/>';
+    }
+
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        . implode('', $relationships)
+        . '</Relationships>';
+}
+
+function build_order_drawing_xml(array $embeddedImages): string
+{
+    $anchors = [];
+    foreach ($embeddedImages as $image) {
+        $rowIndex = max(0, (int) $image['row'] - 1);
+        $widthEmu = max(1, (int) $image['width_emu']);
+        $heightEmu = max(1, (int) $image['height_emu']);
+        $anchors[] = '<xdr:oneCellAnchor>'
+            . '<xdr:from><xdr:col>0</xdr:col><xdr:colOff>95250</xdr:colOff><xdr:row>' . $rowIndex . '</xdr:row><xdr:rowOff>95250</xdr:rowOff></xdr:from>'
+            . '<xdr:ext cx="' . $widthEmu . '" cy="' . $heightEmu . '"/>'
+            . '<xdr:pic>'
+            . '<xdr:nvPicPr><xdr:cNvPr id="' . (int) $image['id'] . '" name="' . xml_escape_value((string) $image['name']) . '"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr>'
+            . '<xdr:blipFill><a:blip r:embed="rId' . (int) $image['id'] . '"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>'
+            . '<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' . $widthEmu . '" cy="' . $heightEmu . '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>'
+            . '</xdr:pic><xdr:clientData/></xdr:oneCellAnchor>';
+    }
+
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        . implode('', $anchors)
+        . '</xdr:wsDr>';
+}
+
+function build_order_sheet_row(int $rowNumber, array $cells, ?float $height = null): string
+{
+    $heightAttr = $height !== null ? ' ht="' . number_format($height, 2, '.', '') . '" customHeight="1"' : '';
+    return '<row r="' . $rowNumber . '"' . $heightAttr . '>' . implode('', $cells) . '</row>';
 }
 
 function build_order_text_cell(string $cellRef, string $value, int $style = 0): string
@@ -1426,6 +1522,240 @@ function build_order_text_cell(string $cellRef, string $value, int $style = 0): 
 function build_order_number_cell(string $cellRef, float $value, int $style = 0): string
 {
     return '<c r="' . $cellRef . '" s="' . $style . '"><v>' . number_format($value, 2, '.', '') . '</v></c>';
+}
+
+function hydrate_order_item_image_urls(array $order, array $rows): array
+{
+    $imageMap = build_catalog_product_image_map($order);
+    $publicUrl = (string) ($order['public_url'] ?? $order['catalog_public_url'] ?? '');
+
+    foreach ($rows as &$row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $row['image_url'] = productImageUrl($row, $imageMap, $publicUrl);
+    }
+    unset($row);
+
+    return $rows;
+}
+
+function safeText(mixed $value): string
+{
+    $text = trim((string) $value);
+    return html_escape($text !== '' ? $text : 'No definido');
+}
+
+function money(float $value, string $currency = 'USD'): string
+{
+    return html_escape(($currency !== '' ? $currency : 'USD') . ' ' . number_format($value, 2, '.', ','));
+}
+
+function cleanPhone(mixed $value): string
+{
+    return preg_replace('/\D+/', '', (string) $value) ?? '';
+}
+
+function productImageUrl(array $product, array $catalogProductImages, string $catalogPublicUrl = ''): string
+{
+    $direct = first_non_empty_string([
+        $product['image_url'] ?? '',
+        $product['imageUrl'] ?? '',
+        $product['main_image'] ?? '',
+        $product['mainImage'] ?? '',
+    ]);
+    if ($direct !== '') {
+        return absolutize_catalog_asset_url($direct, $catalogPublicUrl);
+    }
+
+    $itemCode = normalize_product_item_key((string) ($product['item_code'] ?? $product['item'] ?? ''));
+    if ($itemCode !== '' && !empty($catalogProductImages[$itemCode])) {
+        return absolutize_catalog_asset_url((string) $catalogProductImages[$itemCode], $catalogPublicUrl);
+    }
+
+    return '';
+}
+
+function build_catalog_product_image_map(array $catalog): array
+{
+    $json = catalog_json_data((string) ($catalog['catalog_json_path'] ?? ''));
+    if (!$json) {
+        $apiPayload = json_decode((string) ($catalog['api_payload'] ?? ''), true);
+        $json = is_array($apiPayload) ? $apiPayload : [];
+    }
+
+    $products = [];
+    foreach (['catalog', 'products', 'items'] as $key) {
+        if (!empty($json[$key]) && is_array($json[$key])) {
+            $products = $json[$key];
+            break;
+        }
+    }
+    if (!$products && !empty($json['metadata']['catalog']) && is_array($json['metadata']['catalog'])) {
+        $products = $json['metadata']['catalog'];
+    }
+
+    $map = [];
+    foreach ($products as $product) {
+        if (!is_array($product)) {
+            continue;
+        }
+        $itemCode = normalize_product_item_key((string) ($product['item'] ?? $product['item_code'] ?? ''));
+        if ($itemCode === '') {
+            continue;
+        }
+        $media = !empty($product['media']) && is_array($product['media']) ? $product['media'] : [];
+        $imageUrl = first_non_empty_string([
+            $product['image_url'] ?? '',
+            $product['imageUrl'] ?? '',
+            $product['main_image'] ?? '',
+            $product['mainImage'] ?? '',
+            $media['mainImage'] ?? '',
+            $media['main_image'] ?? '',
+            !empty($media['gallery']) && is_array($media['gallery']) ? ($media['gallery'][0] ?? '') : '',
+            !empty($media['mainImageCandidates']) && is_array($media['mainImageCandidates']) ? ($media['mainImageCandidates'][0] ?? '') : '',
+        ]);
+        if ($imageUrl !== '') {
+            $map[$itemCode] = $imageUrl;
+        }
+    }
+
+    return $map;
+}
+
+function safeImageUrl(string $imageUrl, string $fallbackUrl): string
+{
+    $imageUrl = trim($imageUrl);
+    if ($imageUrl !== '' && preg_match('#^https?://#i', $imageUrl)) {
+        return $imageUrl;
+    }
+
+    return trim($fallbackUrl) !== '' ? trim($fallbackUrl) : 'https://rodeoimportzl.com/catalogos_admin/assets/no-image.png';
+}
+
+function absolutize_catalog_asset_url(string $url, string $catalogPublicUrl): string
+{
+    $url = trim($url);
+    if ($url === '' || str_starts_with($url, 'data:') || str_starts_with($url, 'blob:')) {
+        return '';
+    }
+    if (preg_match('#^https?://#i', $url)) {
+        return $url;
+    }
+
+    $base = trim($catalogPublicUrl);
+    if ($base === '') {
+        return '';
+    }
+    $base = preg_replace('/[#?].*$/', '', $base) ?? $base;
+    $base = preg_replace('#/[^/]*$#', '/', $base) ?? $base;
+    return rtrim($base, '/') . '/' . ltrim($url, './');
+}
+
+function normalize_product_item_key(string $value): string
+{
+    return strtoupper(trim($value));
+}
+
+function first_non_empty_string(array $values): string
+{
+    foreach ($values as $value) {
+        $text = trim((string) $value);
+        if ($text !== '') {
+            return $text;
+        }
+    }
+
+    return '';
+}
+
+function prepare_order_xlsx_images(array $rows, int $dataStartRow): array
+{
+    $images = [];
+    $id = 1;
+    foreach ($rows as $index => $row) {
+        if (trim((string) ($row['image_url'] ?? '')) === '') {
+            continue;
+        }
+        $imageUrl = safeImageUrl((string) ($row['image_url'] ?? ''), '');
+        if ($imageUrl === '') {
+            continue;
+        }
+        $image = fetch_order_xlsx_image($imageUrl, $id, $dataStartRow + $index);
+        if ($image) {
+            $images[] = $image;
+            $id++;
+        }
+    }
+
+    return $images;
+}
+
+function fetch_order_xlsx_image(string $imageUrl, int $id, int $rowNumber): ?array
+{
+    $context = stream_context_create([
+        'http' => [
+            'timeout' => 4,
+            'follow_location' => 1,
+            'user_agent' => 'CatalogoRodeoB2B/1.0',
+        ],
+        'ssl' => [
+            'verify_peer' => true,
+            'verify_peer_name' => true,
+        ],
+    ]);
+    $content = @file_get_contents($imageUrl, false, $context);
+    if ($content === false || $content === '') {
+        return null;
+    }
+    if (strlen($content) > 2_500_000) {
+        return null;
+    }
+
+    $info = @getimagesizefromstring($content);
+    if (!is_array($info)) {
+        return null;
+    }
+    $mime = (string) ($info['mime'] ?? '');
+    $extension = match ($mime) {
+        'image/png' => 'png',
+        'image/jpeg' => 'jpeg',
+        default => '',
+    };
+    if ($extension === '') {
+        if (!function_exists('imagecreatefromstring') || !function_exists('imagepng')) {
+            return null;
+        }
+        $sourceImage = @imagecreatefromstring($content);
+        if (!$sourceImage) {
+            return null;
+        }
+        ob_start();
+        imagepng($sourceImage);
+        $converted = ob_get_clean();
+        imagedestroy($sourceImage);
+        if (!is_string($converted) || $converted === '') {
+            return null;
+        }
+        $content = $converted;
+        $extension = 'png';
+    }
+
+    $width = max(1, (int) ($info[0] ?? 60));
+    $height = max(1, (int) ($info[1] ?? 60));
+    $scale = min(60 / $width, 60 / $height, 1);
+    $displayWidth = max(1, (int) round($width * $scale));
+    $displayHeight = max(1, (int) round($height * $scale));
+
+    return [
+        'id' => $id,
+        'row' => $rowNumber,
+        'name' => 'product-' . $id . '.' . $extension,
+        'extension' => $extension,
+        'content' => $content,
+        'width_emu' => $displayWidth * 9525,
+        'height_emu' => $displayHeight * 9525,
+    ];
 }
 
 function xml_escape_value(string $value): string

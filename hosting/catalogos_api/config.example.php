@@ -18,6 +18,10 @@ return [
         'email' => 'ventas@rodeoimportzl.com',
         'phone' => '4418710',
     ],
+    'branding' => [
+        'order_email_logo_url' => 'https://rodeoimportzl.com/catalogos_admin/assets/logo-rodeo-blanco.png',
+        'order_email_no_image_url' => 'https://rodeoimportzl.com/catalogos_admin/assets/no-image.png',
+    ],
     'mail' => [
         'from_name' => 'Catalogo Rodeo B2B',
         'from_email' => 'no-reply@tuempresa.com',

@@ -41,12 +41,15 @@ if ($orderId > 0) {
     $catalogJoin = $hasCatalogs && $orderColumns['catalog_id'] ? 'LEFT JOIN catalogs c ON c.id = o.catalog_id' : '';
     $catalogTitle = $hasCatalogs && admin_column_exists('catalogs', 'title') && $orderColumns['catalog_id'] ? 'c.title' : "''";
     $catalogUrl = $hasCatalogs && admin_column_exists('catalogs', 'public_url') && $orderColumns['catalog_id'] ? 'c.public_url' : "''";
+    $catalogJsonPath = $hasCatalogs && admin_column_exists('catalogs', 'catalog_json_path') && $orderColumns['catalog_id'] ? 'c.catalog_json_path' : "''";
+    $catalogApiPayload = $hasCatalogs && admin_column_exists('catalogs', 'api_payload') && $orderColumns['catalog_id'] ? 'c.api_payload' : "''";
     $sellerJoin = $hasSellers && $orderColumns['seller_id'] ? 'LEFT JOIN sellers s ON s.id = o.seller_id' : '';
     $sellerName = $hasSellers && $orderColumns['seller_id'] ? 's.name' : "''";
     $clientJoin = $hasClients && $orderColumns['client_id'] ? 'LEFT JOIN clients cl ON cl.id = o.client_id' : '';
     $clientName = $hasClients && $orderColumns['client_id'] ? 'cl.business_name' : "''";
     $stmt = db()->prepare(
         "SELECT o.*, {$catalogTitle} AS catalog_title, {$catalogUrl} AS public_url,
+                {$catalogJsonPath} AS catalog_json_path, {$catalogApiPayload} AS api_payload,
                 {$sellerName} AS seller_display_name, {$clientName} AS client_business_name
          FROM orders o
          {$catalogJoin}
@@ -62,7 +65,7 @@ if ($orderId > 0) {
     if ($order && $hasItems) {
         $itemsStmt = db()->prepare('SELECT * FROM order_items WHERE order_id = :order_id ORDER BY id ASC');
         $itemsStmt->execute(['order_id' => $orderId]);
-        $items = $itemsStmt->fetchAll();
+        $items = hydrate_order_item_image_urls($order, $itemsStmt->fetchAll());
     }
     if ($order && $hasHistory) {
         $historyStmt = db()->prepare('SELECT * FROM order_status_history WHERE order_id = :order_id ORDER BY created_at DESC');
@@ -99,10 +102,20 @@ if ($orderId > 0) {
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>ITEM</th><th>Descripcion</th><th>Cantidad</th><th>Unidad</th><th>Empaque</th><th>Piezas</th><th>Total</th></tr></thead>
+                    <thead><tr><th>Imagen</th><th>ITEM</th><th>Descripcion</th><th>Cantidad</th><th>Unidad</th><th>Empaque</th><th>Piezas</th><th>Total</th></tr></thead>
                     <tbody>
                     <?php foreach ($items as $item): ?>
+                        <?php $imageUrl = safeImageUrl((string) ($item['image_url'] ?? ''), 'https://rodeoimportzl.com/catalogos_admin/assets/no-image.png'); ?>
                         <tr>
+                            <td>
+                                <?php if (!empty($item['image_url'])): ?>
+                                    <button type="button" class="order-image-thumb" data-full-image="<?= html_escape($imageUrl) ?>" aria-label="Ver imagen de <?= html_escape($item['item_code']) ?>">
+                                        <img src="<?= html_escape($imageUrl) ?>" alt="<?= html_escape($item['item_code']) ?>" loading="lazy">
+                                    </button>
+                                <?php else: ?>
+                                    <span class="order-image-placeholder">Sin imagen</span>
+                                <?php endif; ?>
+                            </td>
                             <td><?= html_escape($item['item_code']) ?></td>
                             <td><?= html_escape($item['description']) ?></td>
                             <td><?= html_escape(rtrim(rtrim(number_format((float) $item['quantity'], 2, '.', ''), '0'), '.')) ?></td>
@@ -149,6 +162,49 @@ if ($orderId > 0) {
             </div>
         </section>
     </div>
+    <style>
+        .order-image-thumb { width:60px; height:60px; padding:0; border:1px solid #d9deea; border-radius:8px; background:#fff; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+        .order-image-thumb img { width:60px; height:60px; object-fit:contain; border-radius:8px; display:block; }
+        .order-image-placeholder { width:60px; height:60px; border:1px solid #d9deea; border-radius:8px; background:#f4f6f8; color:#667085; display:inline-flex; align-items:center; justify-content:center; font-size:11px; text-align:center; }
+        .order-image-lightbox { position:fixed; inset:0; z-index:9999; background:rgba(10,18,32,.78); display:none; align-items:center; justify-content:center; padding:24px; }
+        .order-image-lightbox.open { display:flex; }
+        .order-image-lightbox__panel { position:relative; max-width:min(920px, 94vw); max-height:90vh; background:#fff; border-radius:10px; padding:18px; box-shadow:0 18px 60px rgba(0,0,0,.3); }
+        .order-image-lightbox__panel img { max-width:100%; max-height:78vh; object-fit:contain; display:block; }
+        .order-image-lightbox__close { position:absolute; top:8px; right:8px; border:0; border-radius:999px; width:32px; height:32px; background:#2c4695; color:#fff; font-size:20px; line-height:32px; cursor:pointer; }
+    </style>
+    <div class="order-image-lightbox" id="orderImageLightbox" aria-hidden="true">
+        <div class="order-image-lightbox__panel">
+            <button type="button" class="order-image-lightbox__close" aria-label="Cerrar">&times;</button>
+            <img src="" alt="Imagen de producto">
+        </div>
+    </div>
+    <script>
+        (() => {
+            const lightbox = document.getElementById("orderImageLightbox");
+            if (!lightbox) return;
+            const image = lightbox.querySelector("img");
+            const close = () => {
+                lightbox.classList.remove("open");
+                lightbox.setAttribute("aria-hidden", "true");
+                if (image) image.src = "";
+            };
+            document.querySelectorAll(".order-image-thumb").forEach((button) => {
+                button.addEventListener("click", () => {
+                    if (!image || !button.dataset.fullImage) return;
+                    image.src = button.dataset.fullImage;
+                    lightbox.classList.add("open");
+                    lightbox.setAttribute("aria-hidden", "false");
+                });
+            });
+            lightbox.querySelector(".order-image-lightbox__close")?.addEventListener("click", close);
+            lightbox.addEventListener("click", (event) => {
+                if (event.target === lightbox) close();
+            });
+            document.addEventListener("keydown", (event) => {
+                if (event.key === "Escape") close();
+            });
+        })();
+    </script>
     <?php
     admin_footer();
     exit;

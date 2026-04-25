@@ -28,6 +28,7 @@ $catalog = $context['catalog'];
 $orderNumber = next_order_number();
 $subtotal = 0.0;
 $normalizedItems = [];
+$catalogProductImages = build_catalog_product_image_map($catalog);
 
 foreach ($items as $item) {
     $quantity = max(0.0, parse_decimal($item['quantity'] ?? 0));
@@ -54,6 +55,7 @@ foreach ($items as $item) {
         'pieces_total' => $piecesTotal,
         'unit_price' => $unitPrice,
         'line_total' => $lineTotal,
+        'image_url' => productImageUrl($item, $catalogProductImages, (string) ($catalog['public_url'] ?? '')),
     ];
 }
 
@@ -122,6 +124,7 @@ try {
             'unit_price' => $item['unit_price'],
             'price' => $item['unit_price'],
             'line_total' => $item['line_total'],
+            'image_url' => $item['image_url'],
         ];
         foreach ($optionalItemData as $column => $value) {
             if (catalog_column_exists('order_items', $column)) {
@@ -259,6 +262,30 @@ if ($comments !== '') {
     $lines[] = '';
     $lines[] = 'Observaciones: ' . $comments;
 }
+$plainBody = implode("\n", $lines);
+$orderEmailLogoUrl = trim((string) catalog_config('branding.order_email_logo_url', 'https://rodeoimportzl.com/catalogos_admin/assets/logo-rodeo-blanco.png'));
+$orderEmailNoImageUrl = trim((string) catalog_config('branding.order_email_no_image_url', 'https://rodeoimportzl.com/catalogos_admin/assets/no-image.png'));
+$htmlBody = build_order_notification_html([
+    'order_number' => $orderNumber,
+    'catalog_title' => (string) ($catalog['title'] ?? ''),
+    'catalog_slug' => (string) ($catalog['slug'] ?? ''),
+    'company_name' => $companyName,
+    'contact_name' => $contactName,
+    'contact_email' => $contactEmail,
+    'contact_phone' => $contactPhone,
+    'address_zone' => $addressZone,
+    'seller_name' => (string) ($context['seller_name'] ?? ''),
+    'client_name' => (string) ($context['client_name'] ?? ''),
+    'sales_contact_name' => (string) ($salesContact['name'] ?? ''),
+    'sales_contact_email' => (string) ($salesContact['email'] ?? ''),
+    'sales_contact_phone' => (string) ($salesContact['phone'] ?? ''),
+    'comments' => $comments,
+    'total' => $subtotal,
+    'currency' => (string) ($catalog['currency'] ?: 'USD'),
+    'created_at' => date('Y-m-d H:i:s'),
+    'logo_url' => $orderEmailLogoUrl,
+    'no_image_url' => $orderEmailNoImageUrl,
+], $normalizedItems);
 
 $mailRecipients = build_notification_recipients([
     'contact_email' => $contactEmail,
@@ -283,10 +310,11 @@ $mailStatus = 'pending';
 try {
     $mailStatus = send_notification_mail(
         sprintf('Nuevo pedido %s - %s', $orderNumber, $catalog['title']),
-        implode("\n", $lines),
+        $plainBody,
         $mailRecipients,
         $orderId,
-        $mailAttachments
+        $mailAttachments,
+        $htmlBody
     );
 } catch (Throwable $exception) {
     $mailStatus = 'failed';
@@ -337,4 +365,151 @@ function update_order_columns(int $orderId, array $values): void
         return;
     }
     db()->prepare('UPDATE orders SET ' . implode(', ', $sets) . ' WHERE id = :id')->execute($params);
+}
+
+function build_order_notification_html(array $order, array $items): string
+{
+    $brandColor = '#2c4695';
+    $lightBg = '#f4f6f8';
+    $currency = (string) (($order['currency'] ?? '') ?: 'USD');
+    $total = (float) ($order['total'] ?? 0);
+    $logoUrl = trim((string) ($order['logo_url'] ?? ''));
+    $noImageUrl = trim((string) ($order['no_image_url'] ?? 'https://rodeoimportzl.com/catalogos_admin/assets/no-image.png'));
+    $whatsAppUrl = cleanPhone($order['contact_phone'] ?? '') !== '' ? 'https://wa.me/507' . cleanPhone($order['contact_phone'] ?? '') : '';
+    $logoHtml = $logoUrl !== ''
+        ? '<img src="' . html_escape($logoUrl) . '" width="220" alt="RODEO IMPORT" style="display:block;border:0;outline:none;text-decoration:none;max-width:220px;width:220px;height:auto;color:#ffffff;font-size:24px;font-weight:700;">'
+        : '<span style="font-size:24px;font-weight:700;letter-spacing:.5px;color:#ffffff;">RODEO IMPORT</span>';
+
+    $rows = '';
+    $totalProducts = count($items);
+    $visibleItems = array_slice($items, 0, 15);
+    $limitNote = $totalProducts > 15
+        ? '<tr><td style="background:#ffffff;padding:0 24px 12px 24px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#eef2fb;border:1px solid #d9deea;border-collapse:collapse;border-radius:8px;"><tr><td style="padding:12px 14px;color:#2c4695;font-size:13px;font-weight:700;">Este pedido contiene ' . (int) $totalProducts . ' productos. Se muestran los primeros 15.</td></tr></table></td></tr>'
+        : '';
+    foreach ($visibleItems as $item) {
+        $imageUrl = safeImageUrl((string) ($item['image_url'] ?? ''), $noImageUrl);
+        $rows .= '<tr>'
+            . '<td align="center" style="padding:12px 10px;border-bottom:1px solid #e6e9f2;"><img src="' . html_escape($imageUrl) . '" width="64" height="64" alt="' . safeText($item['item_code'] ?? '') . '" style="display:block;width:64px;height:64px;object-fit:contain;border:1px solid #e4e7ec;border-radius:8px;background:#ffffff;"></td>'
+            . '<td style="padding:12px 10px;border-bottom:1px solid #e6e9f2;color:#172033;font-size:13px;font-weight:700;">' . safeText($item['item_code'] ?? '') . '</td>'
+            . '<td style="padding:12px 10px;border-bottom:1px solid #e6e9f2;color:#172033;font-size:13px;line-height:18px;">' . safeText($item['description'] ?? '') . '</td>'
+            . '<td align="center" style="padding:12px 10px;border-bottom:1px solid #e6e9f2;color:#172033;font-size:13px;">' . html_escape(format_plain_number((float) ($item['quantity'] ?? 0))) . '</td>'
+            . '<td align="center" style="padding:12px 10px;border-bottom:1px solid #e6e9f2;color:#172033;font-size:13px;">' . safeText(trim((string) (($item['package_label'] ?? '') . ' ' . format_plain_number((float) ($item['package_qty'] ?? 0))))) . '</td>'
+            . '<td align="center" style="padding:12px 10px;border-bottom:1px solid #e6e9f2;color:#172033;font-size:13px;">' . html_escape(format_plain_number((float) ($item['pieces_total'] ?? 0))) . '</td>'
+            . '<td align="right" style="padding:12px 10px;border-bottom:1px solid #e6e9f2;color:#172033;font-size:13px;">' . money((float) ($item['unit_price'] ?? 0), $currency) . '</td>'
+            . '<td align="right" style="padding:12px 10px;border-bottom:1px solid #e6e9f2;color:#172033;font-size:13px;font-weight:700;">' . money((float) ($item['line_total'] ?? 0), $currency) . '</td>'
+            . '</tr>';
+    }
+
+    if ($rows === '') {
+        $rows = '<tr><td colspan="8" style="padding:14px 12px;color:#667085;font-size:13px;text-align:center;">No definido</td></tr>';
+    }
+
+    return '<!doctype html>'
+        . '<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Nuevo pedido B2B recibido</title></head>'
+        . '<body style="margin:0;padding:0;background:' . $lightBg . ';font-family:Arial,Helvetica,sans-serif;color:#172033;">'
+        . '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:' . $lightBg . ';margin:0;padding:0;"><tr><td align="center" style="padding:28px 12px;">'
+        . '<table role="presentation" width="760" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:760px;border-collapse:collapse;">'
+        . '<tr><td style="background:' . $brandColor . ';padding:28px 30px;border-radius:12px 12px 0 0;">'
+        . '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="left" style="vertical-align:middle;">' . $logoHtml . '</td><td align="right" style="vertical-align:middle;color:#dfe7ff;font-size:12px;font-weight:700;">Nuevo pedido B2B recibido</td></tr></table>'
+        . '<div style="font-size:30px;line-height:38px;font-weight:700;color:#ffffff;margin-top:22px;">' . safeText($order['order_number'] ?? '') . '</div>'
+        . '<div style="font-size:14px;line-height:21px;color:#dfe7ff;margin-top:6px;">Pedido registrado desde el catálogo público de Rodeo Import.</div>'
+        . '</td></tr>'
+        . '<tr><td style="background:#ffffff;padding:22px 24px 8px 24px;">'
+        . '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>'
+        . order_email_summary_card('Pedido', $order['order_number'] ?? '')
+        . '<td width="10" style="font-size:0;line-height:0;">&nbsp;</td>'
+        . order_email_summary_card('Catálogo', $order['catalog_title'] ?? '')
+        . '<td width="10" style="font-size:0;line-height:0;">&nbsp;</td>'
+        . order_email_summary_card('Cliente', ($order['company_name'] ?? '') ?: ($order['contact_name'] ?? ''))
+        . '<td width="10" style="font-size:0;line-height:0;">&nbsp;</td>'
+        . order_email_summary_card('Total', $currency . ' ' . number_format($total, 2, '.', ','))
+        . '</tr></table>'
+        . '</td></tr>'
+        . '<tr><td style="background:#ffffff;padding:14px 24px 10px 24px;">'
+        . '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>'
+        . order_email_info_card('Datos del cliente', [
+            'Empresa' => $order['company_name'] ?? '',
+            'Contacto' => $order['contact_name'] ?? '',
+            'Correo' => $order['contact_email'] ?? '',
+            'Teléfono' => $order['contact_phone'] ?? '',
+            'Zona / Dirección' => $order['address_zone'] ?? '',
+        ])
+        . '<td width="14" style="font-size:0;line-height:0;">&nbsp;</td>'
+        . order_email_info_card('Contacto comercial', [
+            'Contacto comercial' => $order['sales_contact_name'] ?? '',
+            'Correo comercial' => $order['sales_contact_email'] ?? '',
+            'Teléfono comercial' => $order['sales_contact_phone'] ?? '',
+            'Vendedor' => $order['seller_name'] ?? '',
+            'Cliente asociado' => $order['client_name'] ?? '',
+        ])
+        . '</tr></table>'
+        . '</td></tr>'
+        . $limitNote
+        . '<tr><td style="background:#ffffff;padding:12px 24px 0 24px;">'
+        . '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #d9deea;border-collapse:collapse;">'
+        . '<tr style="background:#eef2fb;">'
+        . '<th align="center" style="padding:12px 10px;color:' . $brandColor . ';font-size:12px;">Imagen</th>'
+        . '<th align="left" style="padding:12px 10px;color:' . $brandColor . ';font-size:12px;">Item</th>'
+        . '<th align="left" style="padding:12px 10px;color:' . $brandColor . ';font-size:12px;">Descripción</th>'
+        . '<th align="center" style="padding:12px 10px;color:' . $brandColor . ';font-size:12px;">Cantidad</th>'
+        . '<th align="center" style="padding:12px 10px;color:' . $brandColor . ';font-size:12px;">Empaque</th>'
+        . '<th align="center" style="padding:12px 10px;color:' . $brandColor . ';font-size:12px;">Piezas</th>'
+        . '<th align="right" style="padding:12px 10px;color:' . $brandColor . ';font-size:12px;">Precio unitario</th>'
+        . '<th align="right" style="padding:12px 10px;color:' . $brandColor . ';font-size:12px;">Total</th>'
+        . '</tr>' . $rows
+        . '</table>'
+        . '</td></tr>'
+        . '<tr><td align="right" style="background:#ffffff;padding:20px 24px;">'
+        . '<table role="presentation" width="280" cellspacing="0" cellpadding="0" border="0" style="background:' . $brandColor . ';border-collapse:collapse;border-radius:10px;"><tr><td style="padding:16px 18px;color:#dfe7ff;font-size:12px;font-weight:700;text-transform:uppercase;">TOTAL DEL PEDIDO</td></tr><tr><td style="padding:0 18px 18px 18px;color:#ffffff;font-size:26px;line-height:32px;font-weight:700;">' . money($total, $currency) . '</td></tr></table>'
+        . '</td></tr>'
+        . order_email_comments_block((string) ($order['comments'] ?? ''))
+        . order_email_whatsapp_button($whatsAppUrl)
+        . '<tr><td style="background:#ffffff;padding:20px 24px 28px 24px;border-top:1px solid #e6e9f2;border-radius:0 0 12px 12px;">'
+        . '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="center" style="color:#667085;font-size:12px;line-height:18px;">Rodeo Import · Sistema de Catálogos B2B<br>Este correo fue generado automáticamente.</td></tr></table>'
+        . '</td></tr>'
+        . '</table>'
+        . '</td></tr></table>'
+        . '</body></html>';
+}
+
+function order_email_info_card(string $title, array $rows): string
+{
+    $html = '<td width="50%" style="vertical-align:top;background:#ffffff;border:1px solid #dfe5f2;border-radius:8px;padding:16px;">'
+        . '<div style="font-size:15px;font-weight:700;color:#2c4695;margin-bottom:12px;">' . safeText($title) . '</div>';
+    foreach ($rows as $label => $value) {
+        $html .= '<div style="font-size:12px;line-height:18px;color:#667085;margin-top:7px;">' . safeText($label) . '</div>'
+            . '<div style="font-size:14px;line-height:20px;color:#172033;font-weight:600;">' . safeText($value) . '</div>';
+    }
+    return $html . '</td>';
+}
+
+function order_email_summary_card(string $label, mixed $value): string
+{
+    return '<td width="25%" style="vertical-align:top;background:#f8faff;border:1px solid #dfe5f2;border-radius:8px;padding:14px;">'
+        . '<div style="font-size:11px;line-height:16px;color:#667085;text-transform:uppercase;font-weight:700;">' . safeText($label) . '</div>'
+        . '<div style="font-size:15px;line-height:20px;color:#172033;font-weight:700;margin-top:5px;">' . safeText($value) . '</div>'
+        . '</td>';
+}
+
+function order_email_comments_block(string $comments): string
+{
+    if (trim($comments) === '') {
+        return '';
+    }
+
+    return '<tr><td style="background:#ffffff;padding:0 24px 20px 24px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#fff8e6;border:1px solid #f3d68a;border-collapse:collapse;border-radius:8px;"><tr><td style="padding:13px 14px;"><div style="font-size:13px;font-weight:700;color:#8a6100;margin-bottom:6px;">Observaciones</div><div style="font-size:13px;line-height:19px;color:#172033;">' . safeText($comments) . '</div></td></tr></table></td></tr>';
+}
+
+function order_email_value(mixed $value): string
+{
+    return safeText($value);
+}
+
+function order_email_whatsapp_button(string $whatsAppUrl): string
+{
+    if ($whatsAppUrl === '') {
+        return '';
+    }
+
+    return '<tr><td align="center" style="background:#ffffff;padding:0 24px 24px 24px;"><table role="presentation" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;"><tr><td align="center" style="background:#25d366;border-radius:8px;"><a href="' . html_escape($whatsAppUrl) . '" style="display:inline-block;padding:13px 18px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">Contactar cliente por WhatsApp</a></td></tr></table></td></tr>';
 }

@@ -28,7 +28,8 @@ if ($orderId <= 0) {
 }
 
 $orderStmt = db()->prepare(
-    'SELECT o.*, c.slug AS catalog_slug_ref, c.title AS catalog_title
+    'SELECT o.*, c.slug AS catalog_slug_ref, c.title AS catalog_title,
+            c.public_url, c.catalog_json_path, c.api_payload
      FROM orders o
      LEFT JOIN catalogs c ON c.id = o.catalog_id
      WHERE o.id = :id
@@ -54,7 +55,7 @@ if (in_array($userRole, ['vendor', 'seller', 'vendedor'], true) || $userSellerId
 
 $itemsStmt = db()->prepare('SELECT * FROM order_items WHERE order_id = :order_id ORDER BY id ASC');
 $itemsStmt->execute(['order_id' => $orderId]);
-$rows = $itemsStmt->fetchAll();
+$rows = hydrate_order_item_image_urls($order, $itemsStmt->fetchAll());
 
 if ($format === 'xlsx') {
     output_order_xlsx($order, $rows);
@@ -91,10 +92,11 @@ function output_order_csv(array $order, array $rows): void
     fputcsv($output, ['Fecha', $order['created_at'] ?? '']);
     fputcsv($output, ['Total', number_format((float) ($order['total'] ?? 0), 2, '.', '')]);
     fputcsv($output, []);
-    fputcsv($output, ['ITEM', 'Descripcion', 'Cantidad', 'Unidad de venta', 'Empaque', 'Piezas', 'Precio unitario', 'Total linea']);
+    fputcsv($output, ['URL_IMAGEN', 'ITEM', 'Descripcion', 'Cantidad', 'Unidad de venta', 'Empaque', 'Piezas', 'Precio unitario', 'Total linea']);
 
     foreach ($rows as $row) {
         fputcsv($output, [
+            safeImageUrl((string) ($row['image_url'] ?? ''), 'https://rodeoimportzl.com/catalogos_admin/assets/no-image.png'),
             $row['item_code'] ?? '',
             $row['description'] ?? '',
             format_plain_number((float) ($row['quantity'] ?? 0)),
@@ -199,22 +201,10 @@ function output_order_xlsx(array $order, array $rows): void
     $dataEndRow = $dataStartRow + max(count($rows) - 1, 0);
     $totalRow = $dataEndRow + 2;
 
-    $sheetXml = build_sheet_xml($order, $rows, $headerRow, $dataEndRow, $totalRow);
-    $stylesXml = build_styles_xml();
-
-    $zip = new ZipArchive();
-    if ($zip->open($xlsxPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+    if (!build_order_xlsx_file($order, $rows, $xlsxPath)) {
         output_order_csv($order, $rows);
         return;
     }
-
-    $zip->addFromString('[Content_Types].xml', build_content_types_xml());
-    $zip->addFromString('_rels/.rels', build_root_rels_xml());
-    $zip->addFromString('xl/workbook.xml', build_workbook_xml());
-    $zip->addFromString('xl/_rels/workbook.xml.rels', build_workbook_rels_xml());
-    $zip->addFromString('xl/styles.xml', $stylesXml);
-    $zip->addFromString('xl/worksheets/sheet1.xml', $sheetXml);
-    $zip->close();
 
     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
