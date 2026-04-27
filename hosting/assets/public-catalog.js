@@ -362,7 +362,7 @@
           <div class="product-card__meta">
             <div><span>Categoria</span><strong>${escapeHtml(getProductCategory(product))}</strong></div>
             <div><span>Empaque</span><strong>${escapeHtml(product.packageLabel || product.package || product.empaque || "Unidad")}</strong></div>
-            <div><span>Venta</span><strong>${escapeHtml(product.saleUnit || product.um || "unidad")}</strong></div>
+            <div><span>Venta</span><strong>${escapeHtml(getDisplaySaleUnit(product))}</strong></div>
             <div><span>Minimo</span><strong>${escapeHtml(String(getMinimumQty(product)))}</strong></div>
           </div>
           <div class="product-card__footer">
@@ -541,7 +541,7 @@
       ["Material", product.material || "-"],
       ["Tamano", product.size || product.measureBadge || "-"],
       ["Disponibilidad", product.available || "-"],
-      ["Venta", product.saleUnit || product.um || "unidad"],
+      ["Venta", getDisplaySaleUnit(product)],
       ["Empaque", `${product.packageLabel || product.package || product.empaque || "Unidad"} / ${getPackSize(product)}`],
       ["Minimo", String(getMinimumQty(product))],
       ["Multiplo", String(getMultipleQty(product))]
@@ -566,9 +566,9 @@
     const totalAmount = totalPieces * parsePrice(state.activeProduct.price);
     els.calcQty.value = String(qty);
     els.calcBreakdown.innerHTML = `
-      <div class="summary-row"><span>Cantidad</span><strong>${qty} ${escapeHtml(state.activeProduct.saleUnit || "bultos")}</strong></div>
-      <div class="summary-row"><span>Contenido por empaque</span><strong>${packSize}</strong></div>
-      <div class="summary-row"><span>Total piezas</span><strong>${totalPieces}</strong></div>
+      <div class="summary-row"><span>Bultos seleccionados</span><strong>${qty} ${escapeHtml(getDisplaySaleUnit(state.activeProduct))}</strong></div>
+      <div class="summary-row"><span>Piezas por bulto</span><strong>${packSize}</strong></div>
+      <div class="summary-row"><span>Total de piezas</span><strong>${totalPieces}</strong></div>
       <div class="summary-row"><span>Total estimado</span><strong>${formatMoney(totalAmount)}</strong></div>
     `;
   }
@@ -613,7 +613,7 @@
         <div>
           <strong>${escapeHtml(entry.product.description || entry.product.item)}</strong>
           <div class="muted">${escapeHtml(entry.product.item || "")}</div>
-          <div class="muted">${escapeHtml(entry.product.saleUnit || "unidad")} · ${escapeHtml(entry.product.packageLabel || entry.product.package || "Empaque")}</div>
+          <div class="muted">${escapeHtml(getDisplaySaleUnit(entry.product))} · ${escapeHtml(entry.product.packageLabel || entry.product.package || "Empaque")}</div>
           <div class="qty-controls">
             <button type="button">-</button>
             <input type="number" min="${getMinimumQty(entry.product)}" value="${entry.quantity}">
@@ -850,6 +850,11 @@
 
   function getPackSize(product) {
     return Math.max(1, Number(product.packageQty || product.packSize || sanitizeNumber(product.package || product.empaque) || 1));
+  }
+
+  function getDisplaySaleUnit(product) {
+    const unit = String((product && (product.saleUnit || product.um)) || "CTN").trim();
+    return unit.toUpperCase() === "PZ" ? "CTN" : unit;
   }
 
   function getMinimumQty(product) {

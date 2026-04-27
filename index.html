@@ -178,6 +178,19 @@
                             <span>Multimedia extra por ITEM</span>
                             <input id="extraMediaFiles" type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.webm,.mov,.JPG,.JPEG,.PNG,.WEBP,.MP4,.WEBM,.MOV" multiple webkitdirectory>
                         </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Precio del catalogo</span>
+                            <select id="priceModeSelect">
+                                <option value="original">Original del Excel</option>
+                                <option value="factor55">55% del precio del Excel</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Entrada del catalogo</span>
+                            <input id="entryFilterInput" type="text" value="" placeholder="Ejemplo: 26/014. Vacio genera todo.">
+                        </label>
                     </div>
                 </section>
 
@@ -437,6 +450,19 @@
                         <label class="control-field">
                             <span>Compresion imagen</span>
                             <input id="batchImageQuality" type="range" min="0.45" max="0.95" step="0.05" value="0.72">
+                        </label>
+
+                        <label class="control-field">
+                            <span>Precio del lote</span>
+                            <select id="batchPriceModeSelect">
+                                <option value="original">Original del Excel</option>
+                                <option value="factor55">55% del precio del Excel</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Entrada del lote</span>
+                            <input id="batchEntryFilterInput" type="text" value="" placeholder="Vacio genera todo">
                         </label>
 
                         <label class="control-field">
