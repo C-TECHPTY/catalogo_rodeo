@@ -153,8 +153,7 @@ function admin_send_catalog_to_sellers(?array $catalog, array $sellers, bool $cr
 
         $catalogUrl = rtrim((string) $catalog['public_url'], '/') . '/?token=' . rawurlencode((string) $link['token']);
         $plain = admin_catalog_seller_email_plain($catalog, $sellerName, $catalogUrl);
-        $html = admin_catalog_seller_email_html($catalog, $sellerName, $catalogUrl);
-        $mailStatus = send_notification_mail('Nuevo catalogo disponible para compartir', $plain, [$email], null, [], $html);
+        $mailStatus = send_notification_mail('Catalogo disponible', $plain, [$email]);
         $sent = $mailStatus === 'sent';
         $status = $sent ? 'sent' : 'error';
         $error = $sent ? '' : 'El servidor de correo no confirmo el envio.';
