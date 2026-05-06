@@ -55,9 +55,12 @@ function vendor_current_user(): ?array
     $hasSellerId = vendor_column_exists('catalog_users', 'seller_id');
     $hasSellers = vendor_table_exists('sellers');
     $hasSellerPhoto = $hasSellerId && $hasSellers && vendor_column_exists('sellers', 'photo_path');
+    $hasSellerToken = $hasSellerId && $hasSellers && vendor_column_exists('sellers', 'public_token');
     $sellerSelect = $hasSellerId && $hasSellers
-        ? ', s.name AS seller_display_name' . ($hasSellerPhoto ? ', s.photo_path AS seller_photo_path' : ", '' AS seller_photo_path")
-        : ", '' AS seller_display_name, '' AS seller_photo_path";
+        ? ', s.name AS seller_display_name'
+            . ($hasSellerPhoto ? ', s.photo_path AS seller_photo_path' : ", '' AS seller_photo_path")
+            . ($hasSellerToken ? ', s.public_token AS seller_public_token' : ", '' AS seller_public_token")
+        : ", '' AS seller_display_name, '' AS seller_photo_path, '' AS seller_public_token";
     $sellerJoin = $hasSellerId && $hasSellers ? ' LEFT JOIN sellers s ON s.id = u.seller_id' : '';
     $statement = db()->prepare(
         "SELECT u.*{$sellerSelect}
@@ -81,6 +84,7 @@ function vendor_current_user(): ?array
         'seller_id' => $hasSellerId && !empty($row['seller_id']) ? (int) $row['seller_id'] : null,
         'seller_display_name' => $row['seller_display_name'] ?? '',
         'seller_photo_path' => $row['seller_photo_path'] ?? '',
+        'seller_public_token' => $row['seller_public_token'] ?? '',
     ];
 
     return $_SESSION['catalog_admin_user'];

@@ -5,6 +5,7 @@ require __DIR__ . '/_bootstrap.php';
 vendor_require_panel_login();
 
 $sellerId = (int) (vendor_current_user()['seller_id'] ?? 0);
+$sellerPublicToken = (string) (vendor_current_user()['seller_public_token'] ?? '');
 $catalogs = [];
 $schemaReady = vendor_table_exists('catalogs');
 if ($schemaReady) {
@@ -50,15 +51,17 @@ vendor_header('Mis catalogos', 'catalogos.php');
     <?php else: ?>
     <div class="table-wrap">
         <table>
-            <thead><tr><th>Slug</th><th>Titulo</th><th>Estado</th><th>Vence</th><th>Links</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>Slug</th><th>Titulo</th><th>Estado</th><th>Vence</th><th>Links</th><th>Link vendedor</th><th>Acciones</th></tr></thead>
             <tbody>
             <?php foreach ($catalogs as $catalog): ?>
+                <?php $sellerUrl = !empty($catalog['public_url']) && $sellerPublicToken !== '' ? rtrim((string) $catalog['public_url'], '/') . '/?t=' . $sellerPublicToken : ''; ?>
                 <tr>
                     <td><?= html_escape($catalog['slug']) ?></td>
                     <td><?= html_escape($catalog['title']) ?></td>
                     <td><?= admin_status_badge(resolve_catalog_status($catalog)) ?></td>
                     <td><?= html_escape($catalog['expires_at']) ?></td>
                     <td><?= (int) $catalog['links_count'] ?></td>
+                    <td><?php if ($sellerUrl !== ''): ?><input class="link-url" type="text" value="<?= html_escape($sellerUrl) ?>" readonly><?php endif; ?></td>
                     <td><?php if (!empty($catalog['public_url'])): ?><a class="button" href="<?= html_escape($catalog['public_url']) ?>" target="_blank">Abrir</a><?php endif; ?></td>
                 </tr>
             <?php endforeach; ?>

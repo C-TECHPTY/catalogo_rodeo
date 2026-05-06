@@ -4,7 +4,7 @@ Sistema completo para generar catalogos comerciales desde una app local de escri
 
 Repositorio oficial: https://github.com/C-TECHPTY/catalogo_rodeo
 
-Estado de esta version: paquete local Electron + plataforma B2B PHP/MySQL listos para instalacion, publicacion de catalogos, links seguros, carrito y gestion de pedidos.
+Estado de esta version: paquete local Electron + plataforma B2B PHP/MySQL listos para instalacion, publicacion de catalogos, links seguros, carrito con confirmacion de pedido, tokens publicos por vendedor, trazabilidad y gestion segura de pedidos.
 
 ## Resumen General
 
@@ -20,8 +20,40 @@ El flujo recomendado es:
 3. Generar o previsualizar el catalogo.
 4. Usar **Subir al hosting** para publicar.
 5. Entrar al panel admin y crear un link seguro para compartir con el cliente.
-6. El cliente abre el catalogo, agrega productos al carrito y envia el pedido.
+6. El cliente abre el catalogo, agrega productos al carrito, revisa el resumen y confirma el envio.
 7. Admin o vendedor revisa/exporta el pedido desde el panel.
+
+Para enviar un catalogo publicado a todos los vendedores activos:
+
+1. Publicar el catalogo desde la app.
+2. Ejecutar la migracion `hosting/sql/20260505_catalog_seller_email_logs.sql` si la tabla de logs aun no existe.
+3. Entrar al panel admin en `catalogos_admin/catalogos.php`.
+4. Usar **Enviar a vendedores** en el catalogo activo.
+5. Confirmar el envio y dejar marcada la opcion **Crear link seguro si no existe**.
+6. Cada vendedor recibe un correo individual con su enlace `?token=TOKEN`; los pedidos hechos desde ese enlace quedan asociados a ese vendedor.
+
+## Cambios Recientes
+
+Cambios incorporados el 2026-05-05:
+
+- Color corporativo por defecto actualizado a `#2c4695` en la app, preview y estilos base.
+- Campo editable **Texto hero B2B** para cambiar el texto del hero publicado sin modificar codigo.
+- Tarjetas del catalogo publico y vista previa B2B muestran **Disp:** cuando existe disponible del producto.
+- Vista previa B2B recupera categoria, empaque, venta, minimo, disponibilidad, precio y botones para evitar una previsualizacion incompleta.
+- Plantilla de correo de campanas revisada para conservar compatibilidad con el envio actual del hosting sin modificar SMTP.
+- Nueva accion admin **Enviar a vendedores** desde catalogos publicados.
+- Nueva pantalla `hosting/catalogos_admin/send_catalog_to_sellers.php` para confirmar envio, contar vendedores, crear/reutilizar links seguros y mostrar resumen.
+- Nueva migracion `hosting/sql/20260505_catalog_seller_email_logs.sql` para registrar cada envio de catalogo a vendedor.
+
+Cambios incorporados en la fase del 2026-04-28:
+
+- Flujo publico de pedido confirmado: el boton del carrito ahora abre **Revisar pedido**, muestra datos del cliente, lineas, cantidades y total, y exige confirmacion antes de enviar.
+- Trazabilidad de confirmacion: los pedidos guardan `customer_confirmed`, `confirmed_at` e IP del cliente cuando la base tiene las columnas de FASE 2.
+- Token publico por vendedor: cada vendedor puede tener `public_token` y compartir enlaces de catalogo con `?t=TOKEN`; la API resuelve vendedor por token y lo conserva en accesos, tracking y pedidos.
+- Panel de vendedores: muestra links directos por vendedor cuando existe un catalogo publico activo y el vendedor tiene token.
+- Panel admin de pedidos: agrega estados `pendiente`, `confirmado`, `anulado` y `archivado`, marca de pedido de prueba, archivo/limpieza segura y acciones que evitan eliminar pedidos reales.
+- Correos de pedido: asunto con vendedor y cliente, confirmacion del cliente, enlace directo al pedido en admin y destinatarios administrativos configurables con `order_admin_emails`.
+- SQL base actualizado con las nuevas columnas e indices; para instalaciones existentes se agregaron migraciones por fases.
 
 ## Estructura Del Proyecto
 
@@ -166,10 +198,12 @@ Funciones:
 - Gestion de catalogos publicados.
 - Crear, activar, archivar y eliminar catalogos.
 - Gestion de links seguros.
+- Envio de catalogos publicados a vendedores activos con link seguro individual.
 - Gestion de vendedores.
 - Gestion de clientes.
 - Gestion de usuarios admin/vendedor.
 - Revision de pedidos.
+- Acciones seguras para anular, archivar, marcar pruebas y limpiar solo pedidos de prueba.
 - Exportaciones.
 - Configuracion operativa.
 
@@ -181,6 +215,7 @@ Funciones:
 
 - Acceso con usuario y clave.
 - Ver catalogos asignados.
+- Copiar enlace publico del catalogo con token del vendedor.
 - Crear/ver links segun permisos.
 - Revisar pedidos propios.
 
@@ -193,8 +228,11 @@ El catalogo publicado tiene:
 - Hero comercial con color del catalogo.
 - Filtros por categoria.
 - Tarjetas de producto.
+- Disponibilidad visible con etiqueta **Disp:** cuando el producto incluye ese dato.
 - Vista de detalle con imagenes/video.
 - Carrito lateral con scroll interno.
+- Modal de revision de pedido antes del envio.
+- Confirmacion obligatoria del cliente antes de registrar el pedido.
 - Formulario de pedido:
   - Empresa
   - Contacto
@@ -202,7 +240,7 @@ El catalogo publicado tiene:
   - Correo
   - Direccion o zona
   - Observaciones
-- Envio de pedido a la API.
+- Envio de pedido confirmado a la API.
 - Soporte de cola offline si hay problemas de conexion.
 
 Los catalogos pueden abrirse por URL base, pero el flujo recomendado para clientes es compartir links seguros generados en el panel admin.
@@ -223,6 +261,16 @@ Cada link puede tener:
 
 Si el catalogo o link vence, la interfaz publica bloquea el contenido y muestra mensaje de no disponible.
 
+## Tokens Por Vendedor
+
+Ademas de los links seguros por cliente, la plataforma puede usar enlaces con token publico de vendedor:
+
+```text
+https://dominio.com/catalogos/slug/?t=TOKEN_DEL_VENDEDOR
+```
+
+Este token permite atribuir el catalogo, el tracking y los pedidos al vendedor aunque no exista un link seguro especifico para cliente. El token se guarda en `sellers.public_token`, se puede consultar desde el panel de vendedores y se conserva como `orders.seller_token` cuando se registra el pedido.
+
 ## Base De Datos
 
 Archivos SQL:
@@ -230,6 +278,14 @@ Archivos SQL:
 - `hosting/sql/catalog_platform.sql`: instalacion base.
 - `hosting/sql/20260418_b2b_upgrade.sql`: migracion evolutiva.
 - `hosting/sql/20260419_b2b_schema_compat.sql`: compatibilidad adicional de esquema.
+- `hosting/sql/20260423_intelligence_events.sql`: tracking e inteligencia comercial.
+- `hosting/sql/20260424_seller_photo_branding.sql`: foto de vendedor y branding visual.
+- `hosting/sql/20260425_campaigns_module.sql`: modulo de campanas promocionales.
+- `hosting/sql/20260428_phase1_order_safety.sql`: seguridad de pedidos, estados nuevos, marca de prueba y limpieza segura.
+- `hosting/sql/20260428_phase2_customer_confirmation.sql`: confirmacion del cliente antes de enviar pedido.
+- `hosting/sql/20260428_phase3_seller_tokens.sql`: token publico por vendedor y token asociado al pedido.
+- `hosting/sql/20260428_phase4_order_email_settings.sql`: correos administrativos configurables para pedidos.
+- `hosting/sql/20260505_catalog_seller_email_logs.sql`: logs de envio de catalogos publicados a vendedores.
 
 Instalacion nueva:
 
@@ -242,8 +298,20 @@ Instalacion nueva:
 Instalacion existente:
 
 1. Hacer backup de base de datos y archivos.
-2. Ejecutar migraciones necesarias.
+2. Ejecutar migraciones necesarias en orden cronologico.
 3. Subir/reemplazar `catalogos_api/`, `catalogos_admin/`, `catalogos_vendedor/` y `assets/`.
+
+Para activar los cambios de pedido confirmado, tokens por vendedor y correos administrativos en una base existente, ejecutar como minimo:
+
+```text
+20260428_phase1_order_safety.sql
+20260428_phase2_customer_confirmation.sql
+20260428_phase3_seller_tokens.sql
+20260428_phase4_order_email_settings.sql
+20260505_catalog_seller_email_logs.sql
+```
+
+La migracion `20260505_catalog_seller_email_logs.sql` es obligatoria para usar **Enviar a vendedores**. Si falta, la pantalla muestra aviso y no envia correos para evitar perder trazabilidad.
 
 ## Usuarios
 
@@ -271,6 +339,7 @@ Recomendaciones importantes:
 - Usar contrasenas fuertes para admin y vendedores.
 - Mantener `catalog.json` bloqueado por `.htaccess` en catalogos publicados.
 - Compartir con clientes links seguros, no necesariamente la URL base directa.
+- Compartir links `?t=TOKEN` solo con vendedores autorizados; no publicar tokens de vendedor en lugares no controlados.
 
 ## Paquete Hosting
 
@@ -329,8 +398,9 @@ Revisar:
 Revisar:
 
 - Correos configurados en `catalogos_admin/configuracion.php`.
+- Si se usa el campo **Correos administrativos de pedidos**, validar que `order_admin_emails` tenga correos separados por coma o punto y coma.
 - Que el vendedor tenga correo en `catalogos_admin/sellers.php`.
-- Que el pedido entre por un link seguro asociado al vendedor si se espera copia al vendedor.
+- Que el pedido entre por un link seguro asociado al vendedor o por un enlace `?t=TOKEN` si se espera copia al vendedor.
 - Que `Copiar a vendedor` este activo en Configuracion.
 - Que `catalogos_api/config.php` tenga un `mail.from_email` real del dominio.
 - Que el hosting permita `mail()` de PHP. En Configuracion > Ultimas notificaciones se ve si `mail()` devolvio `OK` o `false`.
@@ -355,6 +425,17 @@ Revisar:
 
 En cPanel estos datos suelen estar en Email Accounts > Connect Devices.
 
+### No se envia el catalogo a vendedores
+
+Revisar:
+
+- Que el catalogo este activo y tenga `public_url`.
+- Que existan vendedores activos con correo valido.
+- Que exista la tabla `catalog_seller_email_logs`; ejecutar `20260505_catalog_seller_email_logs.sql`.
+- Que el hosting permita `mail()` o que SMTP este configurado en `catalogos_api/config.php`.
+- Que el correo remitente configurado sea real y pertenezca al dominio.
+- En cPanel > Track Delivery, revisar si el servidor acepto el mensaje o si MailChannels lo bloqueo con `550 5.7.1`.
+
 ### No exporta pedidos XLSX/PDF
 
 Revisar:
@@ -373,6 +454,9 @@ Revisar:
 - `hosting/assets/public-catalog.js`: carrito, busqueda, filtros, envio de pedidos.
 - `hosting/catalogos_api/helpers.php`: funciones compartidas de API, catalogos, pedidos y exportaciones.
 - `hosting/catalogos_admin/catalogos.php`: administracion de catalogos.
+- `hosting/catalogos_admin/send_catalog_to_sellers.php`: envio de catalogos publicados a vendedores con link seguro individual.
+- `hosting/catalogos_admin/pedidos.php`: revision, estados, acciones seguras y limpieza de pedidos de prueba.
+- `hosting/catalogos_admin/sellers.php`: vendedores, tokens y enlaces por vendedor.
 - `hosting/catalogos_admin/usuarios.php`: gestion de usuarios.
 
 ## Notas Operativas

@@ -18,8 +18,8 @@
 }
 
 :root {
-    --red-primary: #b7192e;
-    --red-dark: #b7192e;
+    --red-primary: #2c4695;
+    --red-dark: #2c4695;
     --paper: #f4f3f1;
     --card: #ffffff;
     --ink: #2a2a2a;
@@ -1991,11 +1991,51 @@ body.sidebar-collapsed .workspace {
     color: var(--web-secondary, #1d261f);
 }
 
-.web-preview-card__body div {
+.web-preview-card__meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.web-preview-card__meta div,
+.web-preview-card__availability {
     padding: 8px;
     border-radius: 14px;
     background: color-mix(in srgb, var(--web-primary, #2d6b4f) 10%, white);
     display: grid;
+}
+
+.web-preview-card__availability {
+    width: fit-content;
+    max-width: 100%;
+    min-width: 96px;
+    grid-auto-flow: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.web-preview-card__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.web-preview-card__actions button {
+    min-height: 38px;
+    border: none;
+    border-radius: 14px;
+    font-weight: 900;
+    cursor: default;
+}
+
+.web-preview-card__actions button:first-child {
+    background: #f4f7fb;
+    color: var(--web-secondary, #1d261f);
+}
+
+.web-preview-card__actions button:last-child {
+    background: linear-gradient(135deg, var(--web-primary, #2d6b4f), var(--web-secondary, #174531));
+    color: #fff;
 }
 
 .web-preview-card__body small {

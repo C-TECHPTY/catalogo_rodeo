@@ -486,6 +486,35 @@ function fetch_share_link_by_token(string $token): ?array
     return $link ?: null;
 }
 
+function fetch_seller_by_public_token(string $token): ?array
+{
+    if ($token === '' || !catalog_table_exists('sellers') || !catalog_column_exists('sellers', 'public_token')) {
+        return null;
+    }
+
+    $statement = db()->prepare(
+        'SELECT *
+         FROM sellers
+         WHERE public_token = :token AND is_active = 1
+         LIMIT 1'
+    );
+    $statement->execute(['token' => $token]);
+    $seller = $statement->fetch();
+
+    return $seller ?: null;
+}
+
+function fetch_seller_token_by_id(?int $sellerId): string
+{
+    if (!$sellerId || !catalog_table_exists('sellers') || !catalog_column_exists('sellers', 'public_token')) {
+        return '';
+    }
+
+    $statement = db()->prepare('SELECT public_token FROM sellers WHERE id = :id LIMIT 1');
+    $statement->execute(['id' => $sellerId]);
+    return (string) ($statement->fetchColumn() ?: '');
+}
+
 function resolve_share_link_status(?array $link): string
 {
     if (!$link) {
@@ -503,10 +532,11 @@ function resolve_share_link_status(?array $link): string
     return 'active';
 }
 
-function resolve_public_catalog_context(string $slug, string $token = ''): array
+function resolve_public_catalog_context(string $slug, string $token = '', string $sellerToken = ''): array
 {
     $catalog = ensure_catalog_active($slug);
     $link = null;
+    $sellerByToken = null;
 
     if ($token !== '') {
         $link = fetch_share_link_by_token($token);
@@ -533,12 +563,24 @@ function resolve_public_catalog_context(string $slug, string $token = ''): array
         }
     }
 
+    if (!$link && $sellerToken !== '') {
+        $sellerByToken = fetch_seller_by_public_token($sellerToken);
+    }
+
+    $sellerId = $link['seller_id'] ?? $sellerByToken['id'] ?? $catalog['seller_id'] ?? null;
+    $sellerName = $link['seller_name'] ?? $sellerByToken['name'] ?? $catalog['seller_display_name'] ?? $catalog['seller_name'] ?? '';
+    $resolvedSellerToken = $sellerByToken['public_token'] ?? '';
+    if ($resolvedSellerToken === '' && $sellerId) {
+        $resolvedSellerToken = fetch_seller_token_by_id((int) $sellerId);
+    }
+
     return [
         'catalog' => $catalog,
         'share_link' => $link,
-        'seller_id' => $link['seller_id'] ?? $catalog['seller_id'] ?? null,
+        'seller_id' => $sellerId,
+        'seller_token' => $resolvedSellerToken,
         'client_id' => $link['client_id'] ?? $catalog['client_id'] ?? null,
-        'seller_name' => $link['seller_name'] ?? $catalog['seller_display_name'] ?? $catalog['seller_name'] ?? '',
+        'seller_name' => $sellerName,
         'client_name' => $link['client_name'] ?? $catalog['client_business_name'] ?? $catalog['client_name'] ?? '',
     ];
 }
@@ -632,6 +674,7 @@ function build_public_catalog_payload(array $context): array
         'seller' => [
             'id' => $context['seller_id'] ? (int) $context['seller_id'] : null,
             'name' => $context['seller_name'],
+            'token' => (string) ($context['seller_token'] ?? ''),
         ],
         'client' => [
             'id' => $context['client_id'] ? (int) $context['client_id'] : null,
@@ -1077,15 +1120,20 @@ function smtp_send_mail(string $recipient, string $subject, array $headers, stri
 function build_notification_recipients(array $order, ?array $seller = null): array
 {
     $recipients = [];
-    foreach (['mail_sales', 'mail_billing', 'mail_logistics', 'mail_supervision'] as $key) {
-        $recipients = array_merge($recipients, preg_split('/[,;]+/', app_setting($key, '')) ?: []);
+    $adminEmails = trim(app_setting('order_admin_emails', ''));
+    if ($adminEmails !== '') {
+        $recipients = array_merge($recipients, preg_split('/[,;]+/', $adminEmails) ?: []);
+    } else {
+        foreach (['mail_sales', 'mail_billing', 'mail_logistics', 'mail_supervision'] as $key) {
+            $recipients = array_merge($recipients, preg_split('/[,;]+/', app_setting($key, '')) ?: []);
+        }
     }
 
-    if (app_setting('mail_copy_seller', '1') === '1' && $seller && !empty($seller['email'])) {
+    if ($seller && !empty($seller['email'])) {
         $recipients[] = $seller['email'];
     }
 
-    if (app_setting('mail_copy_client', '1') === '1' && !empty($order['contact_email'])) {
+    if (!empty($order['contact_email'])) {
         $recipients[] = $order['contact_email'];
     }
 
@@ -1149,6 +1197,10 @@ function create_share_link(int $catalogId, ?int $sellerId, ?int $clientId, strin
 
 function update_order_status(int $orderId, string $nextStatus, string $notes = ''): void
 {
+    if (!catalog_column_exists('orders', 'status')) {
+        return;
+    }
+
     $statement = db()->prepare('SELECT status FROM orders WHERE id = :id LIMIT 1');
     $statement->execute(['id' => $orderId]);
     $row = $statement->fetch();

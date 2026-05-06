@@ -47,7 +47,8 @@ gallerySlots:3
 };
 const LAYOUT_BLOCKS = { coverTitle:"Portada titulo", pageHeader:"Encabezado", pageLogo:"Logo pagina", productsGrid:"Bloque productos", productImage:"Imagen producto", productCode:"Codigo producto", productPrice:"Precio", productDescription:"Descripcion", productMeta:"Datos tecnicos", pageFooter:"Footer" };
 const initialHostingSettings = loadHostingSettings();
-const state = { mode:"manual", previewMode:"web", records:[], sourceRecords:[], sourceExcelName:"", imageFiles:[], imageMap:new Map(), imageUrls:[], imageSourceMap:new Map(), extraMediaFiles:[], extraMediaMap:new Map(), remoteImageCheckCache:new Map(), title:"Acenox Catalogo Comercial", footerText:"Catalogo comercial interno Acenox", includeCover:true, template:"classic", productsPerPage:6, primaryColor:"#b7192e", secondaryColor:"#1d1d1b", coverImageUrl:"", coverImagePath:"", pageLogoUrl:"", pageLogoPath:"", pageLogoPosition:"right", pageBackgroundUrl:"", pageBackgroundPath:"", pageBackgroundOpacity:0.12, heroImageUrl:"", heroImagePath:"", priceMode:"original", entryFilter:"", imageSource:loadImageSourceSettings(), promotion:{ title:"Oferta destacada para compras mayoristas", text:"Configura una imagen liviana o video opcional sin afectar la carga movil.", imageUrl:"", imagePath:"", videoUrl:"", videoPath:"", linkLabel:"Consultar promocion", linkUrl:"" }, webExport:{ slug:"catalogo-publicable", slugEdited:false, expiryDays:30, outputDir:"", baseUrl:initialHostingSettings.publicBaseUrl, apiBaseUrl:initialHostingSettings.apiBaseUrl, generatedLink:"", hosting:initialHostingSettings }, layoutPresets:loadLayoutPresets(), activeLayoutPresetId:"default", layoutEditor:{ enabled:false, selectedBlock:"coverTitle", drag:null }, batch:{ excelPath:"", imagesRoot:"", outputRoot:"", template:"editorial", quality:0.72, priceMode:"original", entryFilter:"", primaryColor:"#b7192e", secondaryColor:"#1d1d1b", logoPosition:"right", categories:[], previewIndex:-1, progress:{ completed:0, total:0 } } };
+const DEFAULT_HERO_SUBTITLE = "Pedidos por empaque, link trazable y salida operativa en Excel/CSV/XLSX.";
+const state = { mode:"manual", previewMode:"web", records:[], sourceRecords:[], sourceExcelName:"", imageFiles:[], imageMap:new Map(), imageUrls:[], imageSourceMap:new Map(), extraMediaFiles:[], extraMediaMap:new Map(), remoteImageCheckCache:new Map(), title:"Acenox Catalogo Comercial", footerText:"Catalogo comercial interno Acenox", includeCover:true, template:"classic", productsPerPage:6, primaryColor:"#2c4695", secondaryColor:"#1d1d1b", coverImageUrl:"", coverImagePath:"", pageLogoUrl:"", pageLogoPath:"", pageLogoPosition:"right", pageBackgroundUrl:"", pageBackgroundPath:"", pageBackgroundOpacity:0.12, heroImageUrl:"", heroImagePath:"", heroSubtitle:DEFAULT_HERO_SUBTITLE, priceMode:"original", entryFilter:"", imageSource:loadImageSourceSettings(), promotion:{ title:"Oferta destacada para compras mayoristas", text:"Configura una imagen liviana o video opcional sin afectar la carga movil.", imageUrl:"", imagePath:"", videoUrl:"", videoPath:"", linkLabel:"Consultar promocion", linkUrl:"" }, webExport:{ slug:"catalogo-publicable", slugEdited:false, expiryDays:30, outputDir:"", baseUrl:initialHostingSettings.publicBaseUrl, apiBaseUrl:initialHostingSettings.apiBaseUrl, generatedLink:"", hosting:initialHostingSettings }, layoutPresets:loadLayoutPresets(), activeLayoutPresetId:"default", layoutEditor:{ enabled:false, selectedBlock:"coverTitle", drag:null }, batch:{ excelPath:"", imagesRoot:"", outputRoot:"", template:"editorial", quality:0.72, priceMode:"original", entryFilter:"", primaryColor:"#2c4695", secondaryColor:"#1d1d1b", logoPosition:"right", categories:[], previewIndex:-1, progress:{ completed:0, total:0 } } };
 const REQUIRED_ALIASES = { item:["ITEM"], description:["DESCRIPCION","DESCRIPCION ","NOMBRE","PRODUCTO"], price:["PRECIO","PRICE","PVP"], entry:["ENTRADA","ENTRY","LOTE","IMPORTACION"], available:["DISPONIBLE","DISP.","DISP","STOCK","EXISTENCIA"], barcode:["CBARRA","CB","CODIGOBARRAS","CODIGO DE BARRAS"], package:["EMPAQUE","PACK","PAQUETE"], um:["UM"], ctn:["CTN"], cub:["CUB.","CUB","CUBICAJE"] };
 const TEMPLATE_DEFS = {
 classic: templateDef("catalog-page--classic","cover-page--classic","Clasica original","Catalogo comercial","Coleccion general",renderClassicCard),
@@ -96,6 +97,7 @@ const imageSourceDefaultExtensionInput = byId("imageSourceDefaultExtension");
 const imageSourcePatternInput = byId("imageSourcePattern");
 const imageSourceStatus = byId("imageSourceStatus");
 const heroImageFileInput = byId("heroImageFile");
+const heroSubtitleInput = byId("heroSubtitleInput");
 const promoTitleInput = byId("promoTitleInput");
 const promoTextInput = byId("promoTextInput");
 const promoImageFileInput = byId("promoImageFile");
@@ -192,7 +194,7 @@ webPreviewModeButton?.addEventListener("click", () => setPreviewMode("web"));
 pdfPreviewModeButton?.addEventListener("click", () => setPreviewMode("pdf"));
 titleInput?.addEventListener("input", () => { state.title = titleInput.value.trim() || "Acenox Catalogo Comercial"; if (!state.webExport.slugEdited && webCatalogSlugInput) { const nextSlug = sanitizeSlug(state.title) || "catalogo-publicable"; state.webExport.slug = nextSlug; webCatalogSlugInput.value = nextSlug; updateGeneratedLinkPreview(); } refreshCatalogIfReady(); });
 footerInput?.addEventListener("input", () => { state.footerText = footerInput.value.trim() || "Catalogo comercial interno Acenox"; refreshCatalogIfReady(); });
-primaryColorInput?.addEventListener("input", () => { state.primaryColor = primaryColorInput.value || "#b7192e"; applyThemeVariables(); refreshCatalogIfReady(); renderWebPreview(); });
+primaryColorInput?.addEventListener("input", () => { state.primaryColor = primaryColorInput.value || "#2c4695"; applyThemeVariables(); refreshCatalogIfReady(); renderWebPreview(); });
 secondaryColorInput?.addEventListener("input", () => { state.secondaryColor = secondaryColorInput.value || "#1d1d1b"; applyThemeVariables(); refreshCatalogIfReady(); renderWebPreview(); });
 includeCoverInput?.addEventListener("change", () => { state.includeCover = includeCoverInput.checked; refreshCatalogIfReady(); });
 templateSelect?.addEventListener("change", () => { state.template = templateSelect.value || "classic"; if (state.template === "campin1" && Number(productsPerPageInput.value) > 5) productsPerPageInput.value = "5"; if (isHorizontalTemplate(state.template) && Number(productsPerPageInput.value) > 4) productsPerPageInput.value = "4"; refreshCatalogIfReady(); });
@@ -228,6 +230,7 @@ imageSourceGalleryBaseUrlInput?.addEventListener("input", () => updateImageSourc
 imageSourceDefaultExtensionInput?.addEventListener("change", () => updateImageSourceSettings({ defaultExtension:imageSourceDefaultExtensionInput.value || "jpg" }));
 imageSourcePatternInput?.addEventListener("input", () => updateImageSourceSettings({ namePattern:imageSourcePatternInput.value }));
 heroImageFileInput?.addEventListener("change", () => { const file = heroImageFileInput.files?.[0]; state.heroImageUrl = replaceObjectUrl(state.heroImageUrl, file); state.heroImagePath = file?.path || ""; renderWebPreview(); });
+heroSubtitleInput?.addEventListener("input", () => { state.heroSubtitle = heroSubtitleInput.value.trim() || DEFAULT_HERO_SUBTITLE; renderWebPreview(); });
 promoTitleInput?.addEventListener("input", () => { state.promotion.title = promoTitleInput.value.trim(); renderWebPreview(); });
 promoTextInput?.addEventListener("input", () => { state.promotion.text = promoTextInput.value.trim(); renderWebPreview(); });
 promoLinkLabelInput?.addEventListener("input", () => { state.promotion.linkLabel = promoLinkLabelInput.value.trim(); renderWebPreview(); });
@@ -302,7 +305,7 @@ state.batch.entryFilter = batchEntryFilterInput.value.trim();
 setBatchStatus(buildBatchEntryStatus());
 if (state.batch.previewIndex >= 0 && state.batch.excelPath) await previewBatchCategory(state.batch.previewIndex);
 });
-batchPrimaryColorInput?.addEventListener("input", () => { state.batch.primaryColor = batchPrimaryColorInput.value || "#b7192e"; renderBatchCategoryList(); });
+batchPrimaryColorInput?.addEventListener("input", () => { state.batch.primaryColor = batchPrimaryColorInput.value || "#2c4695"; renderBatchCategoryList(); });
 batchSecondaryColorInput?.addEventListener("input", () => { state.batch.secondaryColor = batchSecondaryColorInput.value || "#1d1d1b"; renderBatchCategoryList(); });
 batchLogoPositionInput?.addEventListener("change", () => { state.batch.logoPosition = batchLogoPositionInput.value || "right"; renderBatchCategoryList(); });
 pickBatchExcelButton?.addEventListener("click", async () => { if (!isDesktop) return; const filePath = await desktopApi.chooseFile({ title: "Selecciona el Excel base", filters: [{ name: "Excel", extensions: ["xlsx", "xlsm", "xls"] }] }); if (!filePath) return; state.batch.excelPath = filePath; batchExcelPathInput.value = filePath; setBatchStatus("Excel base seleccionado."); if (state.batch.categories.length) { state.batch.previewIndex = Math.max(state.batch.previewIndex, 0); await previewBatchCategory(state.batch.previewIndex || 0); } });
@@ -373,7 +376,7 @@ webPreviewRoot.innerHTML = `
     <button type="button">Carrito</button>
   </header>
   <section class="web-preview-hero"${heroStyle}>
-    <div><p>Catalogo comercial B2B</p><h2>${escapeHtml(state.title)}</h2><span>Pedidos por empaque, link trazable y salida operativa en Excel/CSV/XLSX.</span></div>
+    <div><p>Catalogo comercial B2B</p><h2>${escapeHtml(state.title)}</h2><span>${escapeHtml(state.heroSubtitle || DEFAULT_HERO_SUBTITLE)}</span></div>
     <div class="web-preview-filter"><strong>Categorias</strong><span>Todos</span><span>General</span><span>Mayorista</span></div>
   </section>
   <section class="web-preview-promo">
@@ -387,13 +390,24 @@ hydrateDynamicImages(webPreviewRoot);
 
 function renderWebPreviewCard(product) {
 const image = resolveProductImage(product);
+const category = product.category || "General";
+const packageLabel = product.package || product.empaque || "Unidad";
+const saleUnit = product.saleUnit || product.um || "bulto";
+const minimumOrder = product.minimumOrder || 1;
 return `<article class="web-preview-card">
   <div class="web-preview-card__media">${image.isPlaceholder ? "Sin imagen" : `<img src="${escapeHtml(image.url)}" alt="" data-image-candidates="${escapeHtml(encodeDynamicCandidates(image.candidates))}">`}</div>
   <div class="web-preview-card__body">
     <span>${escapeHtml(product.item || "SKU")}</span>
     <strong>${escapeHtml(product.shortDescription || product.description || "Producto")}</strong>
-    <div><small>Empaque</small><b>${escapeHtml(product.package || "Unidad")}</b></div>
+    <div class="web-preview-card__meta">
+      <div><small>Categoria</small><b>${escapeHtml(category)}</b></div>
+      <div><small>Empaque</small><b>${escapeHtml(packageLabel)}</b></div>
+      <div><small>Venta</small><b>${escapeHtml(saleUnit)}</b></div>
+      <div><small>Minimo</small><b>${escapeHtml(String(minimumOrder))}</b></div>
+    </div>
+    ${product.available ? `<div class="web-preview-card__availability"><small>Disp:</small><b>${escapeHtml(product.available)}</b></div>` : ""}
     <p>${escapeHtml(product.price || "$0.00")}</p>
+    <div class="web-preview-card__actions"><button type="button">Ver detalle</button><button type="button">Agregar</button></div>
   </div>
 </article>`;
 }
@@ -586,6 +600,7 @@ coverImageUrl: state.coverImageUrl,
 pageLogoUrl: state.pageLogoUrl,
 pageBackgroundUrl: state.pageBackgroundUrl,
 heroImageUrl: state.heroImageUrl,
+heroSubtitle: state.heroSubtitle,
 template: state.template,
 title: state.title,
 footerText: state.footerText,
@@ -677,6 +692,7 @@ state.coverImageUrl = currentState.coverImageUrl;
 state.pageLogoUrl = currentState.pageLogoUrl;
 state.pageBackgroundUrl = currentState.pageBackgroundUrl;
 state.heroImageUrl = currentState.heroImageUrl;
+state.heroSubtitle = currentState.heroSubtitle;
 state.promotion = currentState.promotion;
 renderCatalog({ syncInputs:false });
 return {
@@ -693,7 +709,7 @@ snapshotHtml,
     secondaryColor: sanitizeHexColor(state.secondaryColor, "#174531")
   },
   heroTitle: state.title,
-  heroSubtitle: "Catalogo comercial B2B con pedido mayorista y trazabilidad por enlace.",
+  heroSubtitle: state.heroSubtitle || DEFAULT_HERO_SUBTITLE,
   heroImage: heroRelative ? `./${heroRelative}` : "",
   publicBaseUrl: state.webExport.baseUrl,
   apiBaseUrl: state.webExport.apiBaseUrl,
@@ -1159,7 +1175,7 @@ batchCategoryList.innerHTML = state.batch.categories.map((category, index) => `
 function renderTemplateOptions(selectedValue) { return Object.entries(TEMPLATE_DEFS).map(([value, template]) => `<option value="${value}" ${value === selectedValue ? "selected" : ""}>${escapeHtml(template.name)}</option>`).join(""); }
 function setMode(mode) { state.mode = mode; const isManual = mode === "manual"; manualModeButton?.classList.toggle("mode-switch__button--active", isManual); batchModeButton?.classList.toggle("mode-switch__button--active", !isManual); manualPanels.forEach((panel) => { panel.hidden = !isManual; }); batchPanels.forEach((panel) => { panel.hidden = isManual; }); if (!isManual && state.layoutEditor.enabled) toggleLayoutEditor(false); refreshLayoutEditorOverlay(); }
 function refreshCatalogIfReady() { if (state.records.length) renderCatalog(); else if (catalogRoot) catalogRoot.innerHTML = ""; renderWebPreview(); }
-function syncStateFromManualInputs() { state.title = titleInput?.value.trim() || state.title; state.footerText = footerInput?.value.trim() || state.footerText; state.includeCover = Boolean(includeCoverInput?.checked); state.template = templateSelect?.value || state.template; state.primaryColor = primaryColorInput?.value || state.primaryColor; state.secondaryColor = secondaryColorInput?.value || state.secondaryColor; state.pageLogoPosition = pageLogoPositionInput?.value || state.pageLogoPosition; state.priceMode = normalizePriceMode(priceModeSelect?.value || state.priceMode); state.entryFilter = entryFilterInput?.value.trim() || ""; state.pageBackgroundOpacity = readBackgroundOpacity(pageBackgroundOpacityInput); const perPage = Number(productsPerPageInput?.value); state.productsPerPage = Number.isFinite(perPage) && perPage > 0 ? perPage : state.productsPerPage; }
+function syncStateFromManualInputs() { state.title = titleInput?.value.trim() || state.title; state.footerText = footerInput?.value.trim() || state.footerText; state.heroSubtitle = heroSubtitleInput?.value.trim() || DEFAULT_HERO_SUBTITLE; state.includeCover = Boolean(includeCoverInput?.checked); state.template = templateSelect?.value || state.template; state.primaryColor = primaryColorInput?.value || state.primaryColor; state.secondaryColor = secondaryColorInput?.value || state.secondaryColor; state.pageLogoPosition = pageLogoPositionInput?.value || state.pageLogoPosition; state.priceMode = normalizePriceMode(priceModeSelect?.value || state.priceMode); state.entryFilter = entryFilterInput?.value.trim() || ""; state.pageBackgroundOpacity = readBackgroundOpacity(pageBackgroundOpacityInput); const perPage = Number(productsPerPageInput?.value); state.productsPerPage = Number.isFinite(perPage) && perPage > 0 ? perPage : state.productsPerPage; }
 function applyThemeVariables() { document.documentElement.style.setProperty("--red-primary", state.primaryColor); document.documentElement.style.setProperty("--red-dark", state.primaryColor); document.documentElement.style.setProperty("--footer-black", state.secondaryColor); }
 function setStatus(message, isError = false) { if (!statusMessage) return; statusMessage.textContent = message; statusMessage.style.color = isError ? "#ffd6d6" : "rgba(255,255,255,0.82)"; }
 function setBatchStatus(message, isError = false) { if (!batchStatusMessage) return; batchStatusMessage.textContent = message; batchStatusMessage.style.color = isError ? "#ffd6d6" : "rgba(255,255,255,0.82)"; }
@@ -1276,7 +1292,7 @@ function normalizeIdentifier(value) { return String(value || "").normalize("NFD"
 function readBackgroundOpacity(input) { const value = Number(input?.value); return Number.isFinite(value) ? Math.min(Math.max(value, 0), 0.35) : 0.12; }
 function escapeHtml(text) { return String(text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;"); }
 function sanitizeFileName(value) { return String(value || "catalogo").replace(/[<>:\"/\\|?*]+/g, "").trim() || "catalogo"; }
-function pickDefaultCategoryColor(index, type) { const palettes = [["#b7192e", "#1d1d1b"], ["#7f8f55", "#2f3b29"], ["#1d6f8b", "#173642"], ["#c46a2d", "#4b2d1c"], ["#824d84", "#2f2232"], ["#4f6c88", "#243646"]]; const pair = palettes[index % palettes.length]; return type === "primary" ? pair[0] : pair[1]; }
+function pickDefaultCategoryColor(index, type) { const palettes = [["#2c4695", "#1d1d1b"], ["#7f8f55", "#2f3b29"], ["#1d6f8b", "#173642"], ["#c46a2d", "#4b2d1c"], ["#824d84", "#2f2232"], ["#4f6c88", "#243646"]]; const pair = palettes[index % palettes.length]; return type === "primary" ? pair[0] : pair[1]; }
 function byId(id) { return document.getElementById(id); }
 function pathToFileUrl(filePath) { return `file:///${String(filePath).replace(/\\/g, "/")}`; }
 function createPlaceholderDataUri() { const svg = ["<svg xmlns='http://www.w3.org/2000/svg' width='420' height='280'>", "<rect width='100%' height='100%' rx='18' fill='#f6f4ef' stroke='#ddd8d0' stroke-width='2'/>", "<text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='#8d8b85' font-family='Arial, Helvetica, sans-serif' font-size='22'>Imagen no disponible</text>", "</svg>"].join(""); return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`; }

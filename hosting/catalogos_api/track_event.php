@@ -14,6 +14,7 @@ if (!catalog_table_exists('catalog_behavior_events')) {
 
 $slug = slugify((string) ($payload['slug'] ?? ''));
 $shareToken = trim((string) ($payload['share_token'] ?? ''));
+$sellerToken = trim((string) ($payload['seller_token'] ?? ''));
 $eventType = normalize_tracking_text((string) ($payload['event_type'] ?? ''), 60);
 
 if ($slug === '' || $eventType === '') {
@@ -47,7 +48,7 @@ if (!in_array($eventType, $allowedEvents, true)) {
     ], 422);
 }
 
-$context = resolve_public_catalog_context($slug, $shareToken);
+$context = resolve_public_catalog_context($slug, $shareToken, $sellerToken);
 $product = is_array($payload['product'] ?? null) ? $payload['product'] : [];
 $extra = is_array($payload['metadata'] ?? null) ? $payload['metadata'] : [];
 

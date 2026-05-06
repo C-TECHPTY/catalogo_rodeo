@@ -976,7 +976,7 @@ function buildWebExportHtml(snapshotHtml, metadata) {
                     <input id="contactEmail" type="email" placeholder="Correo">
                     <input id="addressZone" type="text" placeholder="Direccion o zona">
                     <textarea id="comments" placeholder="Observaciones"></textarea>
-                    <button class="checkout-button" id="checkoutButton" type="submit">Enviar pedido</button>
+                    <button class="checkout-button" id="checkoutButton" type="submit">Revisar pedido</button>
                 </form>
                 <div class="drawer__actions" style="margin-top:12px;"><button class="button-secondary" id="continueShoppingButton" type="button">Seguir comprando</button></div>
                 <p class="status-note" id="checkoutStatus">Completa el formulario para registrar el pedido comercial.</p>

@@ -33,6 +33,10 @@
     mediaCache: new Map(),
     imageProbeCache: new Map(),
     publicContext: null,
+    reviewModal: null,
+    reviewStatus: null,
+    reviewConfirm: null,
+    reviewSubmit: null,
     isOffline: !navigator.onLine,
     filters: { search: "", category: "Todos" }
   };
@@ -90,6 +94,8 @@
     document.querySelector(".catalog-shell")?.setAttribute("hidden", "");
     hydrateHeader();
     bindEvents();
+    const checkoutButton = byId("checkoutButton");
+    if (checkoutButton) checkoutButton.textContent = "Revisar pedido";
     updateOfflineUi();
     const hasAccess = await loadPublicContext();
     if (!hasAccess) {
@@ -189,7 +195,8 @@
     if (!apiBaseUrl || !metadata.slug) return false;
 
     try {
-      const response = await fetch(`${apiBaseUrl}/public_catalog.php?slug=${encodeURIComponent(metadata.slug)}&token=${encodeURIComponent(token)}`);
+      const sellerToken = getSellerToken();
+      const response = await fetch(`${apiBaseUrl}/public_catalog.php?slug=${encodeURIComponent(metadata.slug)}&token=${encodeURIComponent(token)}&t=${encodeURIComponent(sellerToken)}`);
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.ok) {
         const error = new Error(result && result.error ? result.error : "No fue posible validar el catalogo.");
@@ -199,7 +206,10 @@
       }
 
       state.publicContext = result.catalog;
-      if (els.sellerRef) els.sellerRef.textContent = `Vendedor: ${result.catalog.seller && result.catalog.seller.name ? result.catalog.seller.name : "Asignacion general"}`;
+      if (result.catalog.seller && result.catalog.seller.token) {
+        persistSellerToken(result.catalog.seller.token);
+      }
+      if (els.sellerRef) els.sellerRef.textContent = `Atendido por: ${result.catalog.seller && result.catalog.seller.name ? result.catalog.seller.name : "Asignacion general"}`;
       if (els.clientRef) els.clientRef.textContent = `Cliente: ${result.catalog.client && result.catalog.client.name ? result.catalog.client.name : "Acceso libre"}`;
       if (result.catalog.metadata && Array.isArray(result.catalog.metadata.catalog)) {
         Object.assign(metadata, result.catalog.metadata);
@@ -289,7 +299,7 @@
     els.cartClose?.addEventListener("click", closeCartDrawer);
     els.cartDrawerBackdrop?.addEventListener("click", closeCartDrawer);
     els.continueShopping?.addEventListener("click", closeCartDrawer);
-    els.checkoutForm?.addEventListener("submit", submitOrder);
+    els.checkoutForm?.addEventListener("submit", openOrderReview);
     window.addEventListener("online", () => {
       state.isOffline = false;
       updateOfflineUi();
@@ -365,6 +375,7 @@
             <div><span>Venta</span><strong>${escapeHtml(getDisplaySaleUnit(product))}</strong></div>
             <div><span>Minimo</span><strong>${escapeHtml(String(getMinimumQty(product)))}</strong></div>
           </div>
+          ${product.available ? `<div class="product-card__availability"><span>Disp:</span><strong>${escapeHtml(product.available)}</strong></div>` : ""}
           <div class="product-card__footer">
             <div class="product-card__price">${escapeHtml(formatMoney(parsePrice(product.price)))}</div>
             <div class="product-card__actions">
@@ -644,6 +655,10 @@
         <div class="summary-row"><span>Total general</span><strong>${formatMoney(total)}</strong></div>
       `;
     }
+
+    if (state.reviewModal?.classList.contains("open")) {
+      renderOrderReview();
+    }
   }
 
   function updateCartQty(key, nextQty) {
@@ -662,10 +677,136 @@
     });
   }
 
-  async function submitOrder(event, forcedPayload) {
+  function openOrderReview(event) {
     if (event) event.preventDefault();
+    if (!buildOrderPayload({ customerConfirmed: false })) return;
+    ensureOrderReviewModal();
+    renderOrderReview();
+    if (state.reviewConfirm) state.reviewConfirm.checked = false;
+    if (state.reviewStatus) state.reviewStatus.textContent = "";
+    state.reviewModal?.classList.add("open");
+  }
+
+  function ensureOrderReviewModal() {
+    if (state.reviewModal) return;
+    const modal = document.createElement("div");
+    modal.className = "overlay order-review";
+    modal.id = "orderReviewOverlay";
+    modal.innerHTML = `
+      <div class="modal-card order-review__card" role="dialog" aria-modal="true" aria-labelledby="orderReviewTitle">
+        <div class="toolbar">
+          <div>
+            <strong id="orderReviewTitle">Revisar pedido</strong>
+            <div class="muted">Verifica productos, cantidades y datos antes del envio.</div>
+          </div>
+          <button class="button-secondary" id="orderReviewBack" type="button">Regresar al catalogo</button>
+        </div>
+        <div class="order-review__customer" id="orderReviewCustomer"></div>
+        <div class="order-review__lines" id="orderReviewLines"></div>
+        <div class="cart-summary" id="orderReviewSummary"></div>
+        <label class="order-review__confirm">
+          <input id="orderReviewConfirm" type="checkbox">
+          <span>Confirmo que revise mi pedido y autorizo el envio.</span>
+        </label>
+        <button class="checkout-button" id="orderReviewSubmit" type="button">Enviar pedido confirmado</button>
+        <p class="status-note" id="orderReviewStatus"></p>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    state.reviewModal = modal;
+    state.reviewStatus = byId("orderReviewStatus");
+    state.reviewConfirm = byId("orderReviewConfirm");
+    state.reviewSubmit = byId("orderReviewSubmit");
+    byId("orderReviewBack")?.addEventListener("click", closeOrderReview);
+    state.reviewConfirm?.addEventListener("change", () => {
+      if (state.reviewStatus) state.reviewStatus.textContent = "";
+    });
+    state.reviewSubmit?.addEventListener("click", () => {
+      if (!state.reviewConfirm?.checked) {
+        if (state.reviewStatus) state.reviewStatus.textContent = "Debes marcar la confirmacion para enviar el pedido.";
+        return;
+      }
+      submitOrder(null, buildOrderPayload({ customerConfirmed: true }), true);
+    });
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal) closeOrderReview();
+    });
+  }
+
+  function closeOrderReview() {
+    state.reviewModal?.classList.remove("open");
+  }
+
+  function renderOrderReview() {
+    const customerNode = byId("orderReviewCustomer");
+    const linesNode = byId("orderReviewLines");
+    const summaryNode = byId("orderReviewSummary");
+    const entries = Array.from(state.cart.values());
+    const payload = buildOrderPayload({ customerConfirmed: false, silent: true });
+
+    if (customerNode && payload) {
+      customerNode.innerHTML = `
+        <div><span>Empresa</span><strong>${escapeHtml(payload.company_name || "No indicada")}</strong></div>
+        <div><span>Contacto</span><strong>${escapeHtml(payload.contact_name || "")}</strong></div>
+        <div><span>Telefono</span><strong>${escapeHtml(payload.contact_phone || "")}</strong></div>
+        <div><span>Correo</span><strong>${escapeHtml(payload.contact_email || "No indicado")}</strong></div>
+      `;
+    }
+
+    if (linesNode) {
+      linesNode.innerHTML = entries.length ? "" : `<p class="cart-empty">No hay productos para revisar.</p>`;
+      entries.forEach((entry) => {
+        const packSize = getPackSize(entry.product);
+        const pieces = entry.quantity * packSize;
+        const lineTotal = pieces * parsePrice(entry.product.price);
+        const line = document.createElement("article");
+        line.className = "order-review__line";
+        line.innerHTML = `
+          <div>
+            <strong>${escapeHtml(entry.product.description || entry.product.item)}</strong>
+            <div class="muted">${escapeHtml(entry.product.item || "")} · ${escapeHtml(getDisplaySaleUnit(entry.product))}</div>
+          </div>
+          <div class="qty-controls">
+            <button type="button" aria-label="Restar cantidad">-</button>
+            <input type="number" min="${getMinimumQty(entry.product)}" value="${entry.quantity}">
+            <button type="button" aria-label="Sumar cantidad">+</button>
+            <button type="button" aria-label="Eliminar producto">x</button>
+          </div>
+          <div><strong>${formatMoney(lineTotal)}</strong><div class="muted">${pieces} piezas</div></div>
+        `;
+        const [minus, input, plus, remove] = line.querySelectorAll("button, input");
+        minus.addEventListener("click", () => updateCartQty(entry.key, entry.quantity - getMultipleQty(entry.product)));
+        plus.addEventListener("click", () => updateCartQty(entry.key, entry.quantity + getMultipleQty(entry.product)));
+        input.addEventListener("change", () => updateCartQty(entry.key, Number(input.value) || entry.quantity));
+        remove.addEventListener("click", () => {
+          state.cart.delete(entry.key);
+          renderCart();
+          trackProductEvent("remove_from_cart", entry.product);
+        });
+        linesNode.appendChild(line);
+      });
+    }
+
+    if (summaryNode) {
+      const total = entries.reduce((sum, entry) => sum + entry.quantity * getPackSize(entry.product) * parsePrice(entry.product.price), 0);
+      summaryNode.innerHTML = `
+        <div class="summary-row"><span>Productos</span><strong>${entries.length}</strong></div>
+        <div class="summary-row"><span>Vendedor</span><strong>${escapeHtml(state.publicContext?.seller?.name || "General")}</strong></div>
+        <div class="summary-row"><span>Total confirmado</span><strong>${formatMoney(total)}</strong></div>
+      `;
+    }
+  }
+
+  async function submitOrder(event, forcedPayload, interactive = false) {
+    if (event) event.preventDefault();
+    const isUserSubmit = !forcedPayload || interactive;
     const payload = forcedPayload || buildOrderPayload();
     if (!payload) return;
+    if (!payload.customer_confirmed) {
+      if (state.reviewStatus) state.reviewStatus.textContent = "Debes confirmar que revisaste el pedido.";
+      if (els.checkoutStatus) els.checkoutStatus.textContent = "Debes confirmar que revisaste el pedido.";
+      return;
+    }
 
     const apiBaseUrl = sanitizeBaseUrl(metadata.apiBaseUrl);
     if (!apiBaseUrl || state.isOffline) {
@@ -673,11 +814,12 @@
       trackCatalogEvent("offline_order_queued", {
         metadata: { item_count: payload.items.length, source_channel: payload.source_channel }
       });
-      if (!forcedPayload) {
+      if (isUserSubmit) {
         state.cart.clear();
         renderCart();
         els.checkoutForm?.reset();
       }
+      closeOrderReview();
       if (els.checkoutStatus) {
         els.checkoutStatus.textContent = "Pedido guardado localmente. Se reenviara cuando vuelva la conexion.";
       }
@@ -685,9 +827,12 @@
     }
 
     const submitButton = byId("checkoutButton");
-    if (submitButton && !forcedPayload) submitButton.disabled = true;
-    if (els.checkoutStatus && !forcedPayload) els.checkoutStatus.textContent = "Enviando pedido...";
-    if (!forcedPayload) {
+    const reviewSubmit = state.reviewSubmit;
+    if (submitButton && isUserSubmit) submitButton.disabled = true;
+    if (reviewSubmit && isUserSubmit) reviewSubmit.disabled = true;
+    if (els.checkoutStatus && isUserSubmit) els.checkoutStatus.textContent = "Enviando pedido...";
+    if (state.reviewStatus && isUserSubmit) state.reviewStatus.textContent = "Enviando pedido confirmado...";
+    if (isUserSubmit) {
       trackCatalogEvent("order_submit_attempt", {
         metadata: { item_count: payload.items.length, source_channel: payload.source_channel }
       });
@@ -707,10 +852,11 @@
         throw error;
       }
 
-      if (!forcedPayload) {
+      if (isUserSubmit) {
         state.cart.clear();
         renderCart();
         els.checkoutForm?.reset();
+        closeOrderReview();
         if (els.checkoutStatus) els.checkoutStatus.textContent = `Pedido registrado con numero ${result.order.order_number}.`;
         trackCatalogEvent("order_submit_success", {
           value_amount: result.order.total || 0,
@@ -719,7 +865,7 @@
       }
       return result;
     } catch (error) {
-      if (forcedPayload) throw error;
+      if (!isUserSubmit) throw error;
       trackCatalogEvent("order_submit_failed", {
         metadata: { message: error.message || "order failed", server: Boolean(error.serverResponse) }
       });
@@ -736,23 +882,26 @@
       state.cart.clear();
       renderCart();
       els.checkoutForm?.reset();
+      closeOrderReview();
       if (els.checkoutStatus) {
         els.checkoutStatus.textContent = "No hubo conexion estable. El pedido quedo guardado para reenvio automatico.";
       }
     } finally {
-      if (submitButton && !forcedPayload) submitButton.disabled = false;
+      if (submitButton && isUserSubmit) submitButton.disabled = false;
+      if (reviewSubmit && isUserSubmit) reviewSubmit.disabled = false;
     }
   }
 
-  function buildOrderPayload() {
+  function buildOrderPayload(options = {}) {
     if (!state.cart.size) {
-      if (els.checkoutStatus) els.checkoutStatus.textContent = "Agrega al menos un producto al carrito.";
+      if (!options.silent && els.checkoutStatus) els.checkoutStatus.textContent = "Agrega al menos un producto al carrito.";
       return null;
     }
 
     return {
       slug: metadata.slug || "",
       share_token: getShareToken(),
+      seller_token: getSellerToken(),
       company_name: byId("companyName")?.value.trim() || "",
       contact_name: byId("contactName")?.value.trim() || "",
       contact_email: byId("contactEmail")?.value.trim() || "",
@@ -760,6 +909,7 @@
       address_zone: byId("addressZone")?.value.trim() || "",
       comments: byId("comments")?.value.trim() || "",
       source_channel: state.isOffline ? "offline-sync" : "web",
+      customer_confirmed: options.customerConfirmed === true,
       items: Array.from(state.cart.values()).map((entry) => {
         const packSize = getPackSize(entry.product);
         return {
@@ -876,6 +1026,29 @@
     return new URLSearchParams(window.location.search).get("token") || "";
   }
 
+  function getSellerToken() {
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get("t") || params.get("seller_token") || "";
+    if (urlToken) {
+      persistSellerToken(urlToken);
+      return urlToken;
+    }
+    try {
+      return localStorage.getItem(`catalog-seller-token:${metadata.slug || "catalog"}`) || "";
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function persistSellerToken(token) {
+    const normalized = String(token || "").trim();
+    if (!normalized) return;
+    try {
+      localStorage.setItem(`catalog-seller-token:${metadata.slug || "catalog"}`, normalized);
+    } catch (error) {
+    }
+  }
+
   function scheduleSearchTracking(searchTerm) {
     if (searchTrackTimer) window.clearTimeout(searchTrackTimer);
     const normalized = String(searchTerm || "").trim();
@@ -910,6 +1083,7 @@
     const payload = {
       slug: metadata.slug || "",
       share_token: getShareToken(),
+      seller_token: getSellerToken(),
       event_type: eventType,
       visitor_id: visitorId,
       session_id: sessionId,

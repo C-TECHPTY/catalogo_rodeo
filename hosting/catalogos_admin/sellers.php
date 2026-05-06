@@ -5,6 +5,7 @@ require __DIR__ . '/_bootstrap.php';
 admin_require_login(['admin', 'sales']);
 
 $hasSellerPhoto = admin_column_exists('sellers', 'photo_path');
+$hasSellerToken = admin_column_exists('sellers', 'public_token');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf_or_abort();
@@ -77,6 +78,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $insertColumns = 'code, name, email, phone, territory, notes, is_active';
                 $insertValues = ':code, :name, :email, :phone, :territory, :notes, :is_active';
             }
+            if ($hasSellerToken) {
+                $insertColumns .= ', public_token';
+                $insertValues .= ', :public_token';
+                $data['public_token'] = generate_secure_token();
+            }
             db()->prepare(
                 "INSERT INTO sellers ({$insertColumns})
                  VALUES ({$insertValues})"
@@ -139,6 +145,12 @@ foreach ($sellers as $seller) {
         break;
     }
 }
+$sampleCatalog = null;
+if (admin_table_exists('catalogs') && admin_column_exists('catalogs', 'public_url')) {
+    $sampleWhere = admin_column_exists('catalogs', 'status') ? "WHERE status = 'active' AND public_url <> ''" : "WHERE public_url <> ''";
+    $sampleOrder = admin_column_exists('catalogs', 'updated_at') ? 'updated_at DESC' : 'id DESC';
+    $sampleCatalog = db()->query("SELECT title, public_url FROM catalogs {$sampleWhere} ORDER BY {$sampleOrder} LIMIT 1")->fetch();
+}
 
 admin_header('Vendedores', 'sellers.php');
 ?>
@@ -198,6 +210,15 @@ admin_header('Vendedores', 'sellers.php');
                         <span class="pill"><?= (int) $seller['links_count'] ?> links</span>
                         <span class="pill"><?= (int) $seller['orders_count'] ?> pedidos</span>
                     </div>
+                    <?php if ($hasSellerToken): ?>
+                        <?php $sellerPublicUrl = $sampleCatalog && !empty($sampleCatalog['public_url']) && !empty($seller['public_token']) ? rtrim((string) $sampleCatalog['public_url'], '/') . '/?t=' . $seller['public_token'] : ''; ?>
+                        <div class="grid" style="gap:8px;margin:12px 0;">
+                            <div class="muted">Token vendedor: <code><?= html_escape(substr((string) ($seller['public_token'] ?? ''), 0, 16)) ?>...</code></div>
+                            <?php if ($sellerPublicUrl !== ''): ?>
+                                <input class="link-url" type="text" value="<?= html_escape($sellerPublicUrl) ?>" readonly>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
                     <div class="toolbar__actions seller-actions">
                         <a class="button" href="sellers.php?edit=<?= (int) $seller['id'] ?>">Editar</a>
                         <a class="button" href="links.php?seller_id=<?= (int) $seller['id'] ?>">Ver links</a>

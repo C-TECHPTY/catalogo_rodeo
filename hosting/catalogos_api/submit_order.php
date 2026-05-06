@@ -7,6 +7,7 @@ $payload = read_json_input();
 
 $slug = slugify((string) ($payload['slug'] ?? ''));
 $shareToken = trim((string) ($payload['share_token'] ?? ''));
+$sellerToken = trim((string) ($payload['seller_token'] ?? ''));
 $companyName = trim((string) ($payload['company_name'] ?? ''));
 $contactName = trim((string) ($payload['contact_name'] ?? $payload['customer_name'] ?? ''));
 $contactEmail = trim((string) ($payload['contact_email'] ?? $payload['customer_email'] ?? ''));
@@ -14,6 +15,7 @@ $contactPhone = trim((string) ($payload['contact_phone'] ?? $payload['customer_p
 $addressZone = trim((string) ($payload['address_zone'] ?? ''));
 $comments = trim((string) ($payload['comments'] ?? ''));
 $sourceChannel = trim((string) ($payload['source_channel'] ?? 'web'));
+$customerConfirmed = filter_var($payload['customer_confirmed'] ?? false, FILTER_VALIDATE_BOOLEAN);
 $items = $payload['items'] ?? [];
 
 if ($slug === '' || $contactName === '' || $contactPhone === '' || !is_array($items) || !$items) {
@@ -23,7 +25,14 @@ if ($slug === '' || $contactName === '' || $contactPhone === '' || !is_array($it
     ], 422);
 }
 
-$context = resolve_public_catalog_context($slug, $shareToken);
+if (!$customerConfirmed) {
+    json_response([
+        'ok' => false,
+        'error' => 'Debes confirmar que revisaste el pedido antes de enviarlo.',
+    ], 422);
+}
+
+$context = resolve_public_catalog_context($slug, $shareToken, $sellerToken);
 $catalog = $context['catalog'];
 $orderNumber = next_order_number();
 $subtotal = 0.0;
@@ -83,6 +92,7 @@ try {
     $optionalOrderData = [
         'share_link_id' => $context['share_link']['id'] ?? null,
         'seller_id' => $context['seller_id'] ?: null,
+        'seller_token' => $context['seller_token'] ?: $sellerToken,
         'client_id' => $context['client_id'] ?: null,
         'catalog_slug' => $catalog['slug'],
         'company_name' => $companyName,
@@ -95,6 +105,9 @@ try {
         'address_zone' => $addressZone,
         'seller_name' => $context['seller_name'],
         'source_channel' => $sourceChannel === 'offline-sync' ? 'offline-sync' : 'web',
+        'customer_confirmed' => 1,
+        'confirmed_at' => date('Y-m-d H:i:s'),
+        'customer_ip' => $_SERVER['REMOTE_ADDR'] ?? '',
     ];
     foreach ($optionalOrderData as $column => $value) {
         if (catalog_column_exists('orders', $column)) {
@@ -189,6 +202,9 @@ if (
 }
 
 $seller = fetch_seller($context['seller_id'] ? (int) $context['seller_id'] : null);
+$sellerDisplayName = (string) (($seller['name'] ?? '') ?: ($context['seller_name'] ?? ''));
+$clientDisplayName = $companyName !== '' ? $companyName : $contactName;
+$adminOrderUrl = build_admin_order_url($orderId);
 $orderForExport = [
     'id' => $orderId,
     'order_number' => $orderNumber,
@@ -236,8 +252,10 @@ $lines = [
     'Correo comercial: ' . $salesContact['email'],
     'Telefono comercial: ' . $salesContact['phone'],
     'Zona / Direccion: ' . $addressZone,
-    'Vendedor asociado: ' . ($context['seller_name'] ?: 'No definido'),
+    'Vendedor asociado: ' . ($sellerDisplayName ?: 'No definido'),
     'Cliente asociado: ' . ($context['client_name'] ?: 'No definido'),
+    'Confirmacion del cliente: Si, revisado y autorizado',
+    'Ver pedido en admin: ' . ($adminOrderUrl ?: 'No disponible'),
     'Total: ' . format_money($subtotal, (string) ($catalog['currency'] ?: 'USD')),
     '',
     'Detalle:',
@@ -274,8 +292,10 @@ $htmlBody = build_order_notification_html([
     'contact_email' => $contactEmail,
     'contact_phone' => $contactPhone,
     'address_zone' => $addressZone,
-    'seller_name' => (string) ($context['seller_name'] ?? ''),
+    'seller_name' => $sellerDisplayName,
     'client_name' => (string) ($context['client_name'] ?? ''),
+    'customer_confirmed_label' => 'Si, revisado y autorizado',
+    'admin_order_url' => $adminOrderUrl,
     'sales_contact_name' => (string) ($salesContact['name'] ?? ''),
     'sales_contact_email' => (string) ($salesContact['email'] ?? ''),
     'sales_contact_phone' => (string) ($salesContact['phone'] ?? ''),
@@ -308,8 +328,13 @@ if (!empty($exportFiles['xlsx_path'])) {
 
 $mailStatus = 'pending';
 try {
+    $mailSubject = sprintf(
+        'Nuevo pedido confirmado - Vendedor: %s - Cliente: %s',
+        $sellerDisplayName !== '' ? $sellerDisplayName : 'Sin vendedor',
+        $clientDisplayName !== '' ? $clientDisplayName : 'Sin cliente'
+    );
     $mailStatus = send_notification_mail(
-        sprintf('Nuevo pedido %s - %s', $orderNumber, $catalog['title']),
+        $mailSubject,
         $plainBody,
         $mailRecipients,
         $orderId,
@@ -365,6 +390,22 @@ function update_order_columns(int $orderId, array $values): void
         return;
     }
     db()->prepare('UPDATE orders SET ' . implode(', ', $sets) . ' WHERE id = :id')->execute($params);
+}
+
+function build_admin_order_url(int $orderId): string
+{
+    $host = trim((string) ($_SERVER['HTTP_HOST'] ?? ''));
+    if ($host === '') {
+        return '';
+    }
+
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https');
+    $scheme = $https ? 'https' : 'http';
+    $scriptDir = str_replace('\\', '/', dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '/catalogos_api/submit_order.php')));
+    $adminDir = preg_replace('#/catalogos_api/?$#', '/catalogos_admin', $scriptDir) ?: '/catalogos_admin';
+
+    return $scheme . '://' . $host . rtrim($adminDir, '/') . '/pedidos.php?id=' . $orderId;
 }
 
 function build_order_notification_html(array $order, array $items): string
@@ -441,9 +482,11 @@ function build_order_notification_html(array $order, array $items): string
             'Teléfono comercial' => $order['sales_contact_phone'] ?? '',
             'Vendedor' => $order['seller_name'] ?? '',
             'Cliente asociado' => $order['client_name'] ?? '',
+            'Confirmacion cliente' => $order['customer_confirmed_label'] ?? '',
         ])
         . '</tr></table>'
         . '</td></tr>'
+        . order_email_admin_link_block((string) ($order['admin_order_url'] ?? ''))
         . $limitNote
         . '<tr><td style="background:#ffffff;padding:12px 24px 0 24px;">'
         . '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #d9deea;border-collapse:collapse;">'
@@ -498,6 +541,15 @@ function order_email_comments_block(string $comments): string
     }
 
     return '<tr><td style="background:#ffffff;padding:0 24px 20px 24px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#fff8e6;border:1px solid #f3d68a;border-collapse:collapse;border-radius:8px;"><tr><td style="padding:13px 14px;"><div style="font-size:13px;font-weight:700;color:#8a6100;margin-bottom:6px;">Observaciones</div><div style="font-size:13px;line-height:19px;color:#172033;">' . safeText($comments) . '</div></td></tr></table></td></tr>';
+}
+
+function order_email_admin_link_block(string $adminOrderUrl): string
+{
+    if (trim($adminOrderUrl) === '') {
+        return '';
+    }
+
+    return '<tr><td align="center" style="background:#ffffff;padding:4px 24px 18px 24px;"><table role="presentation" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;"><tr><td align="center" style="background:#2c4695;border-radius:8px;"><a href="' . html_escape($adminOrderUrl) . '" style="display:inline-block;padding:13px 18px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">Ver pedido en admin</a></td></tr></table></td></tr>';
 }
 
 function order_email_value(mixed $value): string

@@ -216,6 +216,7 @@ function campaign_html_body(array $campaign, array $products): string
     $catalogUrl = trim((string) ($campaign['catalog_url'] ?? ''));
     $promoBaseUrl = rtrim((string) catalog_config('campaigns.promo_base_url', 'https://rodeoimportzl.com/catalogos/promo.php'), '?');
     $campaignId = (int) ($campaign['id'] ?? 0);
+    $allPromoUrl = $promoBaseUrl . '?campaign_id=' . $campaignId;
     $logoHtml = $logoUrl !== ''
         ? '<img src="' . html_escape($logoUrl) . '" width="220" alt="RODEO IMPORT" style="display:block;border:0;max-width:220px;width:220px;height:auto;color:#ffffff;font-size:24px;font-weight:700;">'
         : '<span style="font-size:24px;font-weight:700;color:#ffffff;">RODEO IMPORT</span>';

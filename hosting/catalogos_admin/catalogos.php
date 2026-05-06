@@ -181,6 +181,7 @@ admin_header('Catalogos', 'catalogos.php');
                         <div class="toolbar__actions catalog-actions">
                             <a class="button" href="catalogos.php?edit=<?= (int) $catalog['id'] ?>">Editar</a>
                             <a class="button" href="links.php?catalog_id=<?= (int) $catalog['id'] ?>">Crear link</a>
+                            <a class="button" href="send_catalog_to_sellers.php?catalog_id=<?= (int) $catalog['id'] ?>">Enviar a vendedores</a>
                             <?php if (!empty($catalog['public_url'])): ?><a class="button" href="<?= html_escape($catalog['public_url']) ?>" target="_blank">Abrir</a><?php endif; ?>
                             <?php if ($catalogColumns['status']): ?><form method="post">
                                 <?= csrf_field() ?>
