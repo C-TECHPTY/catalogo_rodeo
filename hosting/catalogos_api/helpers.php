@@ -1165,6 +1165,17 @@ function sales_contact_info(): array
     ];
 }
 
+function build_company_signature(): string
+{
+    return implode("\n", [
+        'Saludos,',
+        'Nelson Sánchez Dillon',
+        'Dept. de Diseño y Fotografía – Rodeo Import, S.A.',
+        '',
+        '"Este correo electrónico está destinado exclusivamente a su destinatario original. Si usted ha recibido este mensaje por error, por favor notifíquelo al remitente y elimine este mensaje de inmediato. Gracias."',
+    ]);
+}
+
 function create_share_link(int $catalogId, ?int $sellerId, ?int $clientId, string $label, ?string $expiresAt, string $notes = ''): array
 {
     $token = generate_secure_token();

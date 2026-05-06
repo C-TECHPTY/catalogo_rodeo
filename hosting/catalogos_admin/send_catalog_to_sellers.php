@@ -214,10 +214,7 @@ function admin_catalog_seller_email_plain(array $catalog, string $sellerName, st
         'Ya se encuentra disponible un nuevo catalogo para compartir con sus clientes.',
         'Use el siguiente enlace personalizado para que los pedidos queden asociados a usted:',
         $catalogUrl,
-        '',
-        'Saludos,',
-        'Rodeo Import',
-    ]);
+    ]) . "\n\n" . build_company_signature();
 }
 
 function admin_catalog_seller_email_html(array $catalog, string $sellerName, string $catalogUrl): string
