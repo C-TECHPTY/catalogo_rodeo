@@ -207,6 +207,66 @@ Funciones:
 - Exportaciones.
 - Configuracion operativa.
 
+### Panel Super Admin
+
+El panel Super Admin vive en `hosting/super_admin/` y es independiente del panel admin actual.
+
+Ruta de acceso segun configuracion del hosting:
+
+```text
+https://rodeoimportzl.com/hosting/super_admin/login.php
+```
+
+Si el dominio apunta directamente a la carpeta `hosting/`, usar:
+
+```text
+https://rodeoimportzl.com/super_admin/login.php
+```
+
+Migracion requerida:
+
+```text
+hosting/sql/20260505_super_admin_base.sql
+```
+
+Esta migracion se ejecuta en la misma base de datos actual y crea solo tablas nuevas con prefijo `sa_`:
+
+- `sa_admin_users`
+- `sa_companies`
+- `sa_subscriptions`
+- `sa_licenses`
+- `sa_activity_logs`
+
+Usuario Super Admin inicial creado para la instalacion actual:
+
+```text
+Email: admin@rodeoimportzl.com
+Contrasena: no versionar en README ni en GitHub; guardarla en un gestor seguro.
+```
+
+Para crear o resetear una contrasena, generar primero el hash:
+
+```bash
+php -r "echo password_hash('TU_CLAVE_SEGURA', PASSWORD_DEFAULT), PHP_EOL;"
+```
+
+Luego insertar o actualizar `sa_admin_users` desde phpMyAdmin usando el hash generado, nunca la contrasena en texto plano.
+
+Ejemplo para crear usuario:
+
+```sql
+INSERT INTO sa_admin_users (name, email, password_hash, role, status)
+VALUES (
+  'Nelson Sanchez',
+  'admin@rodeoimportzl.com',
+  'HASH_GENERADO_CON_PASSWORD_HASH',
+  'super_admin',
+  'active'
+);
+```
+
+Este modulo solo administra empresas, suscripciones y licencias preparatorias. No conecta todavia empresas con catalogos reales, pedidos, vendedores, campanas ni app PC.
+
 ### Panel vendedor
 
 El panel vendedor vive en `hosting/catalogos_vendedor/`.
