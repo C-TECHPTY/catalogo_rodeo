@@ -2,9 +2,14 @@
 declare(strict_types=1);
 
 require __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/saas_license_helpers.php';
 
 $payload = read_json_input();
 require_api_key($payload);
+$saasContext = saas_validate_license_context(db(), $payload);
+$saasRequested = !empty($payload['saas_validation_enabled'])
+    || !empty($payload['saas_license_key'])
+    || !empty($payload['saas_company_slug']);
 
 $slug = slugify((string) ($payload['slug'] ?? 'catalogo-publicable'));
 $title = trim((string) ($payload['title'] ?? 'Catalogo publicable'));
@@ -95,8 +100,17 @@ $statement->execute([
 ]);
 
 $catalog = fetch_catalog_by_slug($slug);
+$saasBlock = saas_build_response_block($saasContext);
+if ($saasRequested) {
+    saas_log_publish_attempt(db(), $saasContext, [
+        'endpoint' => 'publish_catalog.php',
+        'catalog_slug' => $slug,
+        'catalog_title' => $title,
+        'publish_url' => $publicUrl,
+    ]);
+}
 
-json_response([
+$response = [
     'ok' => true,
     'catalog' => [
         'id' => $catalog['id'],
@@ -106,4 +120,8 @@ json_response([
         'expires_at' => $catalog['expires_at'],
         'status' => resolve_catalog_status($catalog),
     ],
-]);
+];
+if ($saasRequested && ($saasContext['mode'] ?? 'legacy') !== 'legacy') {
+    $response['saas'] = $saasBlock;
+}
+json_response($response);

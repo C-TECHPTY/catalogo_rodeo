@@ -13,7 +13,17 @@ $stats = [
     'suspended_companies' => (int) $db->query("SELECT COUNT(*) FROM sa_companies WHERE status = 'suspended'")->fetchColumn(),
     'active_subscriptions' => (int) $db->query("SELECT COUNT(*) FROM sa_subscriptions WHERE status = 'active'")->fetchColumn(),
     'licenses_expiring' => (int) $db->query("SELECT COUNT(*) FROM sa_licenses WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)")->fetchColumn(),
+    'active_licenses' => (int) $db->query("SELECT COUNT(*) FROM sa_licenses WHERE status = 'active'")->fetchColumn(),
+    'saas_publish_today' => 0,
+    'saas_publish_validated' => 0,
+    'saas_publish_warning' => 0,
 ];
+$hasSaasPublishLogs = sa_table_exists('saas_publish_logs');
+if ($hasSaasPublishLogs) {
+    $stats['saas_publish_today'] = (int) $db->query('SELECT COUNT(*) FROM saas_publish_logs WHERE DATE(created_at) = CURDATE()')->fetchColumn();
+    $stats['saas_publish_validated'] = (int) $db->query("SELECT COUNT(*) FROM saas_publish_logs WHERE status = 'validated'")->fetchColumn();
+    $stats['saas_publish_warning'] = (int) $db->query("SELECT COUNT(*) FROM saas_publish_logs WHERE status = 'warning'")->fetchColumn();
+}
 $companies = $db->query('SELECT * FROM sa_companies ORDER BY created_at DESC LIMIT 6')->fetchAll();
 $logs = $db->query(
     'SELECT l.*, u.name AS admin_name, c.company_name
@@ -33,6 +43,20 @@ sa_header('Dashboard', 'dashboard.php');
     <div class="panel stat"><strong><?= $stats['active_subscriptions'] ?></strong><span>Suscripciones activas</span></div>
     <div class="panel stat"><strong><?= $stats['licenses_expiring'] ?></strong><span>Licencias vencen en 30 dias</span></div>
 </section>
+
+<?php if ($hasSaasPublishLogs): ?>
+<section class="grid grid--stats">
+    <div class="panel stat"><strong><?= $stats['saas_publish_today'] ?></strong><span>Publicaciones SaaS hoy</span></div>
+    <div class="panel stat"><strong><?= $stats['saas_publish_validated'] ?></strong><span>Publicaciones validadas</span></div>
+    <div class="panel stat"><strong><?= $stats['saas_publish_warning'] ?></strong><span>Publicaciones con warning</span></div>
+    <div class="panel stat"><strong><?= $stats['active_companies'] ?></strong><span>Empresas activas</span></div>
+    <div class="panel stat"><strong><?= $stats['active_licenses'] ?></strong><span>Licencias activas</span></div>
+</section>
+<?php else: ?>
+<section class="panel">
+    <p class="muted">Ejecuta la migracion de logs SaaS para activar este panel.</p>
+</section>
+<?php endif; ?>
 
 <section class="grid grid--two">
     <div class="panel">

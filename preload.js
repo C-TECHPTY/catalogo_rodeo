@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld("catalogDesktop", {
     exportWebPackage: (payload) => ipcRenderer.invoke("web:export-package", payload),
     publishCatalogPackage: (payload) => ipcRenderer.invoke("hosting:publish-catalog", payload),
     testHostingConnection: (payload) => ipcRenderer.invoke("hosting:test-connection", payload),
+    validateSaasLicense: (payload) => ipcRenderer.invoke("saas:validate-license", payload),
     loadPublicationSettings: () => ipcRenderer.invoke("settings:load-publication"),
     savePublicationSettings: (payload) => ipcRenderer.invoke("settings:save-publication", payload),
     clearPublicationSettings: () => ipcRenderer.invoke("settings:clear-publication"),

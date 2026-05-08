@@ -26,7 +26,7 @@ const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".svg"]);
 const COVER_CANDIDATES = new Set(["cover", "portada"]);
 const LOGO_CANDIDATES = new Set(["logo", "brand", "marca"]);
 const SETTINGS_FILE_NAME = "settings.json";
-const SECRET_SETTING_KEYS = new Set(["ftpPassword", "apiKey"]);
+const SECRET_SETTING_KEYS = new Set(["ftpPassword", "apiKey", "saasLicenseKey"]);
 const IMAGE_STORAGE_ENV_KEYS = new Set(["IMAGE_STORAGE_MODE", "IMAGE_CDN_BASE_URL", "B2_BUCKET_NAME", "B2_KEY_ID", "B2_APPLICATION_KEY", "B2_ENDPOINT"]);
 const DEFAULT_PUBLICATION_SETTINGS = {
     autoSave: true,
@@ -39,6 +39,10 @@ const DEFAULT_PUBLICATION_SETTINGS = {
     apiKey: "",
     publicBaseUrl: "",
     apiBaseUrl: "",
+    saasValidationEnabled: false,
+    saasLicenseKey: "",
+    saasCompanySlug: "",
+    saasApiBaseUrl: "",
 };
 
 let mainWindow = null;
@@ -149,6 +153,10 @@ function registerIpcHandlers() {
 
     ipcMain.handle("hosting:test-connection", async (_, payload) => {
         return testFtpConnection(payload);
+    });
+
+    ipcMain.handle("saas:validate-license", async (_, payload) => {
+        return validateSaasLicense(payload);
     });
 
     ipcMain.handle("settings:load-publication", async () => {
@@ -262,7 +270,72 @@ function normalizePublicationSettings(value = {}) {
         apiKey: String(source.apiKey || ""),
         publicBaseUrl: String(source.publicBaseUrl || "").trim().replace(/\/+$/, ""),
         apiBaseUrl: String(source.apiBaseUrl || "").trim().replace(/\/+$/, ""),
+        saasValidationEnabled: source.saasValidationEnabled === true,
+        saasLicenseKey: String(source.saasLicenseKey || ""),
+        saasCompanySlug: String(source.saasCompanySlug || "").trim(),
+        saasApiBaseUrl: String(source.saasApiBaseUrl || "").trim().replace(/\/+$/, ""),
     };
+}
+
+async function validateSaasLicense(payload = {}) {
+    const settings = normalizePublicationSettings(payload);
+    const apiBaseUrl = settings.saasApiBaseUrl || settings.apiBaseUrl;
+    const licenseKey = settings.saasLicenseKey;
+    const companySlug = settings.saasCompanySlug;
+
+    if (!apiBaseUrl || !licenseKey) {
+        return {
+            ok: false,
+            allowedPublish: false,
+            status: "not_configured",
+            message: "Configura URL API y licencia SaaS.",
+        };
+    }
+
+    try {
+        const response = await fetch(`${apiBaseUrl}/validate_license.php`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                license_key: licenseKey,
+                company_slug: companySlug,
+                app_version: app.getVersion(),
+                device_id: getDeviceId(),
+            }),
+        });
+        const result = await response.json().catch(() => ({}));
+        return {
+            ok: response.ok && Boolean(result.success),
+            allowedPublish: Boolean(result.allowed_publish),
+            status: result.status || `http_${response.status}`,
+            message: result.message || (response.ok ? "Respuesta recibida." : `Error HTTP ${response.status}.`),
+            result,
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            allowedPublish: false,
+            status: "network_error",
+            message: error.message || "No se pudo validar la licencia SaaS.",
+        };
+    }
+}
+
+function getDeviceId() {
+    const userData = app.getPath("userData");
+    const idPath = path.join(userData, "device-id.txt");
+    try {
+        if (fs.existsSync(idPath)) {
+            const existing = fs.readFileSync(idPath, "utf8").trim();
+            if (existing) return existing;
+        }
+        fs.mkdirSync(userData, { recursive: true });
+        const next = `desktop-${crypto.randomBytes(12).toString("hex")}`;
+        fs.writeFileSync(idPath, next, "utf8");
+        return next;
+    } catch {
+        return `desktop-${crypto.createHash("sha256").update(`${process.env.COMPUTERNAME || ""}:${process.env.USERNAME || ""}`).digest("hex").slice(0, 24)}`;
+    }
 }
 
 function encryptSettingSecret(value) {
@@ -460,20 +533,14 @@ async function publishCatalogPackage(payload, onProgress = () => {}) {
     }
     onProgress({ phase: "registering", percent: 96, completed: 0, total: 0, label: "" });
 
-    const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "X-API-KEY": String(hosting.apiKey || ""),
-        },
-        body: JSON.stringify({
-            slug,
-            title: publish.title || slug,
-            template: publish.template || "b2b-modern",
-            public_url: publicUrl,
-            pdf_url: publish.pdfUrl || "",
-            expires_at: publish.expiresAt || "",
-            seller_name: publish.sellerName || "",
+    const apiPayload = {
+        slug,
+        title: publish.title || slug,
+        template: publish.template || "b2b-modern",
+        public_url: publicUrl,
+        pdf_url: publish.pdfUrl || "",
+        expires_at: publish.expiresAt || "",
+        seller_name: publish.sellerName || "",
         client_name: publish.clientName || "",
         hero_title: publish.title || slug,
         hero_subtitle: "Catalogo comercial B2B publicado desde la plataforma Rodeo.",
@@ -488,9 +555,25 @@ async function publishCatalogPackage(payload, onProgress = () => {}) {
         legacy_pdf_url: publish.legacyPdfUrl || publish.pdfUrl || "",
         modern_pdf_url: publish.modernPdfUrl || "",
         notes: publish.notes || "",
-            zip_name: zipFileName,
-            status: "active",
-        }),
+        zip_name: zipFileName,
+        status: "active",
+    };
+
+    if (hosting.saasValidationEnabled === true) {
+        apiPayload.saas_validation_enabled = true;
+        apiPayload.saas_license_key = String(hosting.saasLicenseKey || "");
+        apiPayload.saas_company_slug = String(hosting.saasCompanySlug || "");
+        apiPayload.saas_device_id = getDeviceId();
+        apiPayload.saas_app_version = app.getVersion();
+    }
+
+    const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-API-KEY": String(hosting.apiKey || ""),
+        },
+        body: JSON.stringify(apiPayload),
     });
 
     const result = await response.json().catch(() => ({}));

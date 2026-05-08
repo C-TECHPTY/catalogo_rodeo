@@ -117,11 +117,78 @@ function sa_post_int(string $key): int
     return max(0, (int) sa_post_string($key, 20));
 }
 
+function sa_table_exists(string $tableName): bool
+{
+    static $cache = [];
+    if (array_key_exists($tableName, $cache)) {
+        return $cache[$tableName];
+    }
+
+    $statement = sa_db()->prepare(
+        'SELECT COUNT(*)
+         FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name'
+    );
+    $statement->execute(['table_name' => $tableName]);
+    $cache[$tableName] = ((int) $statement->fetchColumn()) > 0;
+    return $cache[$tableName];
+}
+
+function sa_column_exists(string $tableName, string $columnName): bool
+{
+    static $cache = [];
+    $key = $tableName . '.' . $columnName;
+    if (array_key_exists($key, $cache)) {
+        return $cache[$key];
+    }
+
+    $statement = sa_db()->prepare(
+        'SELECT COUNT(*)
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name'
+    );
+    $statement->execute([
+        'table_name' => $tableName,
+        'column_name' => $columnName,
+    ]);
+    $cache[$key] = ((int) $statement->fetchColumn()) > 0;
+    return $cache[$key];
+}
+
 function sa_company_options(): array
 {
     return sa_db()
         ->query('SELECT id, company_name, slug FROM sa_companies ORDER BY company_name ASC')
         ->fetchAll();
+}
+
+function sa_plan_options(): array
+{
+    if (!sa_table_exists('sa_plans')) {
+        return [];
+    }
+
+    return sa_db()
+        ->query('SELECT id, name FROM sa_plans WHERE status = "active" ORDER BY name ASC')
+        ->fetchAll();
+}
+
+function sa_primary_domain_by_company(int $companyId): ?array
+{
+    if (!sa_table_exists('sa_company_domains')) {
+        return null;
+    }
+
+    $statement = sa_db()->prepare(
+        'SELECT *
+         FROM sa_company_domains
+         WHERE company_id = :company_id
+         ORDER BY is_primary DESC, status = "active" DESC, id DESC
+         LIMIT 1'
+    );
+    $statement->execute(['company_id' => $companyId]);
+    $row = $statement->fetch();
+    return $row ?: null;
 }
 
 function sa_company_by_id(int $id): ?array

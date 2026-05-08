@@ -25,9 +25,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         sa_redirect('companies.php');
     }
 
-    foreach (['company_name','slug','contact_name','contact_email','contact_phone','domain','subdomain','logo_url','primary_color','status','notes'] as $key) {
+    foreach (['company_name','legal_name','slug','contact_name','contact_email','contact_phone','domain','subdomain','logo_url','primary_color','status','storage_mode','notes'] as $key) {
         $values[$key] = sa_post_string($key, $key === 'notes' ? 5000 : 500);
     }
+    $values['plan_id'] = sa_post_int('plan_id') ?: null;
+    $values['expires_at'] = sa_post_date_or_null('expires_at');
+    $values['max_catalogs'] = sa_post_int('max_catalogs');
+    $values['max_sellers'] = sa_post_int('max_sellers');
+    $values['max_products'] = sa_post_int('max_products');
     $values['slug'] = sa_slugify($values['slug'] !== '' ? $values['slug'] : $values['company_name']);
     if ($values['company_name'] === '') {
         $errors[] = 'El nombre de empresa es obligatorio.';
@@ -35,20 +40,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!in_array($values['status'], ['active', 'suspended', 'inactive'], true)) {
         $values['status'] = 'active';
     }
+    if (!in_array($values['storage_mode'], ['hosting', 'backblaze', 'hybrid'], true)) {
+        $values['storage_mode'] = 'hosting';
+    }
     $statement = sa_db()->prepare('SELECT COUNT(*) FROM sa_companies WHERE slug = :slug AND id <> :id');
     $statement->execute(['slug' => $values['slug'], 'id' => $companyId]);
     if ((int) $statement->fetchColumn() > 0) {
         $errors[] = 'El slug ya existe. Usa uno diferente.';
     }
     if (!$errors) {
-        $values['id'] = $companyId;
+        $fields = ['company_name','slug','contact_name','contact_email','contact_phone','domain','subdomain','logo_url','primary_color','status','notes'];
+        foreach (['legal_name','plan_id','expires_at','max_catalogs','max_sellers','max_products','storage_mode'] as $field) {
+            if (sa_column_exists('sa_companies', $field)) {
+                $fields[] = $field;
+            }
+        }
+        $assignments = array_map(static fn(string $field): string => '`' . $field . '` = :' . $field, $fields);
+        $payload = array_intersect_key($values, array_flip($fields));
+        $payload['id'] = $companyId;
         sa_db()->prepare(
             'UPDATE sa_companies
-             SET company_name = :company_name, slug = :slug, contact_name = :contact_name, contact_email = :contact_email,
-                 contact_phone = :contact_phone, domain = :domain, subdomain = :subdomain, logo_url = :logo_url,
-                 primary_color = :primary_color, status = :status, notes = :notes
+             SET ' . implode(', ', $assignments) . '
              WHERE id = :id'
-        )->execute($values);
+        )->execute($payload);
         sa_log('company.updated', 'Empresa actualizada: ' . $values['company_name'], $companyId);
         sa_flash_set('success', 'Empresa actualizada correctamente.');
         sa_redirect('company_edit.php?id=' . $companyId);
@@ -57,6 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $subscription = sa_subscription_by_company($companyId);
 $license = sa_license_by_company($companyId);
+$primaryDomain = sa_primary_domain_by_company($companyId);
 
 sa_header('Editar empresa', 'companies.php');
 ?>
@@ -86,6 +101,11 @@ sa_header('Editar empresa', 'companies.php');
         <h3>Licencia</h3>
         <p class="muted"><?= $license ? sa_e($license['license_key'] . ' / vence ' . ($license['expires_at'] ?: 'sin fecha')) : 'Sin licencia registrada.' ?></p>
         <a class="button button--ghost" href="licenses.php?company_id=<?= $companyId ?>">Editar licencia</a>
+    </div>
+    <div class="panel">
+        <h3>Dominios</h3>
+        <p class="muted"><?= $primaryDomain ? sa_e($primaryDomain['domain'] . ' / ' . $primaryDomain['status']) : 'Sin dominio SaaS registrado.' ?></p>
+        <a class="button button--ghost" href="company_domains.php?company_id=<?= $companyId ?>">Ver dominios</a>
     </div>
 </section>
 <?php sa_footer(); ?>

@@ -4,8 +4,11 @@ declare(strict_types=1);
 $items = [
     'dashboard.php' => 'Dashboard',
     'companies.php' => 'Empresas',
+    'company_domains.php' => 'Dominios',
+    'plans.php' => 'Planes SaaS',
     'subscriptions.php' => 'Suscripciones',
     'licenses.php' => 'Licencias',
+    'publish_logs.php' => 'Publicaciones SaaS',
     'settings.php' => 'Actividad',
 ];
 ?>

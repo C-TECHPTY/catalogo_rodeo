@@ -35,6 +35,10 @@ remoteDir:"",
 apiKey:"",
 publicBaseUrl:"",
 apiBaseUrl:"",
+saasValidationEnabled:false,
+saasLicenseKey:"",
+saasCompanySlug:"",
+saasApiBaseUrl:"",
 settingsPath:""
 };
 const DEFAULT_IMAGE_SOURCE_SETTINGS = {
@@ -128,6 +132,13 @@ const toggleFtpPasswordButton = byId("toggleFtpPasswordButton");
 const hostingRemoteDirInput = byId("hostingRemoteDir");
 const hostingApiKeyInput = byId("hostingApiKey");
 const toggleApiKeyButton = byId("toggleApiKeyButton");
+const saasValidationEnabledInput = byId("saasValidationEnabled");
+const saasLicenseKeyInput = byId("saasLicenseKey");
+const toggleSaasLicenseButton = byId("toggleSaasLicenseButton");
+const saasCompanySlugInput = byId("saasCompanySlug");
+const saasApiBaseUrlInput = byId("saasApiBaseUrl");
+const testSaasLicenseButton = byId("testSaasLicenseButton");
+const saasLicenseStatus = byId("saasLicenseStatus");
 const saveHostingSettingsButton = byId("saveHostingSettingsButton");
 const clearHostingSettingsButton = byId("clearHostingSettingsButton");
 const hostingAutoSaveInput = byId("hostingAutoSave");
@@ -280,7 +291,13 @@ hostingRemoteDirInput?.addEventListener("input", () => updateHostingSettings({ r
 hostingApiKeyInput?.addEventListener("input", () => updateHostingSettings({ apiKey:hostingApiKeyInput.value.trim() }));
 toggleFtpPasswordButton?.addEventListener("click", () => toggleSecretInput(hostingFtpPasswordInput, toggleFtpPasswordButton, "clave FTP"));
 toggleApiKeyButton?.addEventListener("click", () => toggleSecretInput(hostingApiKeyInput, toggleApiKeyButton, "API key privada"));
+toggleSaasLicenseButton?.addEventListener("click", () => toggleSecretInput(saasLicenseKeyInput, toggleSaasLicenseButton, "licencia SaaS"));
 hostingAutoSaveInput?.addEventListener("change", () => { state.webExport.hosting.autoSave = Boolean(hostingAutoSaveInput.checked); saveHostingSettings({ force:true, showStatus:true }); });
+saasValidationEnabledInput?.addEventListener("change", () => updateHostingSettings({ saasValidationEnabled:Boolean(saasValidationEnabledInput.checked) }));
+saasLicenseKeyInput?.addEventListener("input", () => updateHostingSettings({ saasLicenseKey:saasLicenseKeyInput.value.trim() }));
+saasCompanySlugInput?.addEventListener("input", () => updateHostingSettings({ saasCompanySlug:saasCompanySlugInput.value.trim() }));
+saasApiBaseUrlInput?.addEventListener("input", () => updateHostingSettings({ saasApiBaseUrl:sanitizeBaseUrl(saasApiBaseUrlInput.value) }));
+testSaasLicenseButton?.addEventListener("click", async () => { await validateSaasLicenseFromUi({ showSuccess:true }); });
 saveHostingSettingsButton?.addEventListener("click", async () => { await saveHostingSettings({ force:true, showStatus:true }); });
 clearHostingSettingsButton?.addEventListener("click", async () => { await clearHostingSettings(); });
 pickWebOutputButton?.addEventListener("click", async () => { if (!isDesktop) return setWebExportStatus("La exportacion web requiere la app de escritorio.", true); const dir = await desktopApi.chooseDirectory({ title: "Selecciona la carpeta de salida web" }); if (!dir) return; state.webExport.outputDir = dir; if (webOutputPathInput) webOutputPathInput.value = dir; setWebExportStatus("Carpeta de salida web seleccionada."); });
@@ -587,6 +604,7 @@ setWebExportStatus("Preparando subida al hosting...");
 setHostingPublishBusy(true);
 resetHostingProgressUi();
 try {
+await validateSaasLicenseFromUi({ showSuccess:false });
 const payload = buildWebExportPayload(slug);
 const result = await desktopApi.publishCatalogPackage({
     exportPayload: payload,
@@ -599,7 +617,11 @@ const result = await desktopApi.publishCatalogPackage({
         remoteDir: hosting.remoteDir,
         apiBaseUrl: state.webExport.apiBaseUrl,
         apiKey: hosting.apiKey,
-        publicBaseUrl: state.webExport.baseUrl
+        publicBaseUrl: state.webExport.baseUrl,
+        saasValidationEnabled: hosting.saasValidationEnabled === true,
+        saasLicenseKey: hosting.saasLicenseKey || "",
+        saasCompanySlug: hosting.saasCompanySlug || "",
+        saasApiBaseUrl: hosting.saasApiBaseUrl || state.webExport.apiBaseUrl
     },
     publish: {
         slug,
@@ -623,7 +645,11 @@ const result = await desktopApi.publishCatalogPackage({
 });
 state.webExport.generatedLink = result.publicUrl || buildGeneratedLink(slug);
 updateGeneratedLinkPreview(slug);
-setWebExportStatus(`Catalogo subido al hosting correctamente. URL base: ${state.webExport.generatedLink || "(sin URL publica)"}. Ahora crea un link seguro en el panel admin antes de compartirlo.`);
+const saasMode = result?.api?.saas?.mode || "";
+const saasMessage = saasMode === "validated"
+? " Publicacion registrada con licencia SaaS validada."
+: (saasMode === "warning" ? " Publicacion realizada en modo legacy con advertencia SaaS." : "");
+setWebExportStatus(`Catalogo subido al hosting correctamente. URL base: ${state.webExport.generatedLink || "(sin URL publica)"}. Ahora crea un link seguro en el panel admin antes de compartirlo.${saasMessage}`);
 } catch (error) {
 console.error(error);
 setWebExportStatus(`No se pudo publicar al hosting: ${error.message}`, true);
@@ -1052,6 +1078,10 @@ remoteDir:String(source.remoteDir ?? DEFAULT_HOSTING_SETTINGS.remoteDir),
 apiKey:String(source.apiKey || DEFAULT_HOSTING_SETTINGS.apiKey),
 publicBaseUrl:sanitizeBaseUrl(source.publicBaseUrl || DEFAULT_HOSTING_SETTINGS.publicBaseUrl),
 apiBaseUrl:sanitizeBaseUrl(source.apiBaseUrl || DEFAULT_HOSTING_SETTINGS.apiBaseUrl),
+saasValidationEnabled:source.saasValidationEnabled === true,
+saasLicenseKey:String(source.saasLicenseKey || DEFAULT_HOSTING_SETTINGS.saasLicenseKey),
+saasCompanySlug:String(source.saasCompanySlug || DEFAULT_HOSTING_SETTINGS.saasCompanySlug).trim(),
+saasApiBaseUrl:sanitizeBaseUrl(source.saasApiBaseUrl || DEFAULT_HOSTING_SETTINGS.saasApiBaseUrl),
 settingsPath:String(source.settingsPath || DEFAULT_HOSTING_SETTINGS.settingsPath)
 };
 }
@@ -1072,7 +1102,7 @@ apiBaseUrl:state.webExport.apiBaseUrl
 });
 }
 function hasHostingSettingValues(settings = {}) {
-return Boolean(settings.ftpHost || settings.ftpUser || settings.ftpPassword || settings.remoteDir || settings.apiKey || settings.publicBaseUrl || settings.apiBaseUrl);
+return Boolean(settings.ftpHost || settings.ftpUser || settings.ftpPassword || settings.remoteDir || settings.apiKey || settings.publicBaseUrl || settings.apiBaseUrl || settings.saasLicenseKey || settings.saasCompanySlug || settings.saasApiBaseUrl);
 }
 async function saveHostingSettings({ force = false, showStatus = false } = {}) {
 const settings = collectHostingSettings();
@@ -1110,8 +1140,42 @@ console.error(error);
 setWebExportStatus(`No se pudo limpiar la configuracion: ${error.message}`, true);
 }
 }
-function syncHostingInputs() { if (webBaseUrlInput) webBaseUrlInput.value = state.webExport.baseUrl || ""; if (webApiBaseUrlInput) webApiBaseUrlInput.value = state.webExport.apiBaseUrl || ""; if (hostingFtpProtocolInput) hostingFtpProtocolInput.value = state.webExport.hosting.protocol || "ftp"; if (hostingFtpHostInput) hostingFtpHostInput.value = state.webExport.hosting.ftpHost || ""; if (hostingFtpPortInput) hostingFtpPortInput.value = String(state.webExport.hosting.ftpPort || 21); if (hostingFtpUserInput) hostingFtpUserInput.value = state.webExport.hosting.ftpUser || ""; if (hostingFtpPasswordInput) hostingFtpPasswordInput.value = state.webExport.hosting.ftpPassword || ""; if (hostingRemoteDirInput) hostingRemoteDirInput.value = state.webExport.hosting.remoteDir || ""; if (hostingApiKeyInput) hostingApiKeyInput.value = state.webExport.hosting.apiKey || ""; if (hostingAutoSaveInput) hostingAutoSaveInput.checked = state.webExport.hosting.autoSave !== false; }
+function syncHostingInputs() { if (webBaseUrlInput) webBaseUrlInput.value = state.webExport.baseUrl || ""; if (webApiBaseUrlInput) webApiBaseUrlInput.value = state.webExport.apiBaseUrl || ""; if (hostingFtpProtocolInput) hostingFtpProtocolInput.value = state.webExport.hosting.protocol || "ftp"; if (hostingFtpHostInput) hostingFtpHostInput.value = state.webExport.hosting.ftpHost || ""; if (hostingFtpPortInput) hostingFtpPortInput.value = String(state.webExport.hosting.ftpPort || 21); if (hostingFtpUserInput) hostingFtpUserInput.value = state.webExport.hosting.ftpUser || ""; if (hostingFtpPasswordInput) hostingFtpPasswordInput.value = state.webExport.hosting.ftpPassword || ""; if (hostingRemoteDirInput) hostingRemoteDirInput.value = state.webExport.hosting.remoteDir || ""; if (hostingApiKeyInput) hostingApiKeyInput.value = state.webExport.hosting.apiKey || ""; if (hostingAutoSaveInput) hostingAutoSaveInput.checked = state.webExport.hosting.autoSave !== false; if (saasValidationEnabledInput) saasValidationEnabledInput.checked = state.webExport.hosting.saasValidationEnabled === true; if (saasLicenseKeyInput) saasLicenseKeyInput.value = state.webExport.hosting.saasLicenseKey || ""; if (saasCompanySlugInput) saasCompanySlugInput.value = state.webExport.hosting.saasCompanySlug || ""; if (saasApiBaseUrlInput) saasApiBaseUrlInput.value = state.webExport.hosting.saasApiBaseUrl || ""; syncSaasLicenseStatus(); }
 function updateSettingsPathLabel() { if (!hostingSettingsPath) return; const settingsPath = state.webExport.hosting?.settingsPath || ""; hostingSettingsPath.textContent = settingsPath ? `Archivo local: ${settingsPath}` : "La configuracion se guarda solo en esta PC."; }
+function syncSaasLicenseStatus(message = "") {
+if (!saasLicenseStatus) return;
+saasLicenseStatus.textContent = message || (state.webExport.hosting?.saasValidationEnabled ? "Validacion SaaS activa, no bloqueante." : "Validacion opcional. Si falla, la app continua en modo legacy.");
+}
+async function validateSaasLicenseFromUi({ showSuccess = false } = {}) {
+const hosting = collectHostingSettings();
+if (!hosting.saasValidationEnabled && !showSuccess) return null;
+if (!isDesktop || !desktopApi?.validateSaasLicense) {
+const message = "No se pudo validar la licencia SaaS. Continuando en modo legacy.";
+syncSaasLicenseStatus(message);
+if (showSuccess) setWebExportStatus(message, true);
+return null;
+}
+try {
+syncSaasLicenseStatus("Validando licencia SaaS...");
+const result = await desktopApi.validateSaasLicense(hosting);
+if (result?.ok) {
+const message = "Licencia SaaS validada correctamente.";
+syncSaasLicenseStatus(message);
+if (showSuccess) setWebExportStatus(message);
+return result;
+}
+const message = `No se pudo validar la licencia SaaS. Continuando en modo legacy.${result?.message ? ` ${result.message}` : ""}`;
+syncSaasLicenseStatus(message);
+if (showSuccess) setWebExportStatus(message, true);
+return result || null;
+} catch (error) {
+console.error(error);
+const message = "No se pudo validar la licencia SaaS. Continuando en modo legacy.";
+syncSaasLicenseStatus(`${message} ${error.message || ""}`.trim());
+if (showSuccess) setWebExportStatus(`${message} ${error.message || ""}`.trim(), true);
+return null;
+}
+}
 function toggleSecretInput(input, button, label) { if (!input || !button) return; const isHidden = input.type === "password"; input.type = isHidden ? "text" : "password"; button.textContent = isHidden ? "Ocultar" : "Mostrar"; button.setAttribute("aria-label", `${isHidden ? "Ocultar" : "Mostrar"} ${label}`); }
 
 function createDefaultLayoutBlocks() { return { coverTitle:{ x:0, y:0, scale:1 }, pageHeader:{ x:0, y:0, scale:1 }, pageLogo:{ x:0, y:0, scale:1 }, productsGrid:{ x:0, y:0, scale:1 }, productImage:{ x:0, y:0, scale:1 }, productCode:{ x:0, y:0, scale:1 }, productPrice:{ x:0, y:0, scale:1 }, productDescription:{ x:0, y:0, scale:1 }, productMeta:{ x:0, y:0, scale:1 }, pageFooter:{ x:0, y:0, scale:1 } }; }

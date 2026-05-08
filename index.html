@@ -394,6 +394,40 @@
                             <small id="hostingSettingsPath" class="settings-path">La configuracion se guarda solo en esta PC.</small>
                         </div>
 
+                        <div class="control-field control-field--wide saas-settings">
+                            <span>Licencia SaaS</span>
+                            <label class="settings-autosave">
+                                <input id="saasValidationEnabled" type="checkbox">
+                                <span>Validar licencia antes de publicar, sin bloquear modo legacy</span>
+                            </label>
+                        </div>
+
+                        <label class="control-field control-field--wide">
+                            <span>Clave licencia SaaS</span>
+                            <div class="secret-input">
+                                <input id="saasLicenseKey" type="password" value="" placeholder="RI-...">
+                                <button id="toggleSaasLicenseButton" type="button" aria-label="Mostrar licencia SaaS">Mostrar</button>
+                            </div>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Slug empresa SaaS</span>
+                            <input id="saasCompanySlug" type="text" value="" placeholder="rodeoimport">
+                        </label>
+
+                        <label class="control-field">
+                            <span>API SaaS</span>
+                            <input id="saasApiBaseUrl" type="text" value="" placeholder="https://tuempresa.com/catalogos_api">
+                        </label>
+
+                        <div class="control-field control-field--wide">
+                            <span>Prueba de licencia</span>
+                            <div class="settings-actions">
+                                <button id="testSaasLicenseButton" type="button">Probar licencia SaaS</button>
+                            </div>
+                            <small id="saasLicenseStatus" class="settings-path">Validacion opcional. Si falla, la app continua en modo legacy.</small>
+                        </div>
+
                         <label class="control-field control-field--wide">
                             <span>Carpeta salida web</span>
                             <div class="path-picker">
