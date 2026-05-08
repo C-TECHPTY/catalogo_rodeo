@@ -20,12 +20,14 @@ const fs = require("fs");
 const path = require("path");
 const { pathToFileURL } = require("url");
 const { execFile, spawn } = require("child_process");
+const crypto = require("crypto");
 
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".svg"]);
 const COVER_CANDIDATES = new Set(["cover", "portada"]);
 const LOGO_CANDIDATES = new Set(["logo", "brand", "marca"]);
 const SETTINGS_FILE_NAME = "settings.json";
 const SECRET_SETTING_KEYS = new Set(["ftpPassword", "apiKey"]);
+const IMAGE_STORAGE_ENV_KEYS = new Set(["IMAGE_STORAGE_MODE", "IMAGE_CDN_BASE_URL", "B2_BUCKET_NAME", "B2_KEY_ID", "B2_APPLICATION_KEY", "B2_ENDPOINT"]);
 const DEFAULT_PUBLICATION_SETTINGS = {
     autoSave: true,
     protocol: "ftp",
@@ -405,7 +407,7 @@ function generatePdfJob(job) {
     });
 }
 
-function exportWebPackage(payload) {
+async function exportWebPackage(payload) {
     const slug = sanitizeSlug(payload?.slug || "catalogo-publicable");
     const outputRoot = payload?.outputDir;
     if (!outputRoot) throw new Error("No se indico carpeta de salida.");
@@ -415,12 +417,13 @@ function exportWebPackage(payload) {
     copyIfExists(path.join(__dirname, "hosting", "assets", "public-catalog.js"), path.join(packageDir, "assets", "public-catalog.js"));
     const assets = Array.isArray(payload?.assets) ? payload.assets : [];
     assets.forEach((asset) => {
+        if (asset?.uploadOnly) return;
         if (!asset?.sourcePath || !asset?.relativePath) return;
         const target = path.join(packageDir, asset.relativePath);
         fs.mkdirSync(path.dirname(target), { recursive: true });
         copyWebAsset(asset.sourcePath, target);
     });
-    const metadata = payload?.metadata || {};
+    const metadata = await prepareMetadataWithBackblazeImages(payload?.metadata || {}, assets, slug, packageDir);
     fs.writeFileSync(path.join(packageDir, "catalog.json"), JSON.stringify(metadata, null, 2), "utf8");
     fs.writeFileSync(path.join(packageDir, "index.html"), buildWebExportHtml(payload?.snapshotHtml || "", metadata), "utf8");
     return { ok: true, outputDir: packageDir, slug };
@@ -428,7 +431,7 @@ function exportWebPackage(payload) {
 
 async function publishCatalogPackage(payload, onProgress = () => {}) {
     onProgress({ phase: "exporting", percent: 8, completed: 0, total: 0, label: "" });
-    const exportResult = exportWebPackage(payload?.exportPayload || {});
+    const exportResult = await exportWebPackage(payload?.exportPayload || {});
     const packageDir = exportResult.outputDir;
     const slug = exportResult.slug;
     const hosting = payload?.hosting || {};
@@ -545,6 +548,337 @@ function shouldCompressWebImage(sourcePath, targetPath) {
     const targetExt = path.extname(targetPath).toLowerCase();
     if (sourceExt === ".svg" || targetExt === ".svg") return false;
     return [".jpg", ".jpeg", ".png", ".webp"].includes(sourceExt) && targetExt === ".jpg";
+}
+
+async function prepareMetadataWithBackblazeImages(metadata, assets, slug, packageDir) {
+    const storage = loadImageStorageSettings();
+    const cloned = JSON.parse(JSON.stringify(metadata || {}));
+    if (storage.mode === "hosting") {
+        stripBackblazeUploadHintsFromMetadata(cloned);
+        return cloned;
+    }
+    if (!storage.bucketName || !storage.keyId || !storage.applicationKey || !storage.endpoint || !storage.cdnBaseUrl) {
+        appendBackblazeUploadLog(packageDir, "Configuracion B2 incompleta. Se mantiene hosting/local.");
+        stripBackblazeUploadHintsFromMetadata(cloned);
+        return cloned;
+    }
+
+    const uploadTargets = collectBackblazeUploadTargets(cloned, assets, slug);
+    if (!uploadTargets.length) {
+        appendBackblazeUploadLog(packageDir, "No hay imagenes locales de catalogo para subir a B2.");
+        stripBackblazeUploadHintsFromMetadata(cloned);
+        return cloned;
+    }
+
+    const remoteByRelativePath = new Map();
+    for (const target of uploadTargets) {
+        try {
+            const result = await uploadBackblazeObjectIfMissing(storage, target.sourcePath, target.objectKey);
+            const remoteUrl = joinUrl(storage.cdnBaseUrl, target.objectKey);
+            remoteByRelativePath.set(normalizeRelativeCatalogPath(target.relativePath), remoteUrl);
+            appendBackblazeUploadLog(packageDir, `${result.skipped ? "EXISTE" : "SUBIDA"} ${target.relativePath} -> ${remoteUrl}`);
+        } catch (error) {
+            appendBackblazeUploadLog(packageDir, `ERROR ${target.relativePath}: ${error.message}`);
+        }
+    }
+
+    applyBackblazeUrlsToMetadata(cloned, remoteByRelativePath, storage.mode);
+    stripBackblazeUploadHintsFromMetadata(cloned);
+    return cloned;
+}
+
+function loadImageStorageSettings() {
+    const env = loadProjectEnvFile();
+    const mode = ["hosting", "backblaze", "hybrid"].includes(String(env.IMAGE_STORAGE_MODE || "").toLowerCase())
+        ? String(env.IMAGE_STORAGE_MODE).toLowerCase()
+        : "hosting";
+    return {
+        mode,
+        cdnBaseUrl: sanitizeBaseUrl(env.IMAGE_CDN_BASE_URL || ""),
+        bucketName: String(env.B2_BUCKET_NAME || "").trim(),
+        keyId: String(env.B2_KEY_ID || "").trim(),
+        applicationKey: String(env.B2_APPLICATION_KEY || "").trim(),
+        endpoint: sanitizeBaseUrl(env.B2_ENDPOINT || ""),
+    };
+}
+
+function loadProjectEnvFile() {
+    const envPath = path.join(__dirname, ".env");
+    if (!fs.existsSync(envPath)) return {};
+    const parsed = {};
+    const content = fs.readFileSync(envPath, "utf8");
+    content.split(/\r?\n/).forEach((line) => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) return;
+        const equalsIndex = trimmed.indexOf("=");
+        if (equalsIndex < 0) return;
+        const key = trimmed.slice(0, equalsIndex).trim();
+        if (!IMAGE_STORAGE_ENV_KEYS.has(key)) return;
+        let value = trimmed.slice(equalsIndex + 1).trim();
+        if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.slice(1, -1);
+        }
+        parsed[key] = value;
+    });
+    return parsed;
+}
+
+function collectBackblazeUploadTargets(metadata, assets, slug) {
+    const sourceByRelativePath = new Map();
+    (assets || []).forEach((asset) => {
+        if (!asset?.sourcePath || !asset?.relativePath || !fs.existsSync(asset.sourcePath)) return;
+        if (!isBackblazeCatalogImage(asset.relativePath)) return;
+        sourceByRelativePath.set(normalizeRelativeCatalogPath(asset.relativePath), asset.sourcePath);
+    });
+
+    const products = Array.isArray(metadata?.catalog) ? metadata.catalog : [];
+    const targets = [];
+    products.forEach((product, index) => {
+        const media = product.media && typeof product.media === "object" ? product.media : {};
+        collectLocalMediaPaths(media).forEach((localPath) => {
+            const relativePath = normalizeRelativeCatalogPath(localPath);
+            const sourcePath = sourceByRelativePath.get(relativePath);
+            if (!sourcePath) return;
+            targets.push({
+                sourcePath,
+                relativePath,
+                objectKey: buildBackblazeObjectKey(slug, product, relativePath, index),
+            });
+        });
+    });
+
+    const seen = new Set();
+    return targets.filter((target) => {
+        const key = `${target.sourcePath}|${target.objectKey}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+function isBackblazeCatalogImage(relativePath) {
+    const normalized = normalizeRelativeCatalogPath(relativePath);
+    return normalized.startsWith("media/main/") || normalized.startsWith("media/extra/");
+}
+
+function collectLocalMediaPaths(media) {
+    const paths = [];
+    if (media.localUploadImage) paths.push(media.localUploadImage);
+    if (Array.isArray(media.localUploadGallery)) paths.push(...media.localUploadGallery);
+    if (media.mainImage) paths.push(media.mainImage);
+    if (Array.isArray(media.mainImageCandidates)) paths.push(...media.mainImageCandidates);
+    if (Array.isArray(media.gallery)) paths.push(...media.gallery);
+    if (Array.isArray(media.galleryCandidateGroups)) {
+        media.galleryCandidateGroups.forEach((group) => {
+            if (Array.isArray(group)) paths.push(...group);
+        });
+    }
+    return paths.filter((value) => String(value || "").startsWith("./"));
+}
+
+function buildBackblazeObjectKey(slug, product, relativePath, index) {
+    const item = sanitizeSlug(product.item || `item-${index + 1}`);
+    const fileName = buildBackblazeObjectFileName(item, relativePath, index);
+    const folders = ["catalogos", sanitizeSlug(slug) || "catalogo"].filter(Boolean);
+    return [...folders, fileName].join("/");
+}
+
+function buildBackblazeObjectFileName(item, relativePath, index) {
+    const ext = path.posix.extname(normalizeRelativeCatalogPath(relativePath)).toLowerCase() || ".jpg";
+    const safeItem = sanitizeSlug(item || `item-${index + 1}`) || `item-${index + 1}`;
+    const baseName = path.posix.basename(normalizeRelativeCatalogPath(relativePath), ext);
+    const suffixMatch = baseName.match(/_(\d+)$/);
+    return suffixMatch ? `${safeItem}-${suffixMatch[1]}${ext}` : `${safeItem}${ext}`;
+}
+
+function applyBackblazeUrlsToMetadata(metadata, remoteByRelativePath, mode) {
+    if (!remoteByRelativePath.size || !Array.isArray(metadata?.catalog)) return;
+    metadata.imageStorage = {
+        mode,
+        provider: "backblaze-b2",
+        updatedAt: new Date().toISOString(),
+    };
+    metadata.catalog.forEach((product) => {
+        const media = product.media && typeof product.media === "object" ? product.media : {};
+        const mainRemoteUrl = remoteUrlForLocalMediaPath(media.localUploadImage || media.mainImage || "", remoteByRelativePath);
+        const galleryRemoteUrls = Array.isArray(media.localUploadGallery)
+            ? media.localUploadGallery.map((localPath) => remoteUrlForLocalMediaPath(localPath, remoteByRelativePath)).filter(Boolean)
+            : [];
+        if (!mainRemoteUrl && !galleryRemoteUrls.length) return;
+        const remoteUrl = mainRemoteUrl || galleryRemoteUrls[0];
+        product.remote_image_url = remoteUrl;
+        product.remoteImageUrl = remoteUrl;
+        media.remote_image_url = remoteUrl;
+        media.imageStorageMode = mode === "backblaze" ? "backblaze" : "hybrid";
+        if (mainRemoteUrl) {
+            media.mainImageCandidates = mergeImageCandidates(mainRemoteUrl, media.mainImageCandidates || [], mode);
+            if (!media.mainImage || mode === "backblaze") media.mainImage = mainRemoteUrl;
+        }
+        if (galleryRemoteUrls.length) {
+            media.gallery = mode === "backblaze" ? galleryRemoteUrls : dedupeStrings([...galleryRemoteUrls, ...(media.gallery || [])]);
+            media.galleryCandidateGroups = mergeGalleryCandidateGroups(galleryRemoteUrls, media.galleryCandidateGroups || [], mode);
+        }
+        product.media = media;
+    });
+}
+
+function remoteUrlForLocalMediaPath(localPath, remoteByRelativePath) {
+    const normalized = normalizeRelativeCatalogPath(localPath);
+    return normalized ? (remoteByRelativePath.get(normalized) || "") : "";
+}
+
+function stripBackblazeUploadHintsFromMetadata(metadata) {
+    if (!Array.isArray(metadata?.catalog)) return;
+    metadata.catalog.forEach((product) => {
+        const media = product.media && typeof product.media === "object" ? product.media : null;
+        if (!media) return;
+        delete media.localUploadImage;
+        delete media.localUploadGallery;
+    });
+}
+
+function mergeImageCandidates(remoteUrl, currentCandidates, mode = "hybrid") {
+    const candidates = currentCandidates || [];
+    return mode === "backblaze" ? dedupeStrings([remoteUrl]) : dedupeStrings([remoteUrl, ...candidates]);
+}
+
+function mergeGalleryCandidateGroups(remoteUrls, currentGroups, mode = "hybrid") {
+    return remoteUrls.map((remoteUrl, index) => {
+        const existingGroup = Array.isArray(currentGroups[index]) ? currentGroups[index] : [];
+        return mode === "backblaze" ? [remoteUrl] : dedupeStrings([remoteUrl, ...existingGroup]);
+    });
+}
+
+async function uploadBackblazeObjectIfMissing(storage, sourcePath, objectKey) {
+    const head = await signedBackblazeRequest(storage, "HEAD", objectKey);
+    if (head.status === 200) return { skipped: true };
+    if (head.status !== 404 && head.status !== 403) {
+        throw new Error(`HEAD B2 respondio ${head.status}`);
+    }
+
+    const body = fs.readFileSync(sourcePath);
+    const put = await signedBackblazeRequest(storage, "PUT", objectKey, body, {
+        "content-type": contentTypeForPath(sourcePath),
+    });
+    if (!put.ok) {
+        const text = await put.text().catch(() => "");
+        throw new Error(`PUT B2 respondio ${put.status}${text ? `: ${text.slice(0, 160)}` : ""}`);
+    }
+    return { skipped: false };
+}
+
+async function signedBackblazeRequest(storage, method, objectKey, body = null, extraHeaders = {}) {
+    const endpoint = new URL(storage.endpoint);
+    const host = endpoint.host;
+    const region = parseBackblazeRegion(host);
+    const now = new Date();
+    const amzDate = formatAmzDate(now);
+    const dateStamp = amzDate.slice(0, 8);
+    const payloadHash = body ? sha256Hex(body) : sha256Hex("");
+    const canonicalUri = `/${encodeS3PathSegment(storage.bucketName)}/${encodeS3ObjectKey(objectKey)}`;
+    const headers = {
+        host,
+        "x-amz-content-sha256": payloadHash,
+        "x-amz-date": amzDate,
+        ...extraHeaders,
+    };
+    const signedHeaders = Object.keys(headers).map((key) => key.toLowerCase()).sort();
+    const canonicalHeaders = signedHeaders.map((key) => `${key}:${String(headers[key]).trim()}\n`).join("");
+    const canonicalRequest = [
+        method,
+        canonicalUri,
+        "",
+        canonicalHeaders,
+        signedHeaders.join(";"),
+        payloadHash,
+    ].join("\n");
+    const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
+    const stringToSign = [
+        "AWS4-HMAC-SHA256",
+        amzDate,
+        credentialScope,
+        sha256Hex(canonicalRequest),
+    ].join("\n");
+    const signature = hmacHex(getAwsSigningKey(storage.applicationKey, dateStamp, region, "s3"), stringToSign);
+    const authorization = `AWS4-HMAC-SHA256 Credential=${storage.keyId}/${credentialScope}, SignedHeaders=${signedHeaders.join(";")}, Signature=${signature}`;
+    return fetch(`${endpoint.origin}${canonicalUri}`, {
+        method,
+        headers: {
+            ...headers,
+            Authorization: authorization,
+        },
+        body,
+    });
+}
+
+function parseBackblazeRegion(host) {
+    const match = String(host || "").match(/s3[.-]([a-z0-9-]+)\./i);
+    return match ? match[1] : "us-east-005";
+}
+
+function getAwsSigningKey(secret, dateStamp, region, service) {
+    const kDate = hmacBuffer(`AWS4${secret}`, dateStamp);
+    const kRegion = hmacBuffer(kDate, region);
+    const kService = hmacBuffer(kRegion, service);
+    return hmacBuffer(kService, "aws4_request");
+}
+
+function hmacBuffer(key, data) {
+    return crypto.createHmac("sha256", key).update(data, "utf8").digest();
+}
+
+function hmacHex(key, data) {
+    return crypto.createHmac("sha256", key).update(data, "utf8").digest("hex");
+}
+
+function sha256Hex(data) {
+    return crypto.createHash("sha256").update(data).digest("hex");
+}
+
+function formatAmzDate(date) {
+    return date.toISOString().replace(/[:-]|\.\d{3}/g, "");
+}
+
+function encodeS3PathSegment(value) {
+    return encodeURIComponent(String(value || "")).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+function encodeS3ObjectKey(value) {
+    return String(value || "").split("/").map(encodeS3PathSegment).join("/");
+}
+
+function normalizeRelativeCatalogPath(value) {
+    return String(value || "").replace(/\\/g, "/").replace(/^\.?\//, "").replace(/^\/+/, "");
+}
+
+function sanitizeBaseUrl(value) {
+    return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function joinUrl(baseUrl, objectKey) {
+    return `${sanitizeBaseUrl(baseUrl)}/${String(objectKey || "").replace(/^\/+/, "")}`;
+}
+
+function contentTypeForPath(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === ".png") return "image/png";
+    if (ext === ".webp") return "image/webp";
+    if (ext === ".svg") return "image/svg+xml";
+    return "image/jpeg";
+}
+
+function appendBackblazeUploadLog(packageDir, message) {
+    try {
+        const logDir = path.join(packageDir, "logs");
+        fs.mkdirSync(logDir, { recursive: true });
+        fs.appendFileSync(path.join(logDir, "backblaze-upload.log"), `[${new Date().toISOString()}] ${message}\n`, "utf8");
+    } catch (error) {
+        console.error("No se pudo escribir log de Backblaze.", error);
+    }
+}
+
+function dedupeStrings(values) {
+    return [...new Set((values || []).filter(Boolean).map((value) => String(value).trim()).filter(Boolean))];
 }
 
 function copyDirectory(sourceDir, targetDir) {

@@ -38,7 +38,7 @@
     reviewConfirm: null,
     reviewSubmit: null,
     isOffline: !navigator.onLine,
-    filters: { search: "", category: "Todos" }
+    filters: { search: "", category: "Todos", brand: "Todas" }
   };
 
   const els = {
@@ -315,40 +315,68 @@
     return product.category || product.categoria || product.brand || "General";
   }
 
+  function getProductBrand(product) {
+    return String(product.brand || product.marca || "").trim();
+  }
+
   function renderFilters() {
     if (!els.categoryFilters) return;
-    const categories = ["Todos", ...new Set(state.products.map(getProductCategory))];
+    const categories = ["Todos", ...new Set(state.products.map(getProductCategory).filter(Boolean))];
+    const brands = [...new Set(state.products.map(getProductBrand).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     els.categoryFilters.innerHTML = "";
-    categories.forEach((category) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = category;
-      if (category === state.filters.category) button.classList.add("active");
-      button.addEventListener("click", () => {
-        state.filters.category = category;
+    renderFilterGroup("Categoria", categories, state.filters.category, (category) => {
+      state.filters.category = category;
+      renderFilters();
+      applyFilters();
+      trackCatalogEvent("category_filter", {
+        metadata: { category }
+      });
+    });
+    if (brands.length > 1) {
+      renderFilterGroup("Marca", ["Todas", ...brands], state.filters.brand, (brand) => {
+        state.filters.brand = brand;
         renderFilters();
         applyFilters();
-        trackCatalogEvent("category_filter", {
-          metadata: { category }
+        trackCatalogEvent("brand_filter", {
+          metadata: { brand }
         });
       });
-      els.categoryFilters.appendChild(button);
+    } else {
+      state.filters.brand = "Todas";
+    }
+  }
+
+  function renderFilterGroup(label, values, activeValue, onSelect) {
+    if (!els.categoryFilters || !values.length) return;
+    const group = document.createElement("div");
+    group.className = "filters__group";
+    group.innerHTML = `<span class="filters__label">${escapeHtml(label)}</span>`;
+    values.forEach((value) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = value;
+      if (value === activeValue) button.classList.add("active");
+      button.addEventListener("click", () => onSelect(value));
+      group.appendChild(button);
     });
+    els.categoryFilters.appendChild(group);
   }
 
   function applyFilters() {
     const search = state.filters.search;
     state.filtered = state.products.filter((product) => {
       const matchesCategory = state.filters.category === "Todos" || getProductCategory(product) === state.filters.category;
+      const brand = getProductBrand(product);
+      const matchesBrand = state.filters.brand === "Todas" || brand === state.filters.brand;
       const haystack = [
         product.item,
         product.description,
         product.shortDescription,
-        product.brand,
+        brand,
         product.category,
         product.material
       ].join(" ").toLowerCase();
-      return matchesCategory && (!search || haystack.includes(search));
+      return matchesCategory && matchesBrand && (!search || haystack.includes(search));
     });
     renderProducts();
   }
@@ -368,9 +396,11 @@
         </div>
         <div class="product-card__body">
           <div class="sku">${escapeHtml(product.item || "SKU")}</div>
+          ${getProductBrand(product) ? `<div class="product-card__brand">${escapeHtml(getProductBrand(product))}</div>` : ""}
           <h3>${escapeHtml(product.description || product.shortDescription || product.item || "Producto")}</h3>
           <div class="product-card__meta">
             <div><span>Categoria</span><strong>${escapeHtml(getProductCategory(product))}</strong></div>
+            ${getProductBrand(product) ? `<div><span>Marca</span><strong>${escapeHtml(getProductBrand(product))}</strong></div>` : ""}
             <div><span>Empaque</span><strong>${escapeHtml(product.packageLabel || product.package || product.empaque || "Unidad")}</strong></div>
             <div><span>Venta</span><strong>${escapeHtml(getDisplaySaleUnit(product))}</strong></div>
             <div><span>Minimo</span><strong>${escapeHtml(String(getMinimumQty(product)))}</strong></div>
@@ -405,15 +435,21 @@
   // Modulo de fuente de imagenes hibridas para catalogo publico: remoto, local e hibrido inteligente.
   function buildCandidateGroups(product) {
     const media = product.media || {};
+    const remoteImageUrl = resolveRemoteProductImageUrl(product);
+    const preferRemote = media.imageSourceMode === "remote" || media.imageSourceMode === "hybrid" || media.imageStorageMode === "backblaze" || media.imageStorageMode === "hybrid";
     if (Array.isArray(media.galleryCandidateGroups) && media.galleryCandidateGroups.length) {
       const groups = media.galleryCandidateGroups.map((group) => Array.isArray(group) ? group.filter(Boolean) : []).filter((group) => group.length);
+      const preferredRemoteGroup = preferRemote && remoteImageUrl ? [[remoteImageUrl]] : [];
       if (Array.isArray(media.mainImageCandidates) && media.mainImageCandidates.length) {
-        return [media.mainImageCandidates.filter(Boolean), ...groups];
+        return [...preferredRemoteGroup, media.mainImageCandidates.filter(Boolean), ...groups];
       }
-      return groups;
+      return [...preferredRemoteGroup, ...groups];
     }
 
     const groups = [];
+    if (preferRemote && remoteImageUrl) {
+      groups.push([remoteImageUrl]);
+    }
     if (Array.isArray(media.mainImageCandidates) && media.mainImageCandidates.length) {
       groups.push(media.mainImageCandidates.filter(Boolean));
     } else if (media.mainImage) {
@@ -425,6 +461,12 @@
       });
     }
     return groups.filter((group) => group.length);
+  }
+
+  function resolveRemoteProductImageUrl(product) {
+    const media = product.media || {};
+    const url = product.remote_image_url || product.remoteImageUrl || media.remote_image_url || media.remoteImageUrl || "";
+    return /^https?:\/\//i.test(String(url || "").trim()) ? String(url).trim() : "";
   }
 
   async function resolveProductMedia(product) {
@@ -548,15 +590,15 @@
     const specs = [
       ["SKU", product.item || "-"],
       ["Categoria", getProductCategory(product)],
-      ["Marca", product.brand || "-"],
-      ["Material", product.material || "-"],
-      ["Tamano", product.size || product.measureBadge || "-"],
+      ["Marca", getProductBrand(product)],
+      ["Material", product.material || ""],
+      ["Tamano", product.size || product.measureBadge || ""],
       ["Disponibilidad", product.available || "-"],
       ["Venta", getDisplaySaleUnit(product)],
       ["Empaque", `${product.packageLabel || product.package || product.empaque || "Unidad"} / ${getPackSize(product)}`],
       ["Minimo", String(getMinimumQty(product))],
       ["Multiplo", String(getMultipleQty(product))]
-    ];
+    ].filter(([, value]) => String(value || "").trim() !== "");
     els.detailSpecs.innerHTML = specs.map(([label, value]) => `
       <div class="detail-spec"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>
     `).join("");

@@ -1,0 +1,91 @@
+{
+  "name": "RODE IA Policy",
+  "version": "0.1.0",
+  "defaultDecision": "deny",
+  "allowedActions": [
+    "auth.checkSeller",
+    "product.queryPrice",
+    "product.queryStock",
+    "product.queryImage",
+    "catalog.requestByCategory",
+    "catalog.status",
+    "seller.sendWhatsAppCatalogLink",
+    "seller.sendEmailCatalogLink",
+    "order.createDraft"
+  ],
+  "deniedActions": [
+    "order.createFinal",
+    "order.delete",
+    "order.updateExisting",
+    "smtp.readConfig",
+    "smtp.modify",
+    "mysql.directQuery",
+    "ftp.access",
+    "sap.access",
+    "filesystem.readConfig",
+    "filesystem.readBroad",
+    "filesystem.writeBroad",
+    "browser.control",
+    "mouse.control",
+    "keyboard.control",
+    "impersonate.nelson",
+    "secrets.request",
+    "seller.readOtherSellerData",
+    "price.masterUpdate"
+  ],
+  "endpoints": {
+    "allow": [
+      {
+        "action": "auth.checkSeller",
+        "method": "POST",
+        "path": "/catalogos_api/whatsapp_auth_check.php"
+      },
+      {
+        "action": "product.queryPrice",
+        "method": "POST",
+        "path": "/catalogos_api/whatsapp_product_query.php"
+      },
+      {
+        "action": "product.queryStock",
+        "method": "POST",
+        "path": "/catalogos_api/whatsapp_product_query.php"
+      },
+      {
+        "action": "product.queryImage",
+        "method": "POST",
+        "path": "/catalogos_api/whatsapp_product_query.php"
+      },
+      {
+        "action": "catalog.requestByCategory",
+        "method": "POST",
+        "path": "/catalogos_api/ai_create_catalog_request.php"
+      },
+      {
+        "action": "catalog.status",
+        "method": "POST",
+        "path": "/catalogos_api/ai_request_status.php"
+      },
+      {
+        "action": "seller.sendWhatsAppCatalogLink",
+        "method": "POST",
+        "path": "/catalogos_api/ai_create_catalog_request.php"
+      },
+      {
+        "action": "seller.sendEmailCatalogLink",
+        "method": "POST",
+        "path": "/catalogos_api/ai_create_catalog_request.php"
+      },
+      {
+        "action": "order.createDraft",
+        "method": "POST",
+        "path": "/catalogos_api/ai_create_catalog_request.php"
+      }
+    ]
+  },
+  "dataRules": {
+    "sellerScope": "own_seller_only",
+    "orders": "draft_only",
+    "secrets": "never_return",
+    "logs": "required"
+  }
+}

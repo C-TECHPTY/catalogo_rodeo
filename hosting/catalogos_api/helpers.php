@@ -1622,6 +1622,8 @@ function cleanPhone(mixed $value): string
 function productImageUrl(array $product, array $catalogProductImages, string $catalogPublicUrl = ''): string
 {
     $direct = first_non_empty_string([
+        $product['remote_image_url'] ?? '',
+        $product['remoteImageUrl'] ?? '',
         $product['image_url'] ?? '',
         $product['imageUrl'] ?? '',
         $product['main_image'] ?? '',
@@ -1669,6 +1671,10 @@ function build_catalog_product_image_map(array $catalog): array
         }
         $media = !empty($product['media']) && is_array($product['media']) ? $product['media'] : [];
         $imageUrl = first_non_empty_string([
+            $product['remote_image_url'] ?? '',
+            $product['remoteImageUrl'] ?? '',
+            $media['remote_image_url'] ?? '',
+            $media['remoteImageUrl'] ?? '',
             $product['image_url'] ?? '',
             $product['imageUrl'] ?? '',
             $product['main_image'] ?? '',

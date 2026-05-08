@@ -6,6 +6,9 @@ release/
 .DS_Store
 Thumbs.db
 settings.json
+.env
+.env.*
+!.env.example
 hosting/catalogos_api/config.php
 hosting/hosting.zip
 *.zip

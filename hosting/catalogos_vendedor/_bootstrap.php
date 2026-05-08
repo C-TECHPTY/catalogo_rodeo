@@ -177,6 +177,7 @@ function vendor_header(string $title, string $active = 'index.php'): void
                     <a class="<?= $active === 'catalogos.php' ? 'active' : '' ?>" href="catalogos.php">Catalogos</a>
                     <a class="<?= $active === 'links.php' ? 'active' : '' ?>" href="links.php">Links</a>
                     <a class="<?= $active === 'pedidos.php' ? 'active' : '' ?>" href="pedidos.php">Pedidos</a>
+                    <a class="<?= $active === 'crm.php' ? 'active' : '' ?>" href="crm.php">Mini CRM</a>
                     <?php if (app_setting('campaigns_enabled', '1') === '1' && is_file(__DIR__ . '/campaigns.php')): ?><a class="<?= $active === 'campaigns.php' ? 'active' : '' ?>" href="campaigns.php">Campañas</a><?php endif; ?>
                     <a href="../catalogos_admin/dashboard.php">Volver a admin</a>
                 </nav>

@@ -7,7 +7,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "pack": "node node_modules/@electron/packager/bin/electron-packager.mjs . \"Catalogo Rodeo B2B\" --platform=win32 --arch=x64 --out=release --overwrite --prune=true --ignore=\"^/release\" --ignore=\"^/web\" --ignore=\"\\\\.xlsx$\" --ignore=\"\\\\.xlsm$\" --ignore=\"\\\\.xls$\" --ignore=\"\\\\.zip$\"",
+    "pack": "node node_modules/@electron/packager/bin/electron-packager.mjs . \"Catalogo Rodeo B2B\" --platform=win32 --arch=x64 --out=release --overwrite --prune=true --ignore=\"^/release\" --ignore=\"^/web\" --ignore=\"^/\\.env\" --ignore=\"\\\\.xlsx$\" --ignore=\"\\\\.xlsm$\" --ignore=\"\\\\.xls$\" --ignore=\"\\\\.zip$\"",
     "dist:win": "npm run pack"
   },
   "devDependencies": {

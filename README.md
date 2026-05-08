@@ -82,6 +82,8 @@ La app local funciona con Electron y se ejecuta en Windows desde el proyecto.
 ### Funciones principales
 
 - Cargar un archivo Excel con productos.
+- Leer columna opcional `MARCA` sin afectar archivos Excel antiguos.
+- Generar catalogo completo, por una marca o paquetes separados por marca.
 - Asociar imagenes principales por ITEM/SKU.
 - Asociar galeria y video por producto.
 - Configurar titulo, pie de pagina, plantilla, colores, logo y fondo.

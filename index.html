@@ -191,12 +191,37 @@
                             <span>Entrada del catalogo</span>
                             <input id="entryFilterInput" type="text" value="" placeholder="Ejemplo: 26/014. Vacio genera todo.">
                         </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Generacion por marca</span>
+                            <select id="brandExportMode">
+                                <option value="complete" selected>Catalogo completo</option>
+                                <option value="single">Solo una marca</option>
+                                <option value="separate">Separados por marca</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Marca</span>
+                            <select id="brandFilterSelect">
+                                <option value="">Todas las marcas</option>
+                            </select>
+                        </label>
                     </div>
                 </section>
 
                 <section class="controls-section manual-only">
                     <h2>Fuente de imagenes</h2>
                     <div class="controls-grid">
+                        <label class="control-field control-field--wide">
+                            <span>Almacenamiento de imagenes</span>
+                            <select id="imageStorageMode">
+                                <option value="hosting" selected>Hosting actual</option>
+                                <option value="backblaze">Backblaze B2/CDN</option>
+                                <option value="hybrid">Hibrido recomendado</option>
+                            </select>
+                        </label>
+
                         <label class="control-field control-field--wide">
                             <span>Modo de imagen</span>
                             <select id="imageSourceMode">
