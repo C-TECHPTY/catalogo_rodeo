@@ -60,6 +60,31 @@ function html_escape(mixed $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
+function url_with_query_params(string $url, array $params): string
+{
+    $url = trim($url);
+    if ($url === '') {
+        return '';
+    }
+
+    $fragment = '';
+    $fragmentPosition = strpos($url, '#');
+    if ($fragmentPosition !== false) {
+        $fragment = substr($url, $fragmentPosition);
+        $url = substr($url, 0, $fragmentPosition);
+    }
+
+    $query = http_build_query(array_filter(
+        $params,
+        static fn(mixed $value): bool => $value !== null && $value !== ''
+    ));
+    if ($query === '') {
+        return $url . $fragment;
+    }
+
+    return $url . (str_contains($url, '?') ? '&' : '?') . $query . $fragment;
+}
+
 function read_json_input(): array
 {
     $raw = file_get_contents('php://input') ?: '';
@@ -869,7 +894,7 @@ function save_uploaded_image(string $fieldName, string $relativeDir, string $fil
 
 function send_notification_mail(string $subject, string $message, array $recipients = [], ?int $orderId = null, array $attachments = [], string $htmlMessage = ''): string
 {
-    $finalRecipients = array_values(array_unique(array_filter(array_map('trim', $recipients))));
+    $finalRecipients = normalize_email_recipients($recipients);
     if (!$finalRecipients) {
         return 'failed';
     }
@@ -962,6 +987,34 @@ function send_notification_mail(string $subject, string $message, array $recipie
         } else {
             $failedCount++;
         }
+        log_notification_attempt($orderId, $recipient, $subject, $message, $attachmentMeta, $status, $responseMessage);
+    }
+
+    return $sentCount > 0 && $failedCount === 0 ? 'sent' : ($sentCount > 0 ? 'sent' : 'failed');
+}
+
+function normalize_email_recipients(array $recipients): array
+{
+    $normalized = [];
+    foreach ($recipients as $recipient) {
+        foreach (preg_split('/[,;]+/', (string) $recipient) ?: [] as $email) {
+            $email = trim($email);
+            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $normalized[strtolower($email)] = $email;
+            }
+        }
+    }
+
+    return array_values($normalized);
+}
+
+function log_notification_attempt(?int $orderId, string $recipient, string $subject, string $message, array $attachmentMeta, string $status, string $responseMessage): void
+{
+    if (!catalog_table_exists('notifications_log')) {
+        return;
+    }
+
+    try {
         db()->prepare(
             'INSERT INTO notifications_log (order_id, channel, recipient, subject, payload, attachments_json, status, response_message)
              VALUES (:order_id, :channel, :recipient, :subject, :payload, :attachments_json, :status, :response_message)'
@@ -975,9 +1028,9 @@ function send_notification_mail(string $subject, string $message, array $recipie
             'status' => $status,
             'response_message' => $responseMessage,
         ]);
+    } catch (Throwable $exception) {
+        error_log('No se pudo registrar notifications_log: ' . $exception->getMessage());
     }
-
-    return $sentCount > 0 && $failedCount === 0 ? 'sent' : ($sentCount > 0 ? 'sent' : 'failed');
 }
 
 function smtp_send_mail(string $recipient, string $subject, array $headers, string $body, string $fromEmail): array
@@ -1137,7 +1190,7 @@ function build_notification_recipients(array $order, ?array $seller = null): arr
         $recipients[] = $order['contact_email'];
     }
 
-    return array_values(array_unique(array_filter(array_map('trim', $recipients))));
+    return normalize_email_recipients($recipients);
 }
 
 function fetch_seller(?int $sellerId): ?array

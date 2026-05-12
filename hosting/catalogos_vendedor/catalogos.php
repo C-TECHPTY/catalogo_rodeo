@@ -54,7 +54,7 @@ vendor_header('Mis catalogos', 'catalogos.php');
             <thead><tr><th>Slug</th><th>Titulo</th><th>Estado</th><th>Vence</th><th>Links</th><th>Link vendedor</th><th>Acciones</th></tr></thead>
             <tbody>
             <?php foreach ($catalogs as $catalog): ?>
-                <?php $sellerUrl = !empty($catalog['public_url']) && $sellerPublicToken !== '' ? rtrim((string) $catalog['public_url'], '/') . '/?t=' . $sellerPublicToken : ''; ?>
+                <?php $sellerUrl = !empty($catalog['public_url']) && $sellerPublicToken !== '' ? url_with_query_params((string) $catalog['public_url'], ['t' => $sellerPublicToken]) : ''; ?>
                 <tr>
                     <td><?= html_escape($catalog['slug']) ?></td>
                     <td><?= html_escape($catalog['title']) ?></td>
@@ -62,7 +62,7 @@ vendor_header('Mis catalogos', 'catalogos.php');
                     <td><?= html_escape($catalog['expires_at']) ?></td>
                     <td><?= (int) $catalog['links_count'] ?></td>
                     <td><?php if ($sellerUrl !== ''): ?><input class="link-url" type="text" value="<?= html_escape($sellerUrl) ?>" readonly><?php endif; ?></td>
-                    <td><?php if (!empty($catalog['public_url'])): ?><a class="button" href="<?= html_escape($catalog['public_url']) ?>" target="_blank">Abrir</a><?php endif; ?></td>
+                    <td><?php if ($sellerUrl !== ''): ?><a class="button" href="<?= html_escape($sellerUrl) ?>" target="_blank">Abrir link vendedor</a><?php elseif (!empty($catalog['public_url'])): ?><a class="button" href="<?= html_escape($catalog['public_url']) ?>" target="_blank">Abrir</a><?php endif; ?></td>
                 </tr>
             <?php endforeach; ?>
             </tbody>

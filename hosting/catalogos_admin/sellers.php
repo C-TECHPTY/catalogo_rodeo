@@ -211,7 +211,7 @@ admin_header('Vendedores', 'sellers.php');
                         <span class="pill"><?= (int) $seller['orders_count'] ?> pedidos</span>
                     </div>
                     <?php if ($hasSellerToken): ?>
-                        <?php $sellerPublicUrl = $sampleCatalog && !empty($sampleCatalog['public_url']) && !empty($seller['public_token']) ? rtrim((string) $sampleCatalog['public_url'], '/') . '/?t=' . $seller['public_token'] : ''; ?>
+                        <?php $sellerPublicUrl = $sampleCatalog && !empty($sampleCatalog['public_url']) && !empty($seller['public_token']) ? url_with_query_params((string) $sampleCatalog['public_url'], ['t' => (string) $seller['public_token']]) : ''; ?>
                         <div class="grid" style="gap:8px;margin:12px 0;">
                             <div class="muted">Token vendedor: <code><?= html_escape(substr((string) ($seller['public_token'] ?? ''), 0, 16)) ?>...</code></div>
                             <?php if ($sellerPublicUrl !== ''): ?>

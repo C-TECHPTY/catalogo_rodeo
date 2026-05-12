@@ -66,6 +66,7 @@
     cartSummary: byId("cartSummary"),
     continueShopping: byId("continueShoppingButton"),
     checkoutForm: byId("checkoutForm"),
+    checkoutButton: byId("checkoutButton"),
     checkoutStatus: byId("checkoutStatus"),
     searchInput: byId("catalogSearch"),
     detailOverlay: byId("detailOverlay"),
@@ -94,8 +95,10 @@
     document.querySelector(".catalog-shell")?.setAttribute("hidden", "");
     hydrateHeader();
     bindEvents();
-    const checkoutButton = byId("checkoutButton");
-    if (checkoutButton) checkoutButton.textContent = "Revisar pedido";
+    if (els.checkoutButton) {
+      els.checkoutButton.type = "button";
+      els.checkoutButton.textContent = "Revisar pedido";
+    }
     updateOfflineUi();
     const hasAccess = await loadPublicContext();
     if (!hasAccess) {
@@ -300,6 +303,7 @@
     els.cartDrawerBackdrop?.addEventListener("click", closeCartDrawer);
     els.continueShopping?.addEventListener("click", closeCartDrawer);
     els.checkoutForm?.addEventListener("submit", openOrderReview);
+    els.checkoutButton?.addEventListener("click", openOrderReview);
     window.addEventListener("online", () => {
       state.isOffline = false;
       updateOfflineUi();
@@ -721,12 +725,57 @@
 
   function openOrderReview(event) {
     if (event) event.preventDefault();
+    if (!validateCheckoutDetails()) return;
     if (!buildOrderPayload({ customerConfirmed: false })) return;
     ensureOrderReviewModal();
     renderOrderReview();
     if (state.reviewConfirm) state.reviewConfirm.checked = false;
     if (state.reviewStatus) state.reviewStatus.textContent = "";
     state.reviewModal?.classList.add("open");
+    closeCartDrawer();
+    const reviewCard = state.reviewModal?.querySelector(".order-review__card");
+    if (reviewCard) reviewCard.scrollTop = 0;
+  }
+
+  function validateCheckoutDetails() {
+    const requiredFields = [
+      [byId("companyName"), "Indica la empresa para continuar."],
+      [byId("contactName"), "Indica el contacto para continuar."],
+      [byId("contactPhone"), "Indica el telefono para continuar."]
+    ];
+
+    for (const [field, message] of requiredFields) {
+      if (field && !field.value.trim()) {
+        setCheckoutError(message, field);
+        return false;
+      }
+    }
+
+    const emailField = byId("contactEmail");
+    if (emailField && emailField.value.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailField.value.trim())) {
+      setCheckoutError("Revisa el correo antes de continuar.", emailField);
+      return false;
+    }
+
+    if (els.checkoutStatus) els.checkoutStatus.textContent = "";
+    return true;
+  }
+
+  function setCheckoutError(message, field) {
+    if (els.checkoutStatus) {
+      els.checkoutStatus.textContent = message;
+    }
+    if (state.reviewStatus) {
+      state.reviewStatus.textContent = message;
+    }
+    if (field && typeof field.focus === "function") {
+      try {
+        field.focus({ preventScroll: true });
+      } catch (error) {
+        field.focus();
+      }
+      field.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
   }
 
   function ensureOrderReviewModal() {
@@ -746,12 +795,14 @@
         <div class="order-review__customer" id="orderReviewCustomer"></div>
         <div class="order-review__lines" id="orderReviewLines"></div>
         <div class="cart-summary" id="orderReviewSummary"></div>
-        <label class="order-review__confirm">
-          <input id="orderReviewConfirm" type="checkbox">
-          <span>Confirmo que revise mi pedido y autorizo el envio.</span>
-        </label>
-        <button class="checkout-button" id="orderReviewSubmit" type="button">Enviar pedido confirmado</button>
-        <p class="status-note" id="orderReviewStatus"></p>
+        <div class="order-review__actions">
+          <label class="order-review__confirm">
+            <input id="orderReviewConfirm" type="checkbox">
+            <span>Confirmo que revise mi pedido y autorizo el envio.</span>
+          </label>
+          <button class="checkout-button" id="orderReviewSubmit" type="button">Enviar pedido confirmado</button>
+          <p class="status-note" id="orderReviewStatus"></p>
+        </div>
       </div>
     `;
     document.body.appendChild(modal);
@@ -912,8 +963,12 @@
         metadata: { message: error.message || "order failed", server: Boolean(error.serverResponse) }
       });
       if (error.serverResponse) {
+        const errorMessage = error.details ? `${error.message}: ${error.details}` : error.message;
+        if (state.reviewStatus) {
+          state.reviewStatus.textContent = errorMessage;
+        }
         if (els.checkoutStatus) {
-          els.checkoutStatus.textContent = error.details ? `${error.message}: ${error.details}` : error.message;
+          els.checkoutStatus.textContent = errorMessage;
         }
         return;
       }

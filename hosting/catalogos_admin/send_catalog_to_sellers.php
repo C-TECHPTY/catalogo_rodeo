@@ -151,7 +151,7 @@ function admin_send_catalog_to_sellers(?array $catalog, array $sellers, bool $cr
             continue;
         }
 
-        $catalogUrl = rtrim((string) $catalog['public_url'], '/') . '/?token=' . rawurlencode((string) $link['token']);
+        $catalogUrl = url_with_query_params((string) $catalog['public_url'], ['token' => (string) $link['token']]);
         $plain = admin_catalog_seller_email_plain($catalog, $sellerName, $catalogUrl);
         $mailStatus = send_notification_mail('Catalogo disponible', $plain, [$email]);
         $sent = $mailStatus === 'sent';
