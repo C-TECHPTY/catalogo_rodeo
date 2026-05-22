@@ -79,7 +79,7 @@ admin_header('Links compartidos', 'links.php');
                 <thead><tr><th>Catalogo</th><th>Vendedor / Cliente</th><th>Token</th><th>Aperturas</th><th>Pedidos</th><th>Ultimo acceso</th><th>Estado</th><th>URL</th><th>Acciones</th></tr></thead>
                 <tbody>
                 <?php foreach ($links as $link): ?>
-                    <?php $shareUrl = !empty($link['public_url']) ? url_with_query_params((string) $link['public_url'], ['token' => (string) $link['token']]) : ''; ?>
+                    <?php $shareUrl = !empty($link['public_url']) ? catalog_share_public_url($link, (string) $link['public_url']) : ''; ?>
                     <tr>
                         <td><?= html_escape($link['catalog_title']) ?></td>
                         <td><?= html_escape($link['seller_name'] ?: 'Sin vendedor') ?> / <?= html_escape($link['client_name'] ?: 'Sin cliente') ?></td>

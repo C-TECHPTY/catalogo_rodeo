@@ -34,6 +34,21 @@ Para enviar un catalogo publicado a todos los vendedores activos:
 
 ## Cambios Recientes
 
+Cambios incorporados el 2026-05-15:
+
+- Ajustes responsive del catalogo publico para busqueda movil, botones flotantes **Subir/Ver guia** y comportamiento de la guia interactiva.
+- La imagen del detalle puede abrirse en vista ampliada al tocar/clickear, reduciendo la dependencia de un boton de zoom fijo.
+- Presets visuales por marca en la app Electron para recordar logo, colores, fondo hero e imagenes promocionales por marca.
+- Carga de imagenes optimizada en el catalogo publico con prioridad para primeras tarjetas, lazy loading y fallback de candidatos.
+- Nueva subida de imagen por ITEM desde el hosting con soporte opcional Backblaze B2/CDN y fallback al hosting local.
+- Productos agotados se muestran desactivados y no pueden agregarse al carrito.
+- Actualizacion de catalogo vivo desde Excel puede agregar productos nuevos al inicio del catalogo.
+- Miniaturas automaticas para imagenes nuevas y accion admin **Generar miniaturas faltantes** para imagenes existentes.
+- Nueva fase opcional **Plantillas por marca** mediante carpetas `hosting/assets/brand_templates/{slug}/config.json`, con logo, colores, banner, publicidad, fondo y placeholder por marca.
+- En modo **Solo una marca**, el preview y el catalogo generado usan la marca seleccionada como titulo visual principal sin cambiar el titulo base guardado.
+- Correccion para copiar logo/cover/fondo de marca al paquete aunque las imagenes de productos usen Backblaze.
+- Documentacion completa de esta tanda en `docs/RESUMEN_CAMBIOS_2026-05-15.md`.
+
 Cambios incorporados el 2026-05-05:
 
 - Color corporativo por defecto actualizado a `#2c4695` en la app, preview y estilos base.

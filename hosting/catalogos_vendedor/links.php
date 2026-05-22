@@ -40,7 +40,7 @@ vendor_header('Mis links', 'links.php');
             <thead><tr><th>Catalogo</th><th>Cliente</th><th>Aperturas</th><th>Ultimo acceso</th><th>URL</th></tr></thead>
             <tbody>
             <?php foreach ($links as $link): ?>
-                <?php $shareUrl = !empty($link['public_url']) ? rtrim((string) $link['public_url'], '/') . '/?token=' . $link['token'] : ''; ?>
+                <?php $shareUrl = !empty($link['public_url']) ? catalog_share_public_url($link, (string) $link['public_url']) : ''; ?>
                 <tr>
                     <td><?= html_escape($link['catalog_title']) ?></td>
                     <td><?= html_escape($link['client_name']) ?></td>

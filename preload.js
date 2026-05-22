@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld("catalogDesktop", {
     chooseDirectory: (options) => ipcRenderer.invoke("dialog:open-directory", options),
     readFileBuffer: (filePath) => ipcRenderer.invoke("fs:read-file-buffer", filePath),
     scanCategories: (rootDir) => ipcRenderer.invoke("fs:scan-categories", rootDir),
+    findImagesForItems: (payload) => ipcRenderer.invoke("fs:find-images-for-items", payload),
+    saveMissingImagesReport: (payload) => ipcRenderer.invoke("report:save-missing-images", payload),
     generateBatchPdfs: (payload) => ipcRenderer.invoke("batch:generate-pdfs", payload),
     exportWebPackage: (payload) => ipcRenderer.invoke("web:export-package", payload),
     publishCatalogPackage: (payload) => ipcRenderer.invoke("hosting:publish-catalog", payload),

@@ -58,7 +58,7 @@ admin_header('Actualizar datos de catalogo', 'catalogos.php');
 
         <?php if ($applyResult): ?>
             <div class="notice notice--success" style="margin:16px 0;">
-                Actualizacion aplicada. Actualizados: <?= (int) $applyResult['updated_count'] ?> · Agotados: <?= (int) $applyResult['out_of_stock_count'] ?> · No encontrados: <?= (int) $applyResult['not_found_count'] ?>
+                Actualizacion aplicada. Actualizados: <?= (int) $applyResult['updated_count'] ?> · Nuevos: <?= (int) ($applyResult['new_count'] ?? 0) ?> · Agotados: <?= (int) $applyResult['out_of_stock_count'] ?> · No encontrados: <?= (int) $applyResult['not_found_count'] ?>
             </div>
             <p class="muted">Backup creado: <code><?= html_escape($applyResult['backup_path'] ?? '') ?></code></p>
         <?php endif; ?>
@@ -67,6 +67,7 @@ admin_header('Actualizar datos de catalogo', 'catalogos.php');
             <div class="metrics-grid" style="margin:18px 0;">
                 <div class="metric-card"><span>Filas leidas</span><strong><?= (int) $preview['total_rows'] ?></strong></div>
                 <div class="metric-card"><span>Productos encontrados</span><strong><?= (int) $preview['matched_count'] ?></strong></div>
+                <div class="metric-card"><span>Productos nuevos</span><strong><?= (int) ($preview['new_count'] ?? 0) ?></strong></div>
                 <div class="metric-card"><span>Serian actualizados</span><strong><?= (int) $preview['updated_count'] ?></strong></div>
                 <div class="metric-card"><span>Quedarian agotados</span><strong><?= (int) $preview['out_of_stock_count'] ?></strong></div>
                 <div class="metric-card"><span>No encontrados</span><strong><?= (int) $preview['not_found_count'] ?></strong></div>
@@ -97,7 +98,7 @@ admin_header('Actualizar datos de catalogo', 'catalogos.php');
                 </table>
             </div>
 
-            <?php if ((int) $preview['matched_count'] > 0): ?>
+            <?php if (((int) $preview['matched_count'] + (int) ($preview['new_count'] ?? 0)) > 0): ?>
                 <form method="post" onsubmit="return confirm('Confirmas aplicar esta actualizacion comercial al catalogo publicado?');">
                     <?= csrf_field() ?>
                     <input type="hidden" name="action" value="apply">
@@ -208,7 +209,7 @@ function admin_update_build_preview(array $catalog, array $rows, string $filenam
     }
     $matchedItems = [];
     $sample = [];
-    $matched = $updated = $outOfStock = $notFound = 0;
+    $matched = $updated = $new = $outOfStock = $notFound = 0;
     foreach ($rows as $row) {
         $item = admin_update_item_key((string) ($row['ITEM'] ?? ''));
         if ($item === '') {
@@ -216,8 +217,9 @@ function admin_update_build_preview(array $catalog, array $rows, string $filenam
             continue;
         }
         if (!array_key_exists($item, $productIndex)) {
-            $notFound++;
-            $sample[] = admin_update_preview_sample($row, 'no encontrado');
+            $new++;
+            if (admin_update_available_number((string) ($row['DISPONIBLE'] ?? '')) < 1) $outOfStock++;
+            $sample[] = admin_update_preview_sample($row, 'nuevo');
             continue;
         }
         $matched++;
@@ -240,6 +242,7 @@ function admin_update_build_preview(array $catalog, array $rows, string $filenam
         'rows' => $rows,
         'total_rows' => count($rows),
         'matched_count' => $matched,
+        'new_count' => $new,
         'updated_count' => $updated,
         'out_of_stock_count' => $outOfStock,
         'not_found_count' => $notFound,
@@ -271,11 +274,22 @@ function admin_update_apply_confirmed(array $catalog): array
         if ($item !== '') $productIndex[$item] = $idx;
     }
     $matchedItems = [];
-    $updated = $outOfStock = $notFound = 0;
+    $newProducts = [];
+    $updated = $new = $outOfStock = $notFound = 0;
     foreach ((array) ($preview['rows'] ?? []) as $row) {
         $item = admin_update_item_key((string) ($row['ITEM'] ?? ''));
         if ($item === '' || !array_key_exists($item, $productIndex)) {
-            if ($item !== '') $notFound++;
+            if ($item !== '') {
+                $product = admin_update_build_new_product($row);
+                if ($product) {
+                    $newProducts[] = $product;
+                    $matchedItems[$item] = true;
+                    $new++;
+                    if (admin_update_available_number((string) ($row['DISPONIBLE'] ?? '')) < 1) $outOfStock++;
+                } else {
+                    $notFound++;
+                }
+            }
             continue;
         }
         $idx = $productIndex[$item];
@@ -307,6 +321,9 @@ function admin_update_apply_confirmed(array $catalog): array
             $outOfStock++;
         }
     }
+    if ($newProducts) {
+        array_unshift($products, ...$newProducts);
+    }
     admin_update_write_catalog_json($jsonPath, $json);
     if (admin_column_exists('catalogs', 'api_payload')) {
         $updatedSet = admin_column_exists('catalogs', 'updated_at') ? ', updated_at = NOW()' : '';
@@ -331,7 +348,7 @@ function admin_update_apply_confirmed(array $catalog): array
     ]);
     admin_update_delete_preview($token);
     audit_log('catalog.products_updated_from_csv', 'catalogs', (int) $catalog['id'], ['updated' => $updated, 'backup' => $backupPath]);
-    return ['updated_count' => $updated, 'out_of_stock_count' => $outOfStock, 'not_found_count' => $notFound, 'backup_path' => $backupPath];
+    return ['updated_count' => $updated, 'new_count' => $new, 'out_of_stock_count' => $outOfStock, 'not_found_count' => $notFound, 'backup_path' => $backupPath];
 }
 
 function admin_update_catalog_json_full_path(array $catalog): string
@@ -346,6 +363,58 @@ function admin_update_catalog_json_full_path(array $catalog): string
         throw new RuntimeException('No se encontro catalog.json dentro del hosting permitido.');
     }
     return $fullPath;
+}
+
+function admin_update_build_new_product(array $row): ?array
+{
+    $item = admin_update_clean_text((string) ($row['ITEM'] ?? ''));
+    if ($item === '') return null;
+    $available = admin_update_available_number((string) ($row['DISPONIBLE'] ?? ''));
+    $description = admin_update_clean_text((string) ($row['DESCRIPCION'] ?? $item));
+    $price = admin_update_format_price((string) ($row['PRECIO'] ?? ''));
+    $package = admin_update_clean_text((string) ($row['EMPAQUE'] ?? ''));
+    $remoteImageUrl = admin_update_remote_image_url($row);
+    $product = [
+        'item' => $item,
+        'description' => $description,
+        'shortDescription' => $description,
+        'price' => $price,
+        'originalPrice' => $price,
+        'available' => (string) max(0, $available),
+        'outOfStock' => $available > 0 ? 0 : 1,
+        'agotado' => $available > 0 ? 0 : 1,
+        'package' => $package,
+        'empaque' => $package,
+        'packageLabel' => $package,
+        'packageQty' => max(1, admin_update_available_number($package)),
+        'um' => admin_update_clean_text((string) ($row['UM'] ?? '')),
+        'saleUnit' => admin_update_clean_text((string) ($row['UM'] ?? '')) ?: 'bulto',
+        'ctn' => admin_update_clean_text((string) ($row['CTN'] ?? '')),
+        'barcode' => admin_update_clean_text((string) ($row['CBARRA'] ?? '')),
+        'brand' => admin_update_clean_text((string) ($row['MARCA'] ?? '')),
+        'category' => admin_update_clean_text((string) ($row['CATEGORIA'] ?? 'General')) ?: 'General',
+        'material' => admin_update_clean_text((string) ($row['MATERIAL'] ?? '')),
+        'size' => admin_update_clean_text((string) ($row['TAMANO'] ?? $row['MEDIDA'] ?? '')),
+        'minimumOrder' => max(1, admin_update_available_number((string) ($row['MINIMO'] ?? '1'))),
+        'multipleQty' => max(1, admin_update_available_number((string) ($row['MULTIPLO'] ?? '1'))),
+    ];
+    if ($remoteImageUrl !== '') {
+        $product['image_url'] = $remoteImageUrl;
+        $product['imageUrl'] = $remoteImageUrl;
+        $product['remote_image_url'] = $remoteImageUrl;
+        $product['remoteImageUrl'] = $remoteImageUrl;
+        $product['media'] = [
+            'mainImage' => $remoteImageUrl,
+            'main_image' => $remoteImageUrl,
+            'mainImageCandidates' => [$remoteImageUrl],
+            'gallery' => [$remoteImageUrl],
+            'remote_image_url' => $remoteImageUrl,
+            'remoteImageUrl' => $remoteImageUrl,
+        ];
+    } else {
+        $product['media'] = ['gallery' => []];
+    }
+    return $product;
 }
 
 function admin_update_read_catalog_json(string $path): array
@@ -418,6 +487,12 @@ function admin_update_normalize_column(string $value): string
         'DISP', 'DISPONIBLE', 'STOCK', 'EXISTENCIA' => 'DISPONIBLE',
         'PRECIO', 'PRICE', 'PVP' => 'PRECIO',
         'CODIGOBARRAS', 'CODBARRA', 'CB' => 'CBARRA',
+        'MARCA', 'BRAND', 'FABRICANTE' => 'MARCA',
+        'CATEGORIA', 'CATEGORY', 'LINEA', 'FAMILIA', 'GRUPO' => 'CATEGORIA',
+        'TAMANO', 'TAMANIO', 'TAMAÑO', 'TAMAO', 'SIZE', 'MEDIDA', 'MEDIDAS', 'DIMENSION' => 'TAMANO',
+        'URLIMAGEN', 'IMAGENURL', 'IMAGEURL', 'REMOTEIMAGEURL', 'REMOTEIMAGE', 'URL_IMAGEN' => 'REMOTE_IMAGE_URL',
+        'MINIMO', 'MINIMOPEDIDO' => 'MINIMO',
+        'MULTIPLO', 'MULTIPLE' => 'MULTIPLO',
         default => $value,
     };
 }
@@ -444,6 +519,12 @@ function admin_update_format_price(string $value): string
     $normalized = str_replace(',', '.', $normalized);
     $number = (float) $normalized;
     return $number > 0 ? '$' . number_format($number, 2, '.', '') : trim($value);
+}
+
+function admin_update_remote_image_url(array $row): string
+{
+    $url = trim((string) ($row['REMOTE_IMAGE_URL'] ?? $row['IMAGE_URL'] ?? $row['URL_IMAGEN'] ?? ''));
+    return preg_match('#^https?://#i', $url) ? $url : '';
 }
 
 function admin_update_preview_sample(array $row, string $status): array

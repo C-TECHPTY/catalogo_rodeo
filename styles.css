@@ -101,6 +101,8 @@ body.sidebar-collapsed .workspace {
 }
 
 .control-panel__inner {
+    display: flex;
+    flex-direction: column;
     padding: 58px 18px 28px;
 }
 
@@ -123,6 +125,15 @@ body.sidebar-collapsed .workspace {
     gap: 10px;
     margin-top: 20px;
 }
+
+.controls-section--data { order: 1; }
+.controls-section--files { order: 2; }
+.controls-section--image-source { order: 3; }
+.controls-section--design { order: 4; }
+.controls-section--promo { order: 5; }
+.controls-section--editor { order: 6; }
+.controls-section--publish { order: 7; }
+.controls-section--actions { order: 8; }
 
 .mode-switch__button {
     min-height: 42px;
@@ -153,6 +164,18 @@ body.sidebar-collapsed .workspace {
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: rgba(255,255,255,0.92);
+}
+
+.section-subtitle {
+    margin: 4px 0 -2px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.07);
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .controls-grid {
@@ -289,6 +312,55 @@ body.sidebar-collapsed .workspace {
 .ghost-button--active {
     background: rgba(255,255,255,0.92);
     color: #111;
+}
+
+.featured-brand-editor-list {
+    display: grid;
+    gap: 10px;
+}
+
+.featured-brand-editor-item {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 14px;
+    background: rgba(255,255,255,0.06);
+}
+
+.featured-brand-editor-item img {
+    width: 72px;
+    height: 42px;
+    object-fit: contain;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.9);
+}
+
+.featured-brand-editor-item strong {
+    display: block;
+    color: #fff;
+    font-size: 13px;
+}
+
+.featured-brand-editor-item small {
+    display: block;
+    color: rgba(255,255,255,0.62);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.featured-brand-editor-item button {
+    min-height: 36px;
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 10px;
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
 }
 
 .path-picker {
@@ -781,7 +853,10 @@ body.sidebar-collapsed .workspace {
 
 .product-card__image-wrap {
     position: relative;
-    min-height: 202px;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    min-height: 0;
+    box-sizing: border-box;
     background: linear-gradient(180deg, #ffffff, #faf9f7);
     border: 1px solid var(--line);
     border-top: none;
@@ -790,19 +865,25 @@ body.sidebar-collapsed .workspace {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 18px 14px;
+    padding: 16px;
+    overflow: hidden;
 }
 
 .product-card__image {
+    width: 100%;
+    height: 100%;
     max-width: 100%;
-    max-height: 166px;
+    max-height: 100%;
     object-fit: contain;
+    object-position: center;
     display: block;
+    padding: 0;
+    flex: 0 0 auto;
 }
 
 .product-card__placeholder {
     width: 100%;
-    height: 166px;
+    height: 100%;
     border: 1px dashed #d3d0ca;
     border-radius: 12px;
     color: #8d8b85;
@@ -1171,7 +1252,7 @@ body.sidebar-collapsed .workspace {
 }
 
 .product-card--minimal .product-card__image-wrap {
-    min-height: 170px;
+    min-height: 0;
     border: 1px solid #ebe4da;
     border-radius: 20px;
 }
@@ -1224,7 +1305,7 @@ body.sidebar-collapsed .workspace {
 }
 
 .product-card--showcase .product-card__image-wrap {
-    min-height: 214px;
+    min-height: 0;
     border: none;
     border-radius: 0;
     background: linear-gradient(180deg, rgba(183, 25, 46, 0.08), rgba(255,255,255,0.92));
@@ -1276,7 +1357,7 @@ body.sidebar-collapsed .workspace {
 }
 
 .product-card--horizon .product-card__image-wrap {
-    min-height: 190px;
+    min-height: 0;
     height: 100%;
     border-radius: 18px;
     border-top: 1px solid var(--line);
@@ -1361,7 +1442,7 @@ body.sidebar-collapsed .workspace {
 }
 
 .product-card--ledger .product-card__image-wrap {
-    min-height: 176px;
+    min-height: 0;
     height: 100%;
     border-radius: 16px;
     border-top: 1px solid var(--line);
@@ -1616,7 +1697,7 @@ body.sidebar-collapsed .workspace {
 }
 
 .product-card--campin1 .product-card__campin-visual {
-    min-height: 48mm;
+    min-height: 0;
     border-radius: 0;
     border-top: none;
     background: linear-gradient(180deg, #faf8f2, #efe9dd);
@@ -1819,8 +1900,8 @@ body.sidebar-collapsed .workspace {
 }
 
 .web-preview-logo {
-    width: 64px;
-    height: 64px;
+    width: 76px;
+    height: 76px;
     border-radius: 16px;
     background: transparent;
     display: grid;
@@ -1929,9 +2010,10 @@ body.sidebar-collapsed .workspace {
 }
 
 .web-preview-promo__media {
+    position: relative;
     height: 180px;
     border-radius: 22px;
-    background: linear-gradient(135deg, #f4f7fb, #fff);
+    background: #fff;
     display: grid;
     place-items: center;
     color: #66705f;
@@ -1942,7 +2024,20 @@ body.sidebar-collapsed .workspace {
 .web-preview-promo__media img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
+    object-position: center;
+}
+
+.web-preview-promo__media small {
+    position: absolute;
+    right: 12px;
+    bottom: 10px;
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: rgba(0,0,0,.58);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 900;
 }
 
 .web-preview-grid {
@@ -1958,10 +2053,13 @@ body.sidebar-collapsed .workspace {
 }
 
 .web-preview-card__media {
-    aspect-ratio: 1 / .78;
+    aspect-ratio: 1 / 1;
+    box-sizing: border-box;
     background: linear-gradient(180deg, #f8fafc, #fff);
     display: grid;
     place-items: center;
+    padding: 14px;
+    overflow: hidden;
     color: #8d8b85;
     font-weight: 900;
 }
@@ -1969,8 +2067,12 @@ body.sidebar-collapsed .workspace {
 .web-preview-card__media img {
     width: 100%;
     height: 100%;
+    max-width: 100%;
+    max-height: 100%;
     object-fit: contain;
-    padding: 14px;
+    object-position: center;
+    padding: 0;
+    display: block;
 }
 
 .web-preview-card__body {

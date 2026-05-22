@@ -15,6 +15,12 @@ Bundle web listo para hosting con:
 
 ## Cambios recientes
 
+- Actualizacion de imagenes por ITEM desde el admin con subida opcional directa a Backblaze B2/CDN.
+- Nuevo helper `catalogos_api/backblaze_helpers.php` para subir archivos al bucket usando API compatible S3.
+- Soporte de miniaturas para imagenes nuevas y accion admin **Generar miniaturas faltantes** para imagenes existentes.
+- La actualizacion de datos del catalogo puede agregar articulos nuevos desde Excel y colocarlos al inicio.
+- El catalogo publico detecta articulos agotados, los muestra desactivados y bloquea su compra.
+- Mejoras responsive en busqueda movil, botones flotantes, guia interactiva y zoom de imagen en detalle.
 - El panel admin agrega **Enviar a vendedores** en catalogos publicados para mandar correos individuales con link seguro `?token=TOKEN`.
 - La pantalla de envio confirma catalogo, cantidad de vendedores activos con correo, opcion de crear link si falta y resumen de enviados/omitidos/errores.
 - Los envios quedan registrados en `catalog_seller_email_logs`.
@@ -54,6 +60,34 @@ public_html/
 7. Sube `catalogos_api/`, `catalogos_admin/`, `catalogos_vendedor/`, `assets/` y permite escritura en `uploads/`.
 8. Manten `sql/` fuera del acceso publico si el hosting lo permite.
 9. Publica los catalogos generados por Electron dentro de `catalogos/<slug>/`.
+
+## Backblaze/CDN para imagenes desde hosting
+
+La subida directa a Backblaze es opcional. Si no se configura, el sistema conserva el flujo local del hosting.
+
+Para activarla, agrega este bloque en `catalogos_api/config.php`:
+
+```php
+'backblaze' => [
+    'enabled' => true,
+    'endpoint' => 'https://s3.us-west-004.backblazeb2.com',
+    'region' => 'us-west-004',
+    'bucket' => 'NOMBRE_DEL_BUCKET',
+    'key_id' => 'B2_KEY_ID',
+    'application_key' => 'B2_APPLICATION_KEY',
+    'cdn_base_url' => 'https://rodeo-catalogos-img.b-cdn.net',
+    'timeout' => 45,
+],
+```
+
+No subir credenciales reales al repositorio. El archivo `config.example.php` es solo plantilla.
+
+Desde `catalogos_admin/catalog_update_images.php` se puede:
+
+- actualizar imagen por ITEM;
+- subir la imagen a Backblaze/CDN si esta habilitado;
+- generar miniatura para la imagen nueva;
+- ejecutar **Generar miniaturas faltantes** para imagenes ya existentes.
 
 ## Migraciones del 2026-04-28
 

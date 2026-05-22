@@ -139,6 +139,13 @@ button.button--primary {
   background: var(--primary);
   color: #fff;
 }
+.button--success,
+button.button--success {
+  border-color: var(--success);
+  background: var(--success);
+  color: #fff;
+  cursor: default;
+}
 .button--danger,
 button.button--danger {
   border-color: var(--danger);

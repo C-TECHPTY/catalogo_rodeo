@@ -28,6 +28,9 @@ const LOGO_CANDIDATES = new Set(["logo", "brand", "marca"]);
 const SETTINGS_FILE_NAME = "settings.json";
 const SECRET_SETTING_KEYS = new Set(["ftpPassword", "apiKey", "saasLicenseKey"]);
 const IMAGE_STORAGE_ENV_KEYS = new Set(["IMAGE_STORAGE_MODE", "IMAGE_CDN_BASE_URL", "B2_BUCKET_NAME", "B2_KEY_ID", "B2_APPLICATION_KEY", "B2_ENDPOINT"]);
+const BRAND_TEMPLATES_SOURCE_DIR = path.join(__dirname, "hosting", "assets", "brand_templates");
+const GLOBAL_NO_PHOTO_SOURCE = path.join(__dirname, "hosting", "assets", "img", "no-photo-camera.svg");
+const GLOBAL_RODEO_LOGO_SOURCE = path.join(__dirname, "hosting", "catalogos_admin", "assets", "logo-rodeo-azul.png");
 const DEFAULT_PUBLICATION_SETTINGS = {
     autoSave: true,
     protocol: "ftp",
@@ -115,6 +118,14 @@ function registerIpcHandlers() {
 
     ipcMain.handle("fs:scan-categories", async (_, rootDir) => {
         return scanCategories(rootDir);
+    });
+
+    ipcMain.handle("fs:find-images-for-items", async (_, payload = {}) => {
+        return findImagesForItems(payload);
+    });
+
+    ipcMain.handle("report:save-missing-images", async (_, payload = {}) => {
+        return saveMissingImagesReport(payload);
     });
 
     ipcMain.handle("batch:generate-pdfs", async (_, payload) => {
@@ -399,6 +410,199 @@ function scanCategories(rootDir) {
     });
 }
 
+function findImagesForItems(payload = {}) {
+    const rootDir = String(payload.rootDir || "");
+    const rawItems = Array.isArray(payload.items) ? payload.items : [];
+    const maxFiles = Math.max(1000, Math.min(Number(payload.maxFiles) || 250000, 1000000));
+    const targetItems = new Map();
+
+    rawItems.forEach((item) => {
+        const raw = String(item || "").trim();
+        const normalized = normalizeImageItemKey(raw);
+        if (raw && normalized && !targetItems.has(normalized)) {
+            targetItems.set(normalized, raw);
+        }
+    });
+
+    if (!rootDir || !fs.existsSync(rootDir) || !targetItems.size) {
+        return { matches: [], missingItems: rawItems, scannedFiles: 0, stoppedEarly: false };
+    }
+
+    const matchesByItem = new Map();
+    const pending = [rootDir];
+    let scannedFiles = 0;
+    let stoppedEarly = false;
+
+    while (pending.length && matchesByItem.size < targetItems.size) {
+        const dirPath = pending.pop();
+        let entries = [];
+        try {
+            entries = fs.readdirSync(dirPath, { withFileTypes: true });
+        } catch {
+            continue;
+        }
+
+        for (const entry of entries) {
+            const fullPath = path.join(dirPath, entry.name);
+            if (entry.isDirectory()) {
+                pending.push(fullPath);
+                continue;
+            }
+
+            const ext = path.extname(entry.name).toLowerCase();
+            if (!IMAGE_EXTENSIONS.has(ext)) continue;
+
+            scannedFiles += 1;
+            if (scannedFiles > maxFiles) {
+                stoppedEarly = true;
+                pending.length = 0;
+                break;
+            }
+
+            const match = resolveImageItemMatchFromFile(entry.name, targetItems);
+            const itemKey = match.itemKey;
+            if (!itemKey) continue;
+
+            const previousMatch = matchesByItem.get(itemKey);
+            if (previousMatch && previousMatch.score >= match.score) continue;
+
+            matchesByItem.set(itemKey, {
+                item: targetItems.get(itemKey),
+                normalizedItem: itemKey,
+                filePath: fullPath,
+                fileName: entry.name,
+                score: match.score,
+            });
+        }
+    }
+
+    const missingItems = [];
+    targetItems.forEach((rawItem, normalizedItem) => {
+        if (!matchesByItem.has(normalizedItem)) {
+            missingItems.push(rawItem);
+        }
+    });
+
+    return {
+        matches: Array.from(matchesByItem.values()),
+        missingItems,
+        scannedFiles,
+        stoppedEarly,
+    };
+}
+
+async function saveMissingImagesReport(payload = {}) {
+    const rows = Array.isArray(payload.rows) ? payload.rows : [];
+    const format = String(payload.format || "txt").toLowerCase() === "excel" ? "excel" : "txt";
+    const baseName = sanitizeSlug(payload.fileName || "reporte-imagenes-faltantes") || "reporte-imagenes-faltantes";
+    const extension = format === "excel" ? "csv" : "txt";
+    const result = await dialog.showSaveDialog(mainWindow, {
+        title: format === "excel" ? "Guardar reporte para Excel" : "Guardar reporte TXT",
+        defaultPath: `${baseName}.${extension}`,
+        filters: format === "excel"
+            ? [{ name: "Excel CSV", extensions: ["csv"] }]
+            : [{ name: "Texto", extensions: ["txt"] }],
+    });
+    if (result.canceled || !result.filePath) {
+        return { canceled: true, filePath: "" };
+    }
+
+    const content = format === "excel" ? buildMissingImagesCsv(rows, payload) : buildMissingImagesTxt(rows, payload);
+    fs.mkdirSync(path.dirname(result.filePath), { recursive: true });
+    fs.writeFileSync(result.filePath, content, "utf8");
+    return { canceled: false, filePath: result.filePath };
+}
+
+function buildMissingImagesTxt(rows, payload = {}) {
+    const lines = [
+        "Reporte de imagenes faltantes",
+        `Catalogo: ${String(payload.catalogTitle || "")}`,
+        `Fecha: ${new Date().toISOString()}`,
+        `Total faltantes: ${rows.length}`,
+        "",
+        "ITEM | Marca | Categoria | Descripcion | Nombres sugeridos",
+    ];
+    rows.forEach((row) => {
+        lines.push([
+            row.item || "",
+            row.brand || "",
+            row.category || "",
+            row.description || "",
+            Array.isArray(row.expectedNames) ? row.expectedNames.join(", ") : "",
+        ].join(" | "));
+    });
+    return lines.join("\r\n");
+}
+
+function buildMissingImagesCsv(rows, payload = {}) {
+    const csvRows = [
+        ["Reporte de imagenes faltantes"],
+        ["Catalogo", String(payload.catalogTitle || "")],
+        ["Fecha", new Date().toISOString()],
+        ["Total faltantes", String(rows.length)],
+        [],
+        ["ITEM", "Marca", "Categoria", "Descripcion", "Nombres sugeridos"],
+    ];
+    rows.forEach((row) => {
+        csvRows.push([
+            row.item || "",
+            row.brand || "",
+            row.category || "",
+            row.description || "",
+            Array.isArray(row.expectedNames) ? row.expectedNames.join(", ") : "",
+        ]);
+    });
+    return csvRows.map((row) => row.map(csvEscape).join(",")).join("\r\n");
+}
+
+function csvEscape(value) {
+    const text = String(value ?? "");
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function resolveImageItemKeyFromFile(fileName, targetItems) {
+    return resolveImageItemMatchFromFile(fileName, targetItems).itemKey;
+}
+
+function resolveImageItemMatchFromFile(fileName, targetItems) {
+    const ext = path.extname(fileName);
+    const rawStem = path.basename(fileName, ext);
+    const normalizedRaw = normalizeImageItemKey(rawStem);
+    if (!normalizedRaw) return { itemKey: "", score: 0 };
+    if (targetItems.has(normalizedRaw)) return { itemKey: normalizedRaw, score: 100 };
+
+    const copyCleanRawStem = rawStem.replace(/\s*\(\d+\)\s*$/i, "");
+    const cleanedRawStem = copyCleanRawStem
+        .replace(/(?:[_\-\s](?:main|principal|gallery|galeria|extra|image|img|foto|photo|pic|web|edited|editada))(?:[_\-\s]?\d+)?$/i, "")
+        .replace(/(?:[_\-\s]\d+)$/i, "");
+
+    const copyCleanStem = normalizeImageItemKey(copyCleanRawStem);
+    if (copyCleanStem && targetItems.has(copyCleanStem)) return { itemKey: copyCleanStem, score: 96 };
+
+    const cleanedStem = normalizeImageItemKey(cleanedRawStem);
+    if (cleanedStem && targetItems.has(cleanedStem)) return { itemKey: cleanedStem, score: 94 };
+
+    const rawBoundary = normalizeBoundaryStem(copyCleanRawStem);
+    const cleanedBoundary = normalizeBoundaryStem(cleanedRawStem);
+
+    const sortedItems = Array.from(targetItems.keys()).sort((a, b) => b.length - a.length);
+    for (const itemKey of sortedItems) {
+        const itemBoundary = normalizeBoundaryStem(targetItems.get(itemKey));
+        if (!itemBoundary) continue;
+        if (rawBoundary === itemBoundary) return { itemKey, score: 92 };
+        if (cleanedBoundary === itemBoundary) return { itemKey, score: 90 };
+        if (!rawBoundary.startsWith(`${itemBoundary}-`)) continue;
+        const suffix = rawBoundary.slice(itemBoundary.length + 1);
+        if (isAllowedImageVariantSuffix(suffix)) return { itemKey, score: 82 };
+    }
+
+    return { itemKey: "", score: 0 };
+}
+
+function normalizeImageItemKey(value) {
+    return normalizeStem(value);
+}
+
 function walkDirectory(dirPath, onFile) {
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
 
@@ -422,6 +626,22 @@ function normalizeStem(value) {
         .replace(/[^A-Za-z0-9]+/g, "")
         .trim()
         .toLowerCase();
+}
+
+function normalizeBoundaryStem(value) {
+    return String(value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Za-z0-9]+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .toLowerCase();
+}
+
+function isAllowedImageVariantSuffix(value) {
+    const suffix = normalizeBoundaryStem(value);
+    if (!suffix) return true;
+    return /^(?:\d+|main|principal|gallery|galeria|extra|image|img|foto|photo|pic|web|edited|editada)(?:-\d+)?$/.test(suffix);
 }
 
 function generatePdfJob(job) {
@@ -485,9 +705,11 @@ async function exportWebPackage(payload) {
     const outputRoot = payload?.outputDir;
     if (!outputRoot) throw new Error("No se indico carpeta de salida.");
     const packageDir = path.join(outputRoot, slug);
-    fs.mkdirSync(packageDir, { recursive: true });
+    resetExportPackageDir(packageDir, outputRoot);
     copyIfExists(path.join(__dirname, "hosting", "assets", "public-catalog.css"), path.join(packageDir, "assets", "public-catalog.css"));
     copyIfExists(path.join(__dirname, "hosting", "assets", "public-catalog.js"), path.join(packageDir, "assets", "public-catalog.js"));
+    copyIfExists(GLOBAL_NO_PHOTO_SOURCE, path.join(packageDir, "assets", "img", "no-photo-camera.svg"));
+    copyIfExists(GLOBAL_RODEO_LOGO_SOURCE, path.join(packageDir, "assets", "img", "logo-rodeo-azul.png"));
     const assets = Array.isArray(payload?.assets) ? payload.assets : [];
     assets.forEach((asset) => {
         if (asset?.uploadOnly) return;
@@ -496,7 +718,8 @@ async function exportWebPackage(payload) {
         fs.mkdirSync(path.dirname(target), { recursive: true });
         copyWebAsset(asset.sourcePath, target);
     });
-    const metadata = await prepareMetadataWithBackblazeImages(payload?.metadata || {}, assets, slug, packageDir);
+    const metadataWithTemplates = applyBrandTemplatesToPackage(payload?.metadata || {}, packageDir);
+    const metadata = await prepareMetadataWithBackblazeImages(metadataWithTemplates, assets, slug, packageDir);
     fs.writeFileSync(path.join(packageDir, "catalog.json"), JSON.stringify(metadata, null, 2), "utf8");
     fs.writeFileSync(path.join(packageDir, "index.html"), buildWebExportHtml(payload?.snapshotHtml || "", metadata), "utf8");
     return { ok: true, outputDir: packageDir, slug };
@@ -598,6 +821,20 @@ function copyIfExists(sourcePath, targetPath) {
     fs.copyFileSync(sourcePath, targetPath);
 }
 
+function resetExportPackageDir(packageDir, outputRoot) {
+    const resolvedRoot = path.resolve(outputRoot);
+    const resolvedTarget = path.resolve(packageDir);
+    const normalizedRoot = resolvedRoot.toLowerCase();
+    const normalizedTarget = resolvedTarget.toLowerCase();
+    if (normalizedTarget === normalizedRoot || !normalizedTarget.startsWith(`${normalizedRoot}${path.sep}`)) {
+        throw new Error("Ruta de exportacion no segura para limpiar.");
+    }
+    if (fs.existsSync(resolvedTarget)) {
+        fs.rmSync(resolvedTarget, { recursive: true, force: true });
+    }
+    fs.mkdirSync(resolvedTarget, { recursive: true });
+}
+
 function copyWebAsset(sourcePath, targetPath) {
     if (!sourcePath || !fs.existsSync(sourcePath)) return;
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
@@ -633,15 +870,164 @@ function shouldCompressWebImage(sourcePath, targetPath) {
     return [".jpg", ".jpeg", ".png", ".webp"].includes(sourceExt) && targetExt === ".jpg";
 }
 
-async function prepareMetadataWithBackblazeImages(metadata, assets, slug, packageDir) {
-    const storage = loadImageStorageSettings();
+function applyBrandTemplatesToPackage(metadata, packageDir) {
     const cloned = JSON.parse(JSON.stringify(metadata || {}));
+    const products = Array.isArray(cloned.catalog) ? cloned.catalog : [];
+    const detectedBrands = dedupeStrings([
+        cloned.brandFilter,
+        ...products.map((product) => product?.brand || product?.marca || ""),
+    ]);
+    const templates = {};
+
+    products.forEach((product) => {
+        const brand = String(product?.brand || product?.marca || "").trim();
+        if (!brand) return;
+        product.brandSlug = normalizeBrandTemplateSlug(brand);
+    });
+
+    detectedBrands.forEach((brand) => {
+        const brandSlug = normalizeBrandTemplateSlug(brand);
+        if (!brandSlug) return;
+        const located = locateBrandTemplate(brand);
+        if (!located) return;
+        const { sourceDir, configPath, folderSlug } = located;
+        const config = readBrandTemplateConfig(configPath, brand, brandSlug);
+        if (!config) return;
+        const targetDir = path.join(packageDir, "assets", "brand_templates", folderSlug);
+        fs.mkdirSync(targetDir, { recursive: true });
+        fs.copyFileSync(configPath, path.join(targetDir, "config.json"));
+        const resolved = { ...config, slug: brandSlug, brand: config.brand || brand };
+        ["logo", "banner", "promo", "background", "placeholder"].forEach((field) => {
+            const fileName = safeBrandTemplateFileName(config[field]);
+            if (!fileName) {
+                resolved[field] = "";
+                return;
+            }
+            const sourcePath = path.join(sourceDir, fileName);
+            if (!fs.existsSync(sourcePath) || !fs.statSync(sourcePath).isFile()) {
+                resolved[field] = "";
+                return;
+            }
+            fs.copyFileSync(sourcePath, path.join(targetDir, fileName));
+            resolved[field] = `./assets/brand_templates/${folderSlug}/${fileName.replace(/\\/g, "/")}`;
+        });
+        templates[brandSlug] = resolved;
+    });
+
+    cloned.brandTemplates = {
+        defaultPlaceholder: "./assets/img/no-photo-camera.svg",
+        items: templates,
+    };
+    if (!Array.isArray(cloned.brands)) {
+        const brands = dedupeStrings(products.map((product) => product?.brand || product?.marca || ""));
+        cloned.brands = brands.sort((a, b) => a.localeCompare(b)).map((brand) => ({
+            name: brand,
+            slug: normalizeBrandTemplateSlug(brand),
+        }));
+    }
+    if (typeof cloned.brandFilterEnabled !== "boolean") {
+        cloned.brandFilterEnabled = Array.isArray(cloned.brands) && cloned.brands.length > 1;
+    }
+    if (!cloned.activeBrand && Array.isArray(cloned.brands) && cloned.brands.length === 1) {
+        cloned.activeBrand = cloned.brands[0];
+    }
+    const activeSlug = cloned.activeBrand && cloned.activeBrand.slug ? cloned.activeBrand.slug : "";
+    const activeTemplate = activeSlug ? templates[activeSlug] : null;
+    if (!cloned.brandFilterEnabled && cloned.activeBrand) {
+        const title = activeTemplate?.bannerTitle || cloned.activeBrand.name || cloned.title;
+        if (title) {
+            cloned.title = title;
+            cloned.heroTitle = title;
+        }
+        if (activeTemplate?.logo && !cloned.logoUrl) {
+            cloned.logoUrl = activeTemplate.logo;
+        }
+    }
+    return cloned;
+}
+
+function locateBrandTemplate(brand) {
+    if (!fs.existsSync(BRAND_TEMPLATES_SOURCE_DIR)) return null;
+    const brandSlug = normalizeBrandTemplateSlug(brand);
+    if (!brandSlug) return null;
+    const exactDir = path.join(BRAND_TEMPLATES_SOURCE_DIR, brandSlug);
+    const exactConfig = path.join(exactDir, "config.json");
+    if (fs.existsSync(exactConfig)) {
+        return { sourceDir: exactDir, configPath: exactConfig, folderSlug: brandSlug };
+    }
+    const entries = fs.readdirSync(BRAND_TEMPLATES_SOURCE_DIR, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+    for (const entry of entries) {
+        const folderSlug = normalizeBrandTemplateSlug(entry.name);
+        const sourceDir = path.join(BRAND_TEMPLATES_SOURCE_DIR, entry.name);
+        const configPath = path.join(sourceDir, "config.json");
+        if (!folderSlug || !fs.existsSync(configPath)) continue;
+        const config = readBrandTemplateConfig(configPath, brand, folderSlug);
+        const configBrandSlug = normalizeBrandTemplateSlug(config?.brand || "");
+        if (configBrandSlug && configBrandSlug === brandSlug) {
+            return { sourceDir, configPath, folderSlug };
+        }
+    }
+    for (const entry of entries) {
+        const folderSlug = normalizeBrandTemplateSlug(entry.name);
+        const sourceDir = path.join(BRAND_TEMPLATES_SOURCE_DIR, entry.name);
+        const configPath = path.join(sourceDir, "config.json");
+        if (!folderSlug || !fs.existsSync(configPath)) continue;
+        const config = readBrandTemplateConfig(configPath, brand, folderSlug);
+        const configBrandSlug = normalizeBrandTemplateSlug(config?.brand || "");
+        if ((folderSlug.length >= 4 && brandSlug.includes(folderSlug)) || (configBrandSlug.length >= 4 && brandSlug.includes(configBrandSlug))) {
+            return { sourceDir, configPath, folderSlug };
+        }
+    }
+    return null;
+}
+
+function readBrandTemplateConfig(configPath, fallbackBrand, fallbackSlug) {
+    try {
+        const parsed = JSON.parse(fs.readFileSync(configPath, "utf8"));
+        if (!parsed || typeof parsed !== "object") return null;
+        return {
+            brand: String(parsed.brand || fallbackBrand || "").trim(),
+            slug: normalizeBrandTemplateSlug(parsed.slug || fallbackSlug || fallbackBrand),
+            primaryColor: sanitizeHexColor(parsed.primaryColor, ""),
+            secondaryColor: sanitizeHexColor(parsed.secondaryColor, ""),
+            textColor: sanitizeHexColor(parsed.textColor, ""),
+            bannerTitle: String(parsed.bannerTitle || "").trim(),
+            promoText: String(parsed.promoText || "").trim(),
+            logo: parsed.logo || "",
+            banner: parsed.banner || "",
+            promo: parsed.promo || "",
+            background: parsed.background || "",
+            placeholder: parsed.placeholder || "",
+        };
+    } catch (error) {
+        console.error(`No se pudo leer plantilla de marca ${configPath}:`, error);
+        return null;
+    }
+}
+
+function safeBrandTemplateFileName(value) {
+    const normalized = String(value || "").replace(/\\/g, "/").split("/").filter(Boolean).join("/");
+    if (!normalized || normalized.includes("..")) return "";
+    return normalized;
+}
+
+function normalizeBrandTemplateSlug(value) {
+    return sanitizeSlug(value || "");
+}
+
+async function prepareMetadataWithBackblazeImages(metadata, assets, slug, packageDir) {
+    const cloned = JSON.parse(JSON.stringify(metadata || {}));
+    const storage = loadImageStorageSettings(cloned.imageStorage || {});
+    const strictBackblaze = storage.mode === "backblaze";
     if (storage.mode === "hosting") {
         stripBackblazeUploadHintsFromMetadata(cloned);
         return cloned;
     }
     if (!storage.bucketName || !storage.keyId || !storage.applicationKey || !storage.endpoint || !storage.cdnBaseUrl) {
-        appendBackblazeUploadLog(packageDir, "Configuracion B2 incompleta. Se mantiene hosting/local.");
+        appendBackblazeUploadLog(packageDir, "Configuracion B2 incompleta. No se pueden subir imagenes a Backblaze.");
+        if (strictBackblaze) {
+            throw new Error("Configuracion Backblaze incompleta. Revisa IMAGE_CDN_BASE_URL, B2_BUCKET_NAME, B2_KEY_ID, B2_APPLICATION_KEY y B2_ENDPOINT.");
+        }
         stripBackblazeUploadHintsFromMetadata(cloned);
         return cloned;
     }
@@ -649,11 +1035,15 @@ async function prepareMetadataWithBackblazeImages(metadata, assets, slug, packag
     const uploadTargets = collectBackblazeUploadTargets(cloned, assets, slug);
     if (!uploadTargets.length) {
         appendBackblazeUploadLog(packageDir, "No hay imagenes locales de catalogo para subir a B2.");
+        if (strictBackblaze) {
+            throw new Error("No hay imagenes locales preparadas para subir a Backblaze. Revisa que el Excel tenga ITEM y que las imagenes esten indexadas.");
+        }
         stripBackblazeUploadHintsFromMetadata(cloned);
         return cloned;
     }
 
     const remoteByRelativePath = new Map();
+    const uploadErrors = [];
     for (const target of uploadTargets) {
         try {
             const result = await uploadBackblazeObjectIfMissing(storage, target.sourcePath, target.objectKey);
@@ -661,8 +1051,13 @@ async function prepareMetadataWithBackblazeImages(metadata, assets, slug, packag
             remoteByRelativePath.set(normalizeRelativeCatalogPath(target.relativePath), remoteUrl);
             appendBackblazeUploadLog(packageDir, `${result.skipped ? "EXISTE" : "SUBIDA"} ${target.relativePath} -> ${remoteUrl}`);
         } catch (error) {
+            uploadErrors.push(`${target.relativePath}: ${error.message}`);
             appendBackblazeUploadLog(packageDir, `ERROR ${target.relativePath}: ${error.message}`);
         }
+    }
+
+    if (strictBackblaze && uploadErrors.length) {
+        throw new Error(`No se pudieron subir ${uploadErrors.length} imagen(es) a Backblaze. Revisa logs/backblaze-upload.log.`);
     }
 
     applyBackblazeUrlsToMetadata(cloned, remoteByRelativePath, storage.mode);
@@ -670,11 +1065,11 @@ async function prepareMetadataWithBackblazeImages(metadata, assets, slug, packag
     return cloned;
 }
 
-function loadImageStorageSettings() {
+function loadImageStorageSettings(requested = {}) {
     const env = loadProjectEnvFile();
-    const mode = ["hosting", "backblaze", "hybrid"].includes(String(env.IMAGE_STORAGE_MODE || "").toLowerCase())
-        ? String(env.IMAGE_STORAGE_MODE).toLowerCase()
-        : "hosting";
+    const requestedMode = normalizeImageStorageMode(requested?.mode);
+    const envMode = normalizeImageStorageMode(env.IMAGE_STORAGE_MODE);
+    const mode = requestedMode || envMode || "hosting";
     return {
         mode,
         cdnBaseUrl: sanitizeBaseUrl(env.IMAGE_CDN_BASE_URL || ""),
@@ -683,6 +1078,11 @@ function loadImageStorageSettings() {
         applicationKey: String(env.B2_APPLICATION_KEY || "").trim(),
         endpoint: sanitizeBaseUrl(env.B2_ENDPOINT || ""),
     };
+}
+
+function normalizeImageStorageMode(value) {
+    const mode = String(value || "").toLowerCase();
+    return ["hosting", "backblaze", "hybrid"].includes(mode) ? mode : "";
 }
 
 function loadProjectEnvFile() {
@@ -760,18 +1160,28 @@ function collectLocalMediaPaths(media) {
 }
 
 function buildBackblazeObjectKey(slug, product, relativePath, index) {
-    const item = sanitizeSlug(product.item || `item-${index + 1}`);
-    const fileName = buildBackblazeObjectFileName(item, relativePath, index);
-    const folders = ["catalogos", sanitizeSlug(slug) || "catalogo"].filter(Boolean);
+    const fileName = buildBackblazeObjectFileName(relativePath, index);
+    const folders = [sanitizeSlug(slug) || "catalogo"].filter(Boolean);
     return [...folders, fileName].join("/");
 }
 
-function buildBackblazeObjectFileName(item, relativePath, index) {
+function buildBackblazeObjectFileName(relativePath, index) {
     const ext = path.posix.extname(normalizeRelativeCatalogPath(relativePath)).toLowerCase() || ".jpg";
-    const safeItem = sanitizeSlug(item || `item-${index + 1}`) || `item-${index + 1}`;
-    const baseName = path.posix.basename(normalizeRelativeCatalogPath(relativePath), ext);
-    const suffixMatch = baseName.match(/_(\d+)$/);
-    return suffixMatch ? `${safeItem}-${suffixMatch[1]}${ext}` : `${safeItem}${ext}`;
+    const baseName = sanitizeBackblazeFileBaseName(path.posix.basename(normalizeRelativeCatalogPath(relativePath), ext)) || `item-${index + 1}`;
+    return `${baseName}${ext}`;
+}
+
+function sanitizeBackblazeFileBaseName(value) {
+    return String(value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim()
+        .replace(/[\\/]+/g, "-")
+        .replace(/\s+/g, "-")
+        .replace(/[^A-Za-z0-9._-]+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 120);
 }
 
 function applyBackblazeUrlsToMetadata(metadata, remoteByRelativePath, mode) {
@@ -1323,7 +1733,10 @@ function sanitizeArchiveName(value) {
 }
 
 function buildWebExportHtml(snapshotHtml, metadata) {
-    const safeMetadata = JSON.stringify({ ...(metadata || {}), catalog: [] });
+    const metadataPayload = metadata?.localPreview === true
+        ? { ...(metadata || {}) }
+        : { ...(metadata || {}), catalog: [] };
+    const safeMetadata = JSON.stringify(metadataPayload);
     const themeStyle = buildPublicCatalogThemeStyle(metadata?.theme);
     return `<!DOCTYPE html>
 <html lang="es">
@@ -1347,7 +1760,7 @@ function buildWebExportHtml(snapshotHtml, metadata) {
                     <img class="catalog-brand__logo" id="catalogLogo" alt="Logo">
                     <div>
                         <h1 id="catalogBrandTitle">${escapeHtml(metadata?.title || "Catalogo comercial")}</h1>
-                        <p id="catalogBrandSubtitle">${escapeHtml(metadata?.footerText || "Experiencia mayorista B2B")}</p>
+                        <p id="catalogBrandSubtitle">${escapeHtml(metadata?.footerText ?? "Experiencia mayorista B2B")}</p>
                     </div>
                 </div>
                 <div class="catalog-meta">
@@ -1358,6 +1771,7 @@ function buildWebExportHtml(snapshotHtml, metadata) {
             </div>
             <div class="catalog-header__bottom" style="margin-top:14px;">
                 <label class="catalog-search"><span>Buscar</span><input id="catalogSearch" type="search" placeholder="SKU, descripcion, marca o categoria"></label>
+                <div class="catalog-header__filters"><div class="filters" id="categoryFilters"></div></div>
                 <div class="exports-panel" id="exportsPanel"></div>
                 <button class="catalog-cart-button" id="cartButton" type="button">Carrito <span class="cart-badge" id="cartBadge">0</span></button>
             </div>
@@ -1368,7 +1782,7 @@ function buildWebExportHtml(snapshotHtml, metadata) {
                 <p id="heroSubtitle">${escapeHtml(metadata?.heroSubtitle || "Selecciona productos, revisa empaques y registra tu pedido empresarial.")}</p>
                 <div class="hero-card__highlights"><div class="hero-highlight">Mayorista B2B</div><div class="hero-highlight">Pedidos trazables</div><div class="hero-highlight">Excel operativo</div></div>
             </div>
-            <aside class="panel"><h3>Acceso rapido</h3><div class="filters" id="categoryFilters"></div><p class="status-note" id="resultCount"></p></aside>
+            <aside class="panel"><h3>Acceso rapido</h3><p class="status-note" id="resultCount"></p><div id="featuredBrandsMount"></div></aside>
         </section>
         <section class="promo-block" id="promoBlock" hidden>
             <div class="promo-copy">

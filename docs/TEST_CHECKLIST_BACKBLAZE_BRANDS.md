@@ -138,6 +138,58 @@ Resultado esperado:
 - No cambia configuracion SMTP.
 - El correo sigue usando la configuracion existente en `catalogos_api/config.php`.
 
+## 13. Subida de imagen desde hosting a Backblaze/CDN
+
+- Configurar el bloque `backblaze` en `catalogos_api/config.php`.
+- Entrar al admin en `catalogos_admin/catalog_update_images.php`.
+- Elegir un catalogo activo.
+- Subir una imagen nueva para un ITEM existente.
+
+Resultado esperado:
+
+- La imagen se sube a Backblaze/CDN.
+- El `catalog.json` queda actualizado con la URL CDN.
+- Si GD esta habilitado, se crea tambien miniatura.
+- El catalogo publico muestra la imagen nueva.
+
+## 14. Miniaturas faltantes
+
+- Entrar a `catalogos_admin/catalog_update_images.php`.
+- Presionar **Generar miniaturas faltantes**.
+- Repetir si el catalogo tiene mas de 40 productos pendientes.
+
+Resultado esperado:
+
+- El sistema crea backup antes de guardar.
+- Las miniaturas se guardan en `updates/thumbs/` si Backblaze esta activo.
+- Las tarjetas del catalogo publico cargan desde miniatura cuando existe.
+- Si alguna imagen falla, el proceso continua con las demas.
+
+## 15. Productos agotados
+
+- Actualizar un producto para que tenga disponibilidad cero o estado agotado.
+- Abrir el catalogo publico.
+- Intentar agregar ese producto al carrito.
+
+Resultado esperado:
+
+- La tarjeta aparece desactivada con indicador de agotado.
+- El boton de agregar queda bloqueado.
+- El producto agotado no entra al pedido.
+
+## 16. Actualizacion con productos nuevos desde Excel
+
+- Usar la pantalla de actualizacion de datos del catalogo.
+- Subir un Excel que incluya un ITEM que no existe en el catalogo.
+- Aplicar la actualizacion.
+
+Resultado esperado:
+
+- El sistema muestra conteo de productos nuevos antes de aplicar.
+- El nuevo producto se agrega al inicio del catalogo.
+- Se conserva descripcion, precio, empaque, marca, categoria, disponibilidad y URL de imagen si existen en el Excel.
+- Se crea backup antes de guardar.
+
 ## Rollback rapido
 
 - En la app, volver a `Almacenamiento de imagenes: Hosting actual`.

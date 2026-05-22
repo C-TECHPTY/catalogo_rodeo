@@ -1,0 +1,14 @@
+{
+  "brand": "LUXURY",
+  "slug": "luxury",
+  "primaryColor": "#111111",
+  "secondaryColor": "#D4AF37",
+  "textColor": "#FFFFFF",
+  "bannerTitle": "Luxury Home Liner",
+  "promoText": "Coleccion premium para el hogar",
+  "logo": "logo.png",
+  "banner": "banner.jpg",
+  "promo": "promo.jpg",
+  "background": "background.jpg",
+  "placeholder": "placeholder.png"
+}

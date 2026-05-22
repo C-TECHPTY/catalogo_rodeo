@@ -92,7 +92,7 @@ function output_order_csv(array $order, array $rows): void
     fputcsv($output, ['Fecha', $order['created_at'] ?? '']);
     fputcsv($output, ['Total', number_format((float) ($order['total'] ?? 0), 2, '.', '')]);
     fputcsv($output, []);
-    fputcsv($output, ['URL_IMAGEN', 'ITEM', 'Descripcion', 'Cantidad', 'Unidad de venta', 'Empaque', 'Piezas', 'Precio unitario', 'Total linea']);
+    fputcsv($output, ['URL_IMAGEN', 'ITEM', 'Descripcion', 'Cantidad (bultos)', 'Venta', 'Empaque', 'Pz/Bulto', 'Total Pz', 'Precio por bulto', 'Total linea']);
 
     foreach ($rows as $row) {
         fputcsv($output, [
@@ -100,9 +100,10 @@ function output_order_csv(array $order, array $rows): void
             $row['item_code'] ?? '',
             $row['description'] ?? '',
             format_plain_number((float) ($row['quantity'] ?? 0)),
-            $row['sale_unit'] ?? 'unidad',
-            trim((string) (($row['package_label'] ?? '') . ' ' . format_plain_number((float) ($row['package_qty'] ?? 0)))),
-            format_plain_number((float) ($row['pieces_total'] ?? $row['quantity'] ?? 0)),
+            order_export_sale_unit_label($row),
+            order_export_package_label($row),
+            format_plain_number(order_export_pack_qty($row)),
+            format_plain_number(order_export_total_pieces($row)),
             number_format((float) ($row['unit_price'] ?? $row['price'] ?? 0), 2, '.', ''),
             number_format((float) ($row['line_total'] ?? $row['total'] ?? $row['price'] ?? 0), 2, '.', ''),
         ]);
@@ -114,6 +115,7 @@ function output_order_csv(array $order, array $rows): void
 function output_order_printable_html(array $order, array $rows): void
 {
     header('Content-Type: text/html; charset=utf-8');
+    $logoUrl = order_export_logo_public_url();
     ?>
     <!DOCTYPE html>
     <html lang="es">
@@ -122,16 +124,30 @@ function output_order_printable_html(array $order, array $rows): void
         <title><?= html_escape('Pedido ' . order_number_label($order)) ?></title>
         <style>
             body { font-family: Arial, Helvetica, sans-serif; margin: 24px; color: #1d1d1d; }
-            h1 { margin-bottom: 8px; }
+            .order-header { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-bottom: 20px; border-bottom: 3px solid #2558b7; padding-bottom: 14px; }
+            .order-logo { width: 260px; max-width: 42%; height: auto; display: block; }
+            h1 { margin: 0 0 8px; color: #1f3b5f; }
+            .order-subtitle { color: #667085; font-size: 13px; font-weight: 700; text-align: right; }
             .meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; margin-bottom: 24px; }
             table { width: 100%; border-collapse: collapse; }
             th, td { border: 1px solid #d8d8d8; padding: 8px; text-align: left; vertical-align: top; }
-            th { background: #f1f1f1; }
+            th { background: #1f3b5f; color: #fff; }
+            td.numeric, th.numeric { text-align: center; }
             .total { margin-top: 16px; text-align: right; font-size: 18px; font-weight: 700; }
+            @media print {
+                body { margin: 12mm; }
+                .order-logo { max-width: 250px; }
+            }
         </style>
     </head>
     <body>
-        <h1>Pedido <?= html_escape(order_number_label($order)) ?></h1>
+        <div class="order-header">
+            <img class="order-logo" src="<?= html_escape($logoUrl) ?>" alt="Rodeo Import">
+            <div>
+                <h1>Pedido <?= html_escape(order_number_label($order)) ?></h1>
+                <div class="order-subtitle">Pedido mayorista por bulto</div>
+            </div>
+        </div>
         <div class="meta">
             <div><strong>Catalogo:</strong> <?= html_escape(order_catalog_title($order)) ?></div>
             <div><strong>Estado:</strong> <?= html_escape($order['status'] ?? 'new') ?></div>
@@ -151,12 +167,13 @@ function output_order_printable_html(array $order, array $rows): void
                 <tr>
                     <th>ITEM</th>
                     <th>Descripcion</th>
-                    <th>Cantidad</th>
-                    <th>Unidad</th>
+                    <th class="numeric">Cantidad (bultos)</th>
+                    <th>Venta</th>
                     <th>Empaque</th>
-                    <th>Piezas</th>
-                    <th>Precio</th>
-                    <th>Total</th>
+                    <th class="numeric">Pz/Bulto</th>
+                    <th class="numeric">Total Pz</th>
+                    <th class="numeric">Precio por bulto</th>
+                    <th class="numeric">Total</th>
                 </tr>
             </thead>
             <tbody>
@@ -164,12 +181,13 @@ function output_order_printable_html(array $order, array $rows): void
                 <tr>
                     <td><?= html_escape($row['item_code'] ?? '') ?></td>
                     <td><?= html_escape($row['description'] ?? '') ?></td>
-                    <td><?= html_escape(format_plain_number((float) ($row['quantity'] ?? 0))) ?></td>
-                    <td><?= html_escape($row['sale_unit'] ?? 'unidad') ?></td>
-                    <td><?= html_escape(trim((string) (($row['package_label'] ?? '') . ' ' . format_plain_number((float) ($row['package_qty'] ?? 0))))) ?></td>
-                    <td><?= html_escape(format_plain_number((float) ($row['pieces_total'] ?? $row['quantity'] ?? 0))) ?></td>
-                    <td><?= html_escape(number_format((float) ($row['unit_price'] ?? $row['price'] ?? 0), 2, '.', '')) ?></td>
-                    <td><?= html_escape(number_format((float) ($row['line_total'] ?? $row['total'] ?? $row['price'] ?? 0), 2, '.', '')) ?></td>
+                    <td class="numeric"><?= html_escape(format_plain_number((float) ($row['quantity'] ?? 0))) ?></td>
+                    <td><?= html_escape(order_export_sale_unit_label($row)) ?></td>
+                    <td><?= html_escape(order_export_package_label($row)) ?></td>
+                    <td class="numeric"><?= html_escape(format_plain_number(order_export_pack_qty($row))) ?></td>
+                    <td class="numeric"><?= html_escape(format_plain_number(order_export_total_pieces($row))) ?></td>
+                    <td class="numeric"><?= html_escape(number_format((float) ($row['unit_price'] ?? $row['price'] ?? 0), 2, '.', '')) ?></td>
+                    <td class="numeric"><?= html_escape(number_format((float) ($row['line_total'] ?? $row['total'] ?? $row['price'] ?? 0), 2, '.', '')) ?></td>
                 </tr>
             <?php endforeach; ?>
             </tbody>

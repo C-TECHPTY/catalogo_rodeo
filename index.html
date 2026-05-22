@@ -17,7 +17,7 @@
             <div class="control-panel__inner">
                 <div class="control-panel__header">
                     <h1>Generador de Catalogo</h1>
-                    <p>Usa el modo manual para un catalogo y el modo por lotes para generar varios PDF locales por categoria.</p>
+                    <p>Configura datos, alcance, imagenes, diseño y publicacion desde un flujo ordenado.</p>
                 </div>
 
                 <div class="mode-switch">
@@ -25,7 +25,7 @@
                     <button id="batchModeButton" class="mode-switch__button" type="button">Modo por lotes</button>
                 </div>
 
-                <section class="controls-section manual-only">
+                <section class="controls-section controls-section--data manual-only">
                     <h2>Datos generales</h2>
                     <div class="controls-grid">
                         <label class="control-field">
@@ -64,7 +64,7 @@
                     </div>
                 </section>
 
-                <section class="controls-section manual-only">
+                <section class="controls-section controls-section--design manual-only">
                     <h2>Diseno</h2>
                     <div class="controls-grid">
                         <label class="control-field">
@@ -107,7 +107,7 @@
                     </div>
                 </section>
 
-                <section class="controls-section manual-only">
+                <section class="controls-section controls-section--editor manual-only">
                     <h2>Editor visual</h2>
                     <div class="controls-grid">
                         <label class="control-field control-field--wide">
@@ -161,17 +161,31 @@
                     <p id="layoutEditorStatus" class="status-message">Activa el editor para mover bloques en la vista previa y guardar una plantilla propia.</p>
                 </section>
 
-                <section class="controls-section manual-only">
-                    <h2>Archivos</h2>
+                <section class="controls-section controls-section--files manual-only">
+                    <h2>Excel, imagenes y alcance</h2>
                     <div class="controls-grid">
+                        <div class="section-subtitle control-field--wide">Origen del catalogo</div>
                         <label class="control-field control-field--wide">
                             <span>Archivo Excel</span>
                             <input id="excelFile" type="file" accept=".xlsx,.xlsm,.xls">
                         </label>
 
+                        <div class="section-subtitle control-field--wide">Imagenes de productos</div>
                         <label class="control-field control-field--wide">
                             <span>Imagenes</span>
                             <input id="imageFiles" type="file" accept=".jpg,.jpeg,.png,.webp,.JPG,.JPEG,.PNG,.WEBP" multiple webkitdirectory>
+                        </label>
+
+                        <div class="control-field control-field--wide">
+                            <span>Buscar imagenes por ITEM</span>
+                            <button id="matchImagesByItemButton" type="button">Seleccionar carpeta grande</button>
+                            <small>Usa los ITEM del Excel y solo carga imagenes con nombre coincidente.</small>
+                        </div>
+
+                        <label class="control-field control-field--wide">
+                            <span>Productos sin imagen</span>
+                            <label class="checkbox-line"><input id="hideMissingImages" type="checkbox"> No incluir productos sin imagen principal</label>
+                            <small>Si queda desactivado, se muestran con espacio de imagen vacio.</small>
                         </label>
 
                         <label class="control-field control-field--wide">
@@ -179,6 +193,7 @@
                             <input id="extraMediaFiles" type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.webm,.mov,.JPG,.JPEG,.PNG,.WEBP,.MP4,.WEBM,.MOV" multiple webkitdirectory>
                         </label>
 
+                        <div class="section-subtitle control-field--wide">Filtros de generacion</div>
                         <label class="control-field control-field--wide">
                             <span>Precio del catalogo</span>
                             <select id="priceModeSelect">
@@ -207,10 +222,43 @@
                                 <option value="">Todas las marcas</option>
                             </select>
                         </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Categoria inteligente</span>
+                            <select id="smartCategoryFilter">
+                                <option value="">Todas las categorias</option>
+                            </select>
+                            <small>Filtra por grupos detectados desde descripcion, ITEM y categoria original.</small>
+                        </label>
+
+                        <div class="section-subtitle control-field--wide">Marcas destacadas del catalogo completo</div>
+                        <label class="control-field control-field--wide">
+                            <span>Mostrar marcas destacadas</span>
+                            <label class="checkbox-line"><input id="featuredBrandsEnabled" type="checkbox" checked> Mostrar logos en Acceso rapido solo cuando sea catalogo completo</label>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Marca destacada</span>
+                            <select id="featuredBrandSelect">
+                                <option value="">Selecciona una marca</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Logo PNG/JPG/SVG</span>
+                            <input id="featuredBrandLogoFile" type="file" accept=".jpg,.jpeg,.png,.webp,.svg,.JPG,.JPEG,.PNG,.WEBP,.SVG">
+                        </label>
                     </div>
+                    <div class="panel-actions">
+                        <button id="saveBrandVisualPresetButton" type="button">Guardar visual de marca</button>
+                        <button id="applyBrandVisualPresetButton" type="button">Aplicar visual de marca</button>
+                        <button id="addFeaturedBrandButton" type="button">Agregar marca destacada</button>
+                    </div>
+                    <div id="featuredBrandsList" class="featured-brand-editor-list" aria-live="polite"></div>
+                    <p id="brandVisualPresetStatus" class="status-message">Selecciona una marca, ajusta colores/logo/promocion y guarda su configuracion visual.</p>
                 </section>
 
-                <section class="controls-section manual-only">
+                <section class="controls-section controls-section--image-source manual-only">
                     <h2>Fuente de imagenes</h2>
                     <div class="controls-grid">
                         <label class="control-field control-field--wide">
@@ -264,7 +312,7 @@
                     <p id="imageSourceStatus" class="status-message">Local actual mantiene el flujo existente. Remota usa URL externa. Hibrida prueba remota y conserva fallback local.</p>
                 </section>
 
-                <section class="controls-section manual-only">
+                <section class="controls-section controls-section--promo manual-only">
                     <h2>Promocion visual</h2>
                     <div class="controls-grid">
                         <label class="control-field control-field--wide">
@@ -293,6 +341,21 @@
                         </label>
 
                         <label class="control-field control-field--wide">
+                            <span>Imagenes promo slider</span>
+                            <input id="promoSliderImages" type="file" accept=".jpg,.jpeg,.png,.webp,.JPG,.JPEG,.PNG,.WEBP" multiple>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Tiempo slider</span>
+                            <select id="promoSliderInterval">
+                                <option value="3000">3 segundos</option>
+                                <option value="5000">5 segundos</option>
+                                <option value="8000">8 segundos</option>
+                                <option value="15000" selected>15 segundos</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field control-field--wide">
                             <span>Video promocional opcional</span>
                             <input id="promoVideoFile" type="file" accept=".mp4,.webm,.mov,.MP4,.WEBM,.MOV">
                         </label>
@@ -309,9 +372,10 @@
                     </div>
                 </section>
 
-                <section class="controls-section manual-only">
+                <section class="controls-section controls-section--publish manual-only">
                     <h2>Publicacion web</h2>
                     <div class="controls-grid">
+                        <div class="section-subtitle control-field--wide">Salida y URL publica</div>
                         <label class="control-field">
                             <span>Nombre del catalogo</span>
                             <input id="webCatalogSlug" type="text" value="catalogo-publicable">
@@ -337,6 +401,7 @@
                             <input id="webApiBaseUrl" type="text" value="" placeholder="https://tuempresa.com/catalogos_api">
                         </label>
 
+                        <div class="section-subtitle control-field--wide">Conexion FTP</div>
                         <label class="control-field">
                             <span>FTP host</span>
                             <input id="hostingFtpHost" type="text" value="" placeholder="ftp.rodeoimportzl.com">
@@ -394,6 +459,7 @@
                             <small id="hostingSettingsPath" class="settings-path">La configuracion se guarda solo en esta PC.</small>
                         </div>
 
+                        <div class="section-subtitle control-field--wide">Licencia y validacion</div>
                         <div class="control-field control-field--wide saas-settings">
                             <span>Licencia SaaS</span>
                             <label class="settings-autosave">
@@ -428,6 +494,7 @@
                             <small id="saasLicenseStatus" class="settings-path">Validacion opcional. Si falla, la app continua en modo legacy.</small>
                         </div>
 
+                        <div class="section-subtitle control-field--wide">Paquete generado</div>
                         <label class="control-field control-field--wide">
                             <span>Carpeta salida web</span>
                             <div class="path-picker">
@@ -453,7 +520,7 @@
                     </div>
                 </section>
 
-                <section class="controls-section manual-only">
+                <section class="controls-section controls-section--actions manual-only">
                     <h2>Acciones</h2>
                     <div class="panel-actions">
                         <button id="renderButton" type="button">Generar catalogo</button>

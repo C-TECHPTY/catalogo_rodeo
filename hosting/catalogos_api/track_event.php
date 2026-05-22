@@ -39,6 +39,7 @@ $allowedEvents = [
     'order_submit_success',
     'order_submit_failed',
     'offline_order_queued',
+    'featured_brand_filter',
 ];
 
 if (!in_array($eventType, $allowedEvents, true)) {
@@ -87,6 +88,30 @@ db()->prepare(
     'ip_address' => normalize_tracking_text((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 64),
     'user_agent' => normalize_tracking_text((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 255),
 ]);
+
+if ($eventType === 'product_detail' && catalog_table_exists('catalog_product_view_counters')) {
+    $itemCode = normalize_tracking_text((string) ($product['item_code'] ?? $product['item'] ?? ''), 120);
+    if ($itemCode !== '') {
+        db()->prepare(
+            'INSERT INTO catalog_product_view_counters (
+                catalog_id, item_code, item_name, category, view_count, last_viewed_at
+             ) VALUES (
+                :catalog_id, :item_code, :item_name, :category, 1, NOW()
+             )
+             ON DUPLICATE KEY UPDATE
+                item_name = IF(VALUES(item_name) <> \'\', VALUES(item_name), item_name),
+                category = IF(VALUES(category) <> \'\', VALUES(category), category),
+                view_count = view_count + 1,
+                last_viewed_at = NOW(),
+                updated_at = NOW()'
+        )->execute([
+            'catalog_id' => (int) $context['catalog']['id'],
+            'item_code' => $itemCode,
+            'item_name' => normalize_tracking_text((string) ($product['item_name'] ?? $product['description'] ?? ''), 255),
+            'category' => normalize_tracking_text((string) ($product['category'] ?? ''), 160),
+        ]);
+    }
+}
 
 json_response([
     'ok' => true,

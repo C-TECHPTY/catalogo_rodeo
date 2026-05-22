@@ -511,6 +511,169 @@ function fetch_share_link_by_token(string $token): ?array
     return $link ?: null;
 }
 
+function generate_short_link_code(int $length = 8): string
+{
+    $alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    $max = strlen($alphabet) - 1;
+    $code = '';
+    for ($i = 0; $i < $length; $i++) {
+        $code .= $alphabet[random_int(0, $max)];
+    }
+    return $code;
+}
+
+function short_link_base_url(string $publicUrl): string
+{
+    $parts = parse_url(trim($publicUrl));
+    $scheme = (string) ($parts['scheme'] ?? '');
+    $host = (string) ($parts['host'] ?? '');
+    if ($scheme === '' || $host === '') {
+        return '';
+    }
+    $port = isset($parts['port']) ? ':' . (string) $parts['port'] : '';
+    return $scheme . '://' . $host . $port . '/l.php';
+}
+
+function catalog_full_share_url(array $link, string $publicUrl): string
+{
+    $token = trim((string) ($link['token'] ?? ''));
+    return $publicUrl !== '' && $token !== '' ? url_with_query_params($publicUrl, ['token' => $token]) : '';
+}
+
+function catalog_short_share_url(array $link, string $publicUrl): string
+{
+    if (!catalog_table_exists('catalog_short_links')) {
+        return '';
+    }
+
+    $short = ensure_catalog_short_link($link);
+    $code = trim((string) ($short['code'] ?? ''));
+    $baseUrl = short_link_base_url($publicUrl);
+    if ($code === '' || $baseUrl === '') {
+        return '';
+    }
+
+    return url_with_query_params($baseUrl, ['c' => $code]);
+}
+
+function catalog_share_public_url(array $link, string $publicUrl): string
+{
+    $shortUrl = catalog_short_share_url($link, $publicUrl);
+    return $shortUrl !== '' ? $shortUrl : catalog_full_share_url($link, $publicUrl);
+}
+
+function ensure_catalog_short_link(array $link): ?array
+{
+    if (!catalog_table_exists('catalog_short_links')) {
+        return null;
+    }
+
+    $shareLinkId = (int) ($link['id'] ?? 0);
+    if ($shareLinkId <= 0) {
+        return null;
+    }
+
+    $statement = db()->prepare('SELECT * FROM catalog_short_links WHERE share_link_id = :share_link_id LIMIT 1');
+    $statement->execute(['share_link_id' => $shareLinkId]);
+    $existing = $statement->fetch();
+    if ($existing) {
+        return $existing;
+    }
+
+    $catalogId = (int) ($link['catalog_id'] ?? 0);
+    if ($catalogId <= 0) {
+        return null;
+    }
+
+    for ($attempt = 0; $attempt < 8; $attempt++) {
+        $code = generate_short_link_code();
+        try {
+            db()->prepare(
+                'INSERT INTO catalog_short_links (share_link_id, catalog_id, seller_id, client_id, code)
+                 VALUES (:share_link_id, :catalog_id, :seller_id, :client_id, :code)'
+            )->execute([
+                'share_link_id' => $shareLinkId,
+                'catalog_id' => $catalogId,
+                'seller_id' => !empty($link['seller_id']) ? (int) $link['seller_id'] : null,
+                'client_id' => !empty($link['client_id']) ? (int) $link['client_id'] : null,
+                'code' => $code,
+            ]);
+
+            return [
+                'id' => (int) db()->lastInsertId(),
+                'share_link_id' => $shareLinkId,
+                'catalog_id' => $catalogId,
+                'seller_id' => !empty($link['seller_id']) ? (int) $link['seller_id'] : null,
+                'client_id' => !empty($link['client_id']) ? (int) $link['client_id'] : null,
+                'code' => $code,
+                'is_active' => 1,
+            ];
+        } catch (Throwable $exception) {
+            if (!str_contains(strtolower($exception->getMessage()), 'duplicate')) {
+                throw $exception;
+            }
+        }
+    }
+
+    return null;
+}
+
+function fetch_short_link_target(string $code): ?array
+{
+    $code = strtoupper(preg_replace('/[^A-Z0-9]/', '', $code) ?? '');
+    if ($code === '' || !catalog_table_exists('catalog_short_links')) {
+        return null;
+    }
+
+    $statement = db()->prepare(
+        'SELECT sl.*,
+                l.token, l.expires_at AS share_expires_at, l.is_active AS share_is_active,
+                c.public_url, c.slug AS catalog_slug, c.status AS catalog_status, c.expires_at AS catalog_expires_at
+         FROM catalog_short_links sl
+         INNER JOIN catalog_share_links l ON l.id = sl.share_link_id
+         INNER JOIN catalogs c ON c.id = sl.catalog_id
+         WHERE sl.code = :code
+         LIMIT 1'
+    );
+    $statement->execute(['code' => $code]);
+    $target = $statement->fetch();
+    return $target ?: null;
+}
+
+function short_link_target_status(?array $target): string
+{
+    if (!$target) {
+        return 'not_found';
+    }
+    if ((int) ($target['is_active'] ?? 0) !== 1 || (int) ($target['share_is_active'] ?? 0) !== 1) {
+        return 'inactive';
+    }
+    if ((string) ($target['catalog_status'] ?? 'active') !== 'active') {
+        return 'catalog_inactive';
+    }
+    if (!empty($target['catalog_expires_at']) && strtotime((string) $target['catalog_expires_at']) < time()) {
+        return 'catalog_expired';
+    }
+    if (!empty($target['share_expires_at']) && strtotime((string) $target['share_expires_at']) < time()) {
+        return 'expired';
+    }
+    if (trim((string) ($target['public_url'] ?? '')) === '' || trim((string) ($target['token'] ?? '')) === '') {
+        return 'invalid';
+    }
+    return 'active';
+}
+
+function record_short_link_open(int $shortLinkId, int $shareLinkId): void
+{
+    if ($shortLinkId > 0) {
+        db()->prepare(
+            'UPDATE catalog_short_links
+             SET open_count = open_count + 1, last_opened_at = NOW(), updated_at = NOW()
+             WHERE id = :id'
+        )->execute(['id' => $shortLinkId]);
+    }
+}
+
 function fetch_seller_by_public_token(string $token): ?array
 {
     if ($token === '' || !catalog_table_exists('sellers') || !catalog_column_exists('sellers', 'public_token')) {
@@ -527,6 +690,32 @@ function fetch_seller_by_public_token(string $token): ?array
     $seller = $statement->fetch();
 
     return $seller ?: null;
+}
+
+function fetch_auto_catalog_seller_session_by_token(string $token): ?array
+{
+    if ($token === '' || !catalog_table_exists('auto_catalog_seller_sessions')) {
+        return null;
+    }
+
+    $statement = db()->prepare(
+        'SELECT *
+         FROM auto_catalog_seller_sessions
+         WHERE seller_token = :token AND is_active = 1
+         LIMIT 1'
+    );
+    $statement->execute(['token' => $token]);
+    $session = $statement->fetch();
+
+    if ($session) {
+        db()->prepare(
+            'UPDATE auto_catalog_seller_sessions
+             SET last_opened_at = NOW()
+             WHERE id = :id'
+        )->execute(['id' => (int) $session['id']]);
+    }
+
+    return $session ?: null;
 }
 
 function fetch_seller_token_by_id(?int $sellerId): string
@@ -562,6 +751,7 @@ function resolve_public_catalog_context(string $slug, string $token = '', string
     $catalog = ensure_catalog_active($slug);
     $link = null;
     $sellerByToken = null;
+    $autoSellerSession = null;
 
     if ($token !== '') {
         $link = fetch_share_link_by_token($token);
@@ -590,11 +780,14 @@ function resolve_public_catalog_context(string $slug, string $token = '', string
 
     if (!$link && $sellerToken !== '') {
         $sellerByToken = fetch_seller_by_public_token($sellerToken);
+        if (!$sellerByToken) {
+            $autoSellerSession = fetch_auto_catalog_seller_session_by_token($sellerToken);
+        }
     }
 
     $sellerId = $link['seller_id'] ?? $sellerByToken['id'] ?? $catalog['seller_id'] ?? null;
-    $sellerName = $link['seller_name'] ?? $sellerByToken['name'] ?? $catalog['seller_display_name'] ?? $catalog['seller_name'] ?? '';
-    $resolvedSellerToken = $sellerByToken['public_token'] ?? '';
+    $sellerName = $link['seller_name'] ?? $sellerByToken['name'] ?? $autoSellerSession['seller_name'] ?? $catalog['seller_display_name'] ?? $catalog['seller_name'] ?? '';
+    $resolvedSellerToken = $sellerByToken['public_token'] ?? $autoSellerSession['seller_token'] ?? '';
     if ($resolvedSellerToken === '' && $sellerId) {
         $resolvedSellerToken = fetch_seller_token_by_id((int) $sellerId);
     }
@@ -713,8 +906,63 @@ function build_public_catalog_payload(array $context): array
         'promotion' => $promotion,
         'legacy_pdf_url' => (string) ($catalog['legacy_pdf_url'] ?? ''),
         'modern_pdf_url' => (string) ($catalog['modern_pdf_url'] ?? ''),
+        'product_view_counts' => catalog_product_view_counts((int) $catalog['id']),
         'metadata' => $json,
     ];
+}
+
+function catalog_product_view_counts(int $catalogId): array
+{
+    if ($catalogId <= 0) {
+        return [];
+    }
+
+    if (catalog_table_exists('catalog_product_view_counters')) {
+        $statement = db()->prepare(
+            'SELECT item_code, view_count, last_viewed_at
+             FROM catalog_product_view_counters
+             WHERE catalog_id = :catalog_id'
+        );
+        $statement->execute(['catalog_id' => $catalogId]);
+        $counts = [];
+        foreach ($statement->fetchAll() as $row) {
+            $itemCode = trim((string) ($row['item_code'] ?? ''));
+            if ($itemCode === '') {
+                continue;
+            }
+            $counts[$itemCode] = [
+                'views' => (int) ($row['view_count'] ?? 0),
+                'last_viewed_at' => (string) ($row['last_viewed_at'] ?? ''),
+            ];
+        }
+        return $counts;
+    }
+
+    if (!catalog_table_exists('catalog_behavior_events')) {
+        return [];
+    }
+
+    $statement = db()->prepare(
+        "SELECT item_code, COUNT(*) AS view_count, MAX(created_at) AS last_viewed_at
+         FROM catalog_behavior_events
+         WHERE catalog_id = :catalog_id
+           AND event_type = 'product_detail'
+           AND item_code <> ''
+         GROUP BY item_code"
+    );
+    $statement->execute(['catalog_id' => $catalogId]);
+    $counts = [];
+    foreach ($statement->fetchAll() as $row) {
+        $itemCode = trim((string) ($row['item_code'] ?? ''));
+        if ($itemCode === '') {
+            continue;
+        }
+        $counts[$itemCode] = [
+            'views' => (int) ($row['view_count'] ?? 0),
+            'last_viewed_at' => (string) ($row['last_viewed_at'] ?? ''),
+        ];
+    }
+    return $counts;
 }
 
 function audit_log(string $action, string $entityType = '', ?int $entityId = null, array $context = []): void
@@ -1253,10 +1501,15 @@ function create_share_link(int $catalogId, ?int $sellerId, ?int $clientId, strin
         'client_id' => $clientId,
     ]);
 
-    return [
+    $link = [
         'id' => $id,
+        'catalog_id' => $catalogId,
+        'seller_id' => $sellerId,
+        'client_id' => $clientId,
         'token' => $token,
     ];
+    ensure_catalog_short_link($link);
+    return $link;
 }
 
 function update_order_status(int $orderId, string $nextStatus, string $notes = ''): void
@@ -1367,7 +1620,7 @@ function build_order_csv_string(array $order, array $rows): string
     fputcsv($stream, ['Fecha', $order['created_at'] ?? date('Y-m-d H:i:s')]);
     fputcsv($stream, ['Total', number_format((float) ($order['total'] ?? 0), 2, '.', '')]);
     fputcsv($stream, []);
-    fputcsv($stream, ['URL_IMAGEN', 'ITEM', 'Descripcion', 'Cantidad', 'Unidad de venta', 'Empaque', 'Piezas', 'Precio unitario', 'Total linea']);
+    fputcsv($stream, ['URL_IMAGEN', 'ITEM', 'Descripcion', 'Cantidad (bultos)', 'Venta', 'Empaque', 'Pz/Bulto', 'Total Pz', 'Precio por bulto', 'Total linea']);
 
     foreach ($rows as $row) {
         fputcsv($stream, [
@@ -1375,9 +1628,10 @@ function build_order_csv_string(array $order, array $rows): string
             $row['item_code'] ?? '',
             $row['description'] ?? '',
             format_plain_number((float) ($row['quantity'] ?? 0)),
-            $row['sale_unit'] ?? '',
-            trim((string) (($row['package_label'] ?? '') . ' ' . format_plain_number((float) ($row['package_qty'] ?? 0)))),
-            format_plain_number((float) ($row['pieces_total'] ?? 0)),
+            order_export_sale_unit_label($row),
+            order_export_package_label($row),
+            format_plain_number(order_export_pack_qty($row)),
+            format_plain_number(order_export_total_pieces($row)),
             number_format((float) ($row['unit_price'] ?? 0), 2, '.', ''),
             number_format((float) ($row['line_total'] ?? 0), 2, '.', ''),
         ]);
@@ -1397,7 +1651,12 @@ function build_order_xlsx_file(array $order, array $rows, string $targetPath): b
     $dataEndRow = $dataStartRow + max(count($rows) - 1, 0);
     $totalRow = $dataEndRow + 2;
 
-    $embeddedImages = prepare_order_xlsx_images($rows, $dataStartRow);
+    $embeddedImages = [];
+    $logoImage = prepare_order_xlsx_logo_image(1);
+    if ($logoImage) {
+        $embeddedImages[] = $logoImage;
+    }
+    $embeddedImages = array_merge($embeddedImages, prepare_order_xlsx_images($rows, $dataStartRow, count($embeddedImages) + 1));
     $sheetXml = build_order_sheet_xml($order, $rows, $headerRow, $dataEndRow, $totalRow, $embeddedImages);
     $zip = new ZipArchive();
     if ($zip->open($targetPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
@@ -1449,9 +1708,9 @@ function build_order_sheet_xml(array $order, array $rows, int $headerRow, int $d
         ]);
     }
 
-    $headers = ['Imagen', 'ITEM', 'Descripcion', 'Cantidad', 'Unidad', 'Empaque', 'Piezas', 'Precio Unitario', 'Total Linea'];
+    $headers = ['Imagen', 'ITEM', 'Descripcion', 'Cantidad (bultos)', 'Venta', 'Empaque', 'Pz/Bulto', 'Total Pz', 'Precio por bulto', 'Total Linea'];
     $headerCells = [];
-    foreach (range('A', 'I') as $index => $column) {
+    foreach (range('A', 'J') as $index => $column) {
         $headerCells[] = build_order_text_cell($column . $headerRow, $headers[$index], 1);
     }
     $cells[] = build_order_sheet_row($headerRow, $headerCells);
@@ -1464,18 +1723,19 @@ function build_order_sheet_xml(array $order, array $rows, int $headerRow, int $d
             build_order_text_cell('B' . $rowNumber, (string) ($row['item_code'] ?? ''), 2),
             build_order_text_cell('C' . $rowNumber, (string) ($row['description'] ?? ''), 2),
             build_order_number_cell('D' . $rowNumber, (float) ($row['quantity'] ?? 0), 3),
-            build_order_text_cell('E' . $rowNumber, (string) ($row['sale_unit'] ?? ''), 2),
-            build_order_text_cell('F' . $rowNumber, trim((string) (($row['package_label'] ?? '') . ' ' . format_plain_number((float) ($row['package_qty'] ?? 0)))), 2),
-            build_order_number_cell('G' . $rowNumber, (float) ($row['pieces_total'] ?? 0), 3),
-            build_order_number_cell('H' . $rowNumber, (float) ($row['unit_price'] ?? 0), 4),
-            build_order_number_cell('I' . $rowNumber, (float) ($row['line_total'] ?? 0), 4),
+            build_order_text_cell('E' . $rowNumber, order_export_sale_unit_label($row), 2),
+            build_order_text_cell('F' . $rowNumber, order_export_package_label($row), 2),
+            build_order_number_cell('G' . $rowNumber, order_export_pack_qty($row), 3),
+            build_order_number_cell('H' . $rowNumber, order_export_total_pieces($row), 3),
+            build_order_number_cell('I' . $rowNumber, (float) ($row['unit_price'] ?? 0), 4),
+            build_order_number_cell('J' . $rowNumber, (float) ($row['line_total'] ?? 0), 4),
         ], $hasImage ? 48 : null);
         $rowNumber++;
     }
 
     $cells[] = build_order_sheet_row($totalRow, [
-        build_order_text_cell('H' . $totalRow, 'Total General', 5),
-        build_order_number_cell('I' . $totalRow, (float) ($order['total'] ?? 0), 6),
+        build_order_text_cell('I' . $totalRow, 'Total General', 5),
+        build_order_number_cell('J' . $totalRow, (float) ($order['total'] ?? 0), 6),
     ]);
 
     $drawingXml = $embeddedImages ? '<drawing r:id="rId1"/>' : '';
@@ -1487,10 +1747,12 @@ function build_order_sheet_xml(array $order, array $rows, int $headerRow, int $d
         . '<col min="1" max="1" width="12" customWidth="1"/>'
         . '<col min="2" max="2" width="18" customWidth="1"/>'
         . '<col min="3" max="3" width="42" customWidth="1"/>'
-        . '<col min="4" max="9" width="16" customWidth="1"/>'
+        . '<col min="4" max="5" width="16" customWidth="1"/>'
+        . '<col min="6" max="6" width="20" customWidth="1"/>'
+        . '<col min="7" max="10" width="16" customWidth="1"/>'
         . '</cols>'
         . '<sheetData>' . implode('', $cells) . '</sheetData>'
-        . '<autoFilter ref="A' . $headerRow . ':I' . max($headerRow, $dataEndRow) . '"/>'
+        . '<autoFilter ref="A' . $headerRow . ':J' . max($headerRow, $dataEndRow) . '"/>'
         . $drawingXml
         . '</worksheet>';
 }
@@ -1606,10 +1868,13 @@ function build_order_drawing_xml(array $embeddedImages): string
     $anchors = [];
     foreach ($embeddedImages as $image) {
         $rowIndex = max(0, (int) $image['row'] - 1);
+        $colIndex = max(0, (int) ($image['col'] ?? 0));
+        $colOffset = max(0, (int) ($image['col_off'] ?? 95250));
+        $rowOffset = max(0, (int) ($image['row_off'] ?? 95250));
         $widthEmu = max(1, (int) $image['width_emu']);
         $heightEmu = max(1, (int) $image['height_emu']);
         $anchors[] = '<xdr:oneCellAnchor>'
-            . '<xdr:from><xdr:col>0</xdr:col><xdr:colOff>95250</xdr:colOff><xdr:row>' . $rowIndex . '</xdr:row><xdr:rowOff>95250</xdr:rowOff></xdr:from>'
+            . '<xdr:from><xdr:col>' . $colIndex . '</xdr:col><xdr:colOff>' . $colOffset . '</xdr:colOff><xdr:row>' . $rowIndex . '</xdr:row><xdr:rowOff>' . $rowOffset . '</xdr:rowOff></xdr:from>'
             . '<xdr:ext cx="' . $widthEmu . '" cy="' . $heightEmu . '"/>'
             . '<xdr:pic>'
             . '<xdr:nvPicPr><xdr:cNvPr id="' . (int) $image['id'] . '" name="' . xml_escape_value((string) $image['name']) . '"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr>'
@@ -1791,10 +2056,10 @@ function first_non_empty_string(array $values): string
     return '';
 }
 
-function prepare_order_xlsx_images(array $rows, int $dataStartRow): array
+function prepare_order_xlsx_images(array $rows, int $dataStartRow, int $startId = 1): array
 {
     $images = [];
-    $id = 1;
+    $id = max(1, $startId);
     foreach ($rows as $index => $row) {
         if (trim((string) ($row['image_url'] ?? '')) === '') {
             continue;
@@ -1811,6 +2076,49 @@ function prepare_order_xlsx_images(array $rows, int $dataStartRow): array
     }
 
     return $images;
+}
+
+function prepare_order_xlsx_logo_image(int $id): ?array
+{
+    $path = order_export_logo_file_path();
+    if ($path === '' || !is_file($path)) {
+        return null;
+    }
+    $content = @file_get_contents($path);
+    if (!is_string($content) || $content === '') {
+        return null;
+    }
+    $info = @getimagesizefromstring($content);
+    if (!is_array($info)) {
+        return null;
+    }
+    $mime = (string) ($info['mime'] ?? '');
+    $extension = match ($mime) {
+        'image/png' => 'png',
+        'image/jpeg' => 'jpeg',
+        default => '',
+    };
+    if ($extension === '') {
+        return null;
+    }
+    $width = max(1, (int) ($info[0] ?? 260));
+    $height = max(1, (int) ($info[1] ?? 70));
+    $scale = min(260 / $width, 74 / $height, 1);
+    $displayWidth = max(1, (int) round($width * $scale));
+    $displayHeight = max(1, (int) round($height * $scale));
+
+    return [
+        'id' => $id,
+        'row' => 1,
+        'col' => 6,
+        'name' => 'logo-rodeo.' . $extension,
+        'extension' => $extension,
+        'content' => $content,
+        'width_emu' => $displayWidth * 9525,
+        'height_emu' => $displayHeight * 9525,
+        'col_off' => 95250,
+        'row_off' => 95250,
+    ];
 }
 
 function fetch_order_xlsx_image(string $imageUrl, int $id, int $rowNumber): ?array
@@ -1888,4 +2196,50 @@ function xml_escape_value(string $value): string
 function format_plain_number(float $value): string
 {
     return rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.');
+}
+
+function order_export_sale_unit_label(array $row): string
+{
+    $value = trim((string) ($row['sale_unit'] ?? ''));
+    $normalized = strtolower($value);
+    if ($value === '' || in_array($normalized, ['unidad', 'unit', 'und', 'unidad de venta'], true)) {
+        return 'Bulto';
+    }
+    return $value;
+}
+
+function order_export_package_label(array $row): string
+{
+    $value = trim((string) ($row['package_label'] ?? $row['package'] ?? ''));
+    return $value !== '' ? $value : 'Empaque';
+}
+
+function order_export_pack_qty(array $row): float
+{
+    $quantity = (float) ($row['package_qty'] ?? 0);
+    return $quantity > 0 ? $quantity : 1.0;
+}
+
+function order_export_total_pieces(array $row): float
+{
+    $pieces = (float) ($row['pieces_total'] ?? 0);
+    if ($pieces > 0) {
+        return $pieces;
+    }
+    return max(0.0, (float) ($row['quantity'] ?? 0)) * order_export_pack_qty($row);
+}
+
+function order_export_logo_file_path(): string
+{
+    $blueLogo = dirname(__DIR__) . '/catalogos_admin/assets/logo-rodeo-azul.png';
+    if (is_file($blueLogo)) {
+        return $blueLogo;
+    }
+    $whiteLogo = dirname(__DIR__) . '/catalogos_admin/assets/logo-rodeo-blanco.png';
+    return is_file($whiteLogo) ? $whiteLogo : '';
+}
+
+function order_export_logo_public_url(): string
+{
+    return '../catalogos_admin/assets/logo-rodeo-azul.png';
 }

@@ -71,7 +71,6 @@ function admin_menu_items(): array
     $items = [
         'dashboard.php' => 'Dashboard',
         'catalogos.php' => 'Catalogos',
-        'auto_catalogs.php' => 'Catalogos automaticos',
         'brand_templates.php' => 'Plantillas marca',
         'pedidos.php' => 'Pedidos',
         'exportaciones.php' => 'Exportaciones',
@@ -83,10 +82,7 @@ function admin_menu_items(): array
             'catalogos.php' => 'Catalogos',
             'pedidos.php' => 'Pedidos',
             'inteligencia.php' => 'Inteligencia',
-            'reportes_productos.php' => 'Reportes productos',
-            'seguimiento_vendedores.php' => 'Seguimiento vendedores',
             'sellers.php' => 'Vendedores',
-            'auto_catalogs.php' => 'Catalogos automaticos',
             'brand_templates.php' => 'Plantillas marca',
             'usuarios.php' => 'Usuarios',
             'links.php' => 'Links / Enlaces',

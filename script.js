@@ -1,19 +1,19 @@
-
+﻿
 /**
- * Catálogo Rodeo B2B
+ * CatÃ¡logo Rodeo B2B
  * Nombre actual/provisional del sistema.
  *
- * Autor principal: Nelson Sánchez
- * Año: 2026
+ * Autor principal: Nelson SÃ¡nchez
+ * AÃ±o: 2026
  *
- * Sistema desarrollado para generación de catálogos digitales,
- * gestión visual de productos, publicación web y pedidos comerciales.
+ * Sistema desarrollado para generaciÃ³n de catÃ¡logos digitales,
+ * gestiÃ³n visual de productos, publicaciÃ³n web y pedidos comerciales.
  *
  * Todos los derechos reservados.
  *
  * Nota:
- * Este encabezado documenta autoría y evolución del sistema.
- * No modifica el funcionamiento del código.
+ * Este encabezado documenta autorÃ­a y evoluciÃ³n del sistema.
+ * No modifica el funcionamiento del cÃ³digo.
  */
 
 (function () {
@@ -23,7 +23,10 @@ const LAYOUT_STORAGE_KEY = "catalogLayoutPresetsV1";
 const HOSTING_SETTINGS_STORAGE_KEY = "catalogHostingSettingsV1";
 const IMAGE_SOURCE_SETTINGS_STORAGE_KEY = "catalogImageSourceSettingsV1";
 const IMAGE_STORAGE_SETTINGS_STORAGE_KEY = "catalogImageStorageSettingsV1";
+const BRAND_VISUAL_PRESETS_STORAGE_KEY = "catalogBrandVisualPresetsV1";
+const GENERAL_VISUAL_PRESET_KEY = "__general__";
 const PRICE_FACTOR_55 = 0.55;
+const DEFAULT_FEATURED_BRANDS = ["LUXURY HOME LINENS", "ACENOX", "ROBERT HAMILTON", "MARANELO", "DISCOVERY EXPEDITION", "HOME BLANK", "FINECASA"];
 const DEFAULT_HOSTING_SETTINGS = {
 autoSave:true,
 protocol:"ftp",
@@ -56,8 +59,36 @@ mode:"hosting"
 const LAYOUT_BLOCKS = { coverTitle:"Portada titulo", pageHeader:"Encabezado", pageLogo:"Logo pagina", productsGrid:"Bloque productos", productImage:"Imagen producto", productCode:"Codigo producto", productPrice:"Precio", productDescription:"Descripcion", productMeta:"Datos tecnicos", pageFooter:"Footer" };
 const initialHostingSettings = loadHostingSettings();
 const DEFAULT_HERO_SUBTITLE = "Pedidos por empaque, link trazable y salida operativa en Excel/CSV/XLSX.";
-const state = { mode:"manual", previewMode:"web", records:[], sourceRecords:[], sourceExcelName:"", imageFiles:[], imageMap:new Map(), imageUrls:[], imageSourceMap:new Map(), extraMediaFiles:[], extraMediaMap:new Map(), remoteImageCheckCache:new Map(), title:"Acenox Catalogo Comercial", footerText:"Catalogo comercial interno Acenox", includeCover:true, template:"classic", productsPerPage:6, primaryColor:"#2c4695", secondaryColor:"#1d1d1b", coverImageUrl:"", coverImagePath:"", pageLogoUrl:"", pageLogoPath:"", pageLogoPosition:"right", pageBackgroundUrl:"", pageBackgroundPath:"", pageBackgroundOpacity:0.12, heroImageUrl:"", heroImagePath:"", heroSubtitle:DEFAULT_HERO_SUBTITLE, priceMode:"original", entryFilter:"", brandExportMode:"complete", brandFilter:"", imageStorage:loadImageStorageSettings(), imageSource:loadImageSourceSettings(), promotion:{ title:"Oferta destacada para compras mayoristas", text:"Configura una imagen liviana o video opcional sin afectar la carga movil.", imageUrl:"", imagePath:"", videoUrl:"", videoPath:"", linkLabel:"Consultar promocion", linkUrl:"" }, webExport:{ slug:"catalogo-publicable", slugEdited:false, expiryDays:30, outputDir:"", baseUrl:initialHostingSettings.publicBaseUrl, apiBaseUrl:initialHostingSettings.apiBaseUrl, generatedLink:"", hosting:initialHostingSettings }, layoutPresets:loadLayoutPresets(), activeLayoutPresetId:"default", layoutEditor:{ enabled:false, selectedBlock:"coverTitle", drag:null }, batch:{ excelPath:"", imagesRoot:"", outputRoot:"", template:"editorial", quality:0.72, priceMode:"original", entryFilter:"", primaryColor:"#2c4695", secondaryColor:"#1d1d1b", logoPosition:"right", categories:[], previewIndex:-1, progress:{ completed:0, total:0 } } };
-const REQUIRED_ALIASES = { item:["ITEM"], description:["DESCRIPCION","DESCRIPCION ","NOMBRE","PRODUCTO"], price:["PRECIO","PRICE","PVP"], entry:["ENTRADA","ENTRY","LOTE","IMPORTACION"], brand:["MARCA","BRAND","FABRICANTE"], available:["DISPONIBLE","DISP.","DISP","STOCK","EXISTENCIA"], barcode:["CBARRA","CB","CODIGOBARRAS","CODIGO DE BARRAS"], package:["EMPAQUE","PACK","PAQUETE"], um:["UM"], ctn:["CTN"], cub:["CUB.","CUB","CUBICAJE"] };
+const DEFAULT_GENERAL_VISUAL = {
+brand:"Catalogo completo",
+primaryColor:"#2558b7",
+secondaryColor:"#12284d",
+coverImagePath:"",
+pageLogoPath:"hosting/catalogos_admin/assets/logo-rodeo-azul.png",
+pageLogoPosition:"left",
+pageBackgroundPath:"",
+pageBackgroundOpacity:0.12,
+heroImagePath:"",
+heroSubtitle:DEFAULT_HERO_SUBTITLE,
+promotion:{ title:"Oferta destacada para compras mayoristas", text:"Imagen o video opcional con fallback movil.", imagePath:"", imagePaths:[], videoPath:"", linkLabel:"Consultar promocion", linkUrl:"", slideInterval:15000 },
+updatedAt:""
+};
+const state = { mode:"manual", previewMode:"web", records:[], sourceRecords:[], sourceExcelName:"", imageFiles:[], imageMap:new Map(), imageUrls:[], imageSourceMap:new Map(), imageMatchMode:"file-input", hideMissingImages:false, extraMediaFiles:[], extraMediaMap:new Map(), remoteImageCheckCache:new Map(), title:"Acenox Catalogo Comercial", footerText:"Catalogo comercial interno Acenox", includeCover:true, template:"classic", productsPerPage:6, primaryColor:"#2c4695", secondaryColor:"#1d1d1b", coverImageUrl:"", coverImagePath:"", pageLogoUrl:"", pageLogoPath:"", pageLogoPosition:"right", pageBackgroundUrl:"", pageBackgroundPath:"", pageBackgroundOpacity:0.12, heroImageUrl:"", heroImagePath:"", heroSubtitle:DEFAULT_HERO_SUBTITLE, priceMode:"original", entryFilter:"", brandExportMode:"complete", brandFilter:"", smartCategoryFilter:"", featuredBrandsEnabled:true, featuredBrands:[], imageStorage:loadImageStorageSettings(), imageSource:loadImageSourceSettings(), brandVisualPresets:loadBrandVisualPresets(), promotion:{ title:"Oferta destacada para compras mayoristas", text:"Configura una imagen liviana o video opcional sin afectar la carga movil.", imageUrl:"", imagePath:"", imageUrls:[], imagePaths:[], videoUrl:"", videoPath:"", linkLabel:"Consultar promocion", linkUrl:"", slideInterval:15000 }, webExport:{ slug:"catalogo-publicable", slugEdited:false, expiryDays:30, outputDir:"", baseUrl:initialHostingSettings.publicBaseUrl, apiBaseUrl:initialHostingSettings.apiBaseUrl, generatedLink:"", hosting:initialHostingSettings }, layoutPresets:loadLayoutPresets(), activeLayoutPresetId:"default", layoutEditor:{ enabled:false, selectedBlock:"coverTitle", drag:null }, batch:{ excelPath:"", imagesRoot:"", outputRoot:"", template:"editorial", quality:0.72, priceMode:"original", entryFilter:"", primaryColor:"#2c4695", secondaryColor:"#1d1d1b", logoPosition:"right", categories:[], previewIndex:-1, progress:{ completed:0, total:0 } } };
+const REQUIRED_ALIASES = { item:["ITEM"], description:["DESCRIPCION","DESCRIPCION ","NOMBRE","PRODUCTO"], price:["PRECIO","PRICE","PVP"], category:["CATEGORIA","CATEGORY","LINEA","LINE","FAMILIA","GRUPO","DEPARTAMENTO","RUBRO","TIPO"], entry:["ENTRADA","ENTRY","LOTE","IMPORTACION"], brand:["MARCA","BRAND","FABRICANTE"], available:["DISPONIBLE","DISP.","DISP","STOCK","EXISTENCIA"], barcode:["CBARRA","CB","CODIGOBARRAS","CODIGO DE BARRAS"], package:["EMPAQUE","PACK","PAQUETE"], um:["UM"], ctn:["CTN"], cub:["CUB.","CUB","CUBICAJE"], material:["MATERIAL"], size:["TAMANO","SIZE","MEDIDA","MEDIDAS","DIMENSION"], saleUnit:["UNIDAD_VENTA","UNIDAD DE VENTA","VENTA","UM"], minimumOrder:["MINIMO","MINIMO PEDIDO"], multipleQty:["MULTIPLO"], remoteImageUrl:["REMOTE_IMAGE_URL","REMOTE_IMAGE","IMAGE_URL","IMAGEN_URL","URL_IMAGEN"] };
+const SMART_CATEGORY_RULES = [
+{ name:"Sartenes", terms:["sarten","sartenes","set de sarten","set de sartenes","sarten antiadherente"] },
+{ name:"Ollas y calderos", terms:["olla","ollas","caldero","calderos","cacerola","paila"] },
+{ name:"Decoracion", terms:["adorno","decoracion","figura","florero","porta botella","portabotella"] },
+{ name:"Vasos y copas", terms:["vaso","vasos","copa","copas","jarra","jarras","termo","botella"] },
+{ name:"Platos y bowls", terms:["plato","platos","bowl","bowls","ensaladera","bandeja","fuente"] },
+{ name:"Cubiertos y utensilios", terms:["tenedor","tenedores","cuchillo","cuchillos","cuchara","cucharas","cubierto","cubiertos","utensilio","utensilios","espatula","pinza"] },
+{ name:"Sillas", terms:["silla","sillas","taburete","banqueta"] },
+{ name:"Textil", terms:["cortina","cortinas","alfombra","mantel","manteles","sabana","sabanas","toalla","toallas","cojin","cojines","funda","fundas"] },
+{ name:"Bano", terms:["bano","banos","jabonera","dispensador","ducha","toallero","alfombra de bano"] },
+{ name:"Lavanderia", terms:["lavadora","cubierta de lavadora","cesto","canasto","tendedero","lavanderia"] },
+{ name:"Organizacion", terms:["organizador","organizadores","canasta","estante","caja","cajonera"] },
+{ name:"Limpieza", terms:["atomizador","cepillo","escoba","limpieza","mopa","trapeador"] }
+];
 const TEMPLATE_DEFS = {
 classic: templateDef("catalog-page--classic","cover-page--classic","Clasica original","Catalogo comercial","Coleccion general",renderClassicCard),
 editorial: templateDef("catalog-page--editorial","cover-page--editorial","Editorial premium","Seleccion editorial","Edicion premium",renderEditorialCard),
@@ -94,11 +125,22 @@ const pageBackgroundFileInput = byId("pageBackgroundFile");
 const pageBackgroundOpacityInput = byId("pageBackgroundOpacity");
 const excelInput = byId("excelFile");
 const imageInput = byId("imageFiles");
+const matchImagesByItemButton = byId("matchImagesByItemButton");
+const hideMissingImagesInput = byId("hideMissingImages");
 const extraMediaInput = byId("extraMediaFiles");
 const priceModeSelect = byId("priceModeSelect");
 const entryFilterInput = byId("entryFilterInput");
 const brandExportModeInput = byId("brandExportMode");
 const brandFilterSelect = byId("brandFilterSelect");
+const smartCategoryFilterSelect = byId("smartCategoryFilter");
+const featuredBrandsEnabledInput = byId("featuredBrandsEnabled");
+const featuredBrandSelect = byId("featuredBrandSelect");
+const featuredBrandLogoFileInput = byId("featuredBrandLogoFile");
+const addFeaturedBrandButton = byId("addFeaturedBrandButton");
+const featuredBrandsList = byId("featuredBrandsList");
+const saveBrandVisualPresetButton = byId("saveBrandVisualPresetButton");
+const applyBrandVisualPresetButton = byId("applyBrandVisualPresetButton");
+const brandVisualPresetStatus = byId("brandVisualPresetStatus");
 const imageStorageModeInput = byId("imageStorageMode");
 const imageSourceModeInput = byId("imageSourceMode");
 const imageSourceEditedBaseUrlInput = byId("imageSourceEditedBaseUrl");
@@ -112,6 +154,8 @@ const heroSubtitleInput = byId("heroSubtitleInput");
 const promoTitleInput = byId("promoTitleInput");
 const promoTextInput = byId("promoTextInput");
 const promoImageFileInput = byId("promoImageFile");
+const promoSliderImagesInput = byId("promoSliderImages");
+const promoSliderIntervalInput = byId("promoSliderInterval");
 const promoVideoFileInput = byId("promoVideoFile");
 const promoLinkLabelInput = byId("promoLinkLabelInput");
 const promoLinkUrlInput = byId("promoLinkUrlInput");
@@ -203,6 +247,8 @@ state.imageStorage = normalizeImageStorageSettings({ ...state.imageStorage, mode
 syncImageStorageInputs();
 syncImageSourceInputs();
 syncBrandFilterInputs();
+syncSmartCategoryFilterInputs();
+applyVisualForCurrentScope({ silent:true });
 updateGeneratedLinkPreview();
 renderBatchCategoryList();
 setPreviewMode("web");
@@ -215,7 +261,7 @@ batchModeButton?.addEventListener("click", () => setMode("batch"));
 webPreviewModeButton?.addEventListener("click", () => setPreviewMode("web"));
 pdfPreviewModeButton?.addEventListener("click", () => setPreviewMode("pdf"));
 titleInput?.addEventListener("input", () => { state.title = titleInput.value.trim() || "Acenox Catalogo Comercial"; if (!state.webExport.slugEdited && webCatalogSlugInput) { const nextSlug = sanitizeSlug(state.title) || "catalogo-publicable"; state.webExport.slug = nextSlug; webCatalogSlugInput.value = nextSlug; updateGeneratedLinkPreview(); } refreshCatalogIfReady(); });
-footerInput?.addEventListener("input", () => { state.footerText = footerInput.value.trim() || "Catalogo comercial interno Acenox"; refreshCatalogIfReady(); });
+footerInput?.addEventListener("input", () => { state.footerText = footerInput.value.trim(); refreshCatalogIfReady(); });
 primaryColorInput?.addEventListener("input", () => { state.primaryColor = primaryColorInput.value || "#2c4695"; applyThemeVariables(); refreshCatalogIfReady(); renderWebPreview(); });
 secondaryColorInput?.addEventListener("input", () => { state.secondaryColor = secondaryColorInput.value || "#1d1d1b"; applyThemeVariables(); refreshCatalogIfReady(); renderWebPreview(); });
 includeCoverInput?.addEventListener("change", () => { state.includeCover = includeCoverInput.checked; refreshCatalogIfReady(); });
@@ -227,7 +273,16 @@ pageLogoPositionInput?.addEventListener("change", () => { state.pageLogoPosition
 pageBackgroundFileInput?.addEventListener("change", () => { const file = pageBackgroundFileInput.files?.[0]; state.pageBackgroundUrl = replaceObjectUrl(state.pageBackgroundUrl, file); state.pageBackgroundPath = file?.path || ""; refreshCatalogIfReady(); });
 pageBackgroundOpacityInput?.addEventListener("input", () => { state.pageBackgroundOpacity = readBackgroundOpacity(pageBackgroundOpacityInput); refreshCatalogIfReady(); });
 excelInput?.addEventListener("change", async () => { const file = excelInput.files?.[0]; if (file) await loadRecordsFromFile(file); });
-imageInput?.addEventListener("change", () => { state.imageFiles = Array.from(imageInput.files || []); reindexMainImages(); refreshCatalogIfReady(); });
+imageInput?.addEventListener("change", () => { state.imageMatchMode = "file-input"; state.imageFiles = Array.from(imageInput.files || []); reindexMainImages(); refreshCatalogIfReady(); });
+matchImagesByItemButton?.addEventListener("click", matchImagesByItemFromDirectory);
+hideMissingImagesInput?.addEventListener("change", () => {
+state.hideMissingImages = Boolean(hideMissingImagesInput.checked);
+applyManualRecordFilters();
+reindexMainImages();
+reindexExtraMedia();
+setStatus(buildManualRecordStatus());
+refreshCatalogIfReady();
+});
 extraMediaInput?.addEventListener("change", () => { state.extraMediaFiles = Array.from(extraMediaInput.files || []); reindexExtraMedia(); });
 priceModeSelect?.addEventListener("change", () => {
 state.priceMode = normalizePriceMode(priceModeSelect.value);
@@ -240,6 +295,7 @@ refreshCatalogIfReady();
 entryFilterInput?.addEventListener("input", () => {
 state.entryFilter = entryFilterInput.value.trim();
 syncBrandFilterInputs();
+syncSmartCategoryFilterInputs();
 applyManualRecordFilters();
 setStatus(buildManualRecordStatus());
 reindexMainImages();
@@ -249,6 +305,9 @@ refreshCatalogIfReady();
 brandExportModeInput?.addEventListener("change", () => {
 state.brandExportMode = normalizeBrandExportMode(brandExportModeInput.value);
 syncBrandFilterInputs();
+syncSmartCategoryFilterInputs();
+syncFeaturedBrandControls();
+applyVisualForCurrentScope({ silent:true });
 applyManualRecordFilters();
 setStatus(buildManualRecordStatus());
 reindexMainImages();
@@ -257,12 +316,33 @@ refreshCatalogIfReady();
 });
 brandFilterSelect?.addEventListener("change", () => {
 state.brandFilter = brandFilterSelect.value;
+applyVisualForCurrentScope({ silent:true });
+syncSmartCategoryFilterInputs();
+syncFeaturedBrandControls();
 applyManualRecordFilters();
 setStatus(buildManualRecordStatus());
 reindexMainImages();
 reindexExtraMedia();
 refreshCatalogIfReady();
 });
+featuredBrandsEnabledInput?.addEventListener("change", () => {
+state.featuredBrandsEnabled = Boolean(featuredBrandsEnabledInput.checked);
+syncFeaturedBrandControls();
+renderWebPreview();
+});
+addFeaturedBrandButton?.addEventListener("click", () => {
+addFeaturedBrandFromInputs();
+});
+smartCategoryFilterSelect?.addEventListener("change", () => {
+state.smartCategoryFilter = smartCategoryFilterSelect.value;
+applyManualRecordFilters();
+setStatus(buildManualRecordStatus());
+reindexMainImages();
+reindexExtraMedia();
+refreshCatalogIfReady();
+});
+saveBrandVisualPresetButton?.addEventListener("click", saveBrandVisualPresetForSelectedBrand);
+applyBrandVisualPresetButton?.addEventListener("click", () => applyBrandVisualPresetForSelectedBrand({ silent:false }));
 imageSourceModeInput?.addEventListener("change", () => updateImageSourceSettings({ mode:imageSourceModeInput.value || "local" }));
 imageStorageModeInput?.addEventListener("change", () => updateImageStorageSettings({ mode:imageStorageModeInput.value || "hosting" }));
 imageSourceEditedBaseUrlInput?.addEventListener("input", () => updateImageSourceSettings({ editedBaseUrl:imageSourceEditedBaseUrlInput.value }));
@@ -277,8 +357,31 @@ promoTextInput?.addEventListener("input", () => { state.promotion.text = promoTe
 promoLinkLabelInput?.addEventListener("input", () => { state.promotion.linkLabel = promoLinkLabelInput.value.trim(); renderWebPreview(); });
 promoLinkUrlInput?.addEventListener("input", () => { state.promotion.linkUrl = promoLinkUrlInput.value.trim(); renderWebPreview(); });
 promoImageFileInput?.addEventListener("change", () => { const file = promoImageFileInput.files?.[0]; state.promotion.imageUrl = replaceObjectUrl(state.promotion.imageUrl, file); state.promotion.imagePath = file?.path || ""; renderWebPreview(); });
+promoSliderImagesInput?.addEventListener("change", () => {
+revokeObjectUrls(state.promotion.imageUrls || []);
+const files = Array.from(promoSliderImagesInput.files || []);
+state.promotion.imageUrls = files.map((file) => URL.createObjectURL(file));
+state.promotion.imagePaths = files.map((file) => file.path || "").filter(Boolean);
+renderWebPreview();
+});
+promoSliderIntervalInput?.addEventListener("change", () => {
+state.promotion.slideInterval = normalizePromoSlideInterval(promoSliderIntervalInput.value);
+renderWebPreview();
+});
 promoVideoFileInput?.addEventListener("change", () => { const file = promoVideoFileInput.files?.[0]; state.promotion.videoUrl = replaceObjectUrl(state.promotion.videoUrl, file); state.promotion.videoPath = file?.path || ""; renderWebPreview(); });
-webCatalogSlugInput?.addEventListener("input", () => { const nextSlug = sanitizeSlug(webCatalogSlugInput.value); state.webExport.slugEdited = Boolean(nextSlug); state.webExport.slug = nextSlug || sanitizeSlug(state.title) || "catalogo-publicable"; webCatalogSlugInput.value = state.webExport.slug; updateGeneratedLinkPreview(); });
+webCatalogSlugInput?.addEventListener("input", () => {
+const nextSlug = sanitizeSlug(webCatalogSlugInput.value);
+state.webExport.slugEdited = true;
+state.webExport.slug = nextSlug;
+updateGeneratedLinkPreview();
+});
+webCatalogSlugInput?.addEventListener("blur", () => {
+const rawValue = webCatalogSlugInput.value;
+const nextSlug = sanitizeSlug(rawValue);
+state.webExport.slug = nextSlug;
+if (rawValue.trim() && rawValue !== nextSlug) webCatalogSlugInput.value = nextSlug;
+updateGeneratedLinkPreview();
+});
 webExpiryDaysInput?.addEventListener("change", () => { state.webExport.expiryDays = Number(webExpiryDaysInput.value) || 30; });
 webBaseUrlInput?.addEventListener("input", () => { const value = sanitizeBaseUrl(webBaseUrlInput.value); state.webExport.baseUrl = value; updateHostingSettings({ publicBaseUrl:value }); updateGeneratedLinkPreview(); });
 webApiBaseUrlInput?.addEventListener("input", () => { const value = sanitizeBaseUrl(webApiBaseUrlInput.value); state.webExport.apiBaseUrl = value; updateHostingSettings({ apiBaseUrl:value }); });
@@ -410,29 +513,38 @@ if (catalogRoot) catalogRoot.hidden = state.previewMode !== "pdf";
 function renderWebPreview() {
 if (!webPreviewRoot) return;
 const products = (state.records.length ? state.records : (state.sourceRecords.length ? [] : createPreviewProducts())).slice(0, 8);
-const promoImage = state.promotion.imageUrl || state.coverImageUrl || "";
+const promoImages = getPromotionPreviewImages();
+const promoImage = promoImages[0] || state.coverImageUrl || "";
 const heroStyle = state.heroImageUrl ? ` style="background-image:linear-gradient(132deg, rgba(0,0,0,.62), rgba(0,0,0,.34)), url(&quot;${escapeHtml(state.heroImageUrl)}&quot;);"` : "";
+const displayTitle = getCatalogDisplayTitle();
 webPreviewRoot.innerHTML = `
 <div class="web-preview-shell" style="--web-primary:${escapeHtml(sanitizeHexColor(state.primaryColor, "#2d6b4f"))}; --web-secondary:${escapeHtml(sanitizeHexColor(state.secondaryColor, "#174531"))};">
   <header class="web-preview-header">
     <div class="web-preview-brand">
       <div class="web-preview-logo">${state.pageLogoUrl ? `<img src="${escapeHtml(state.pageLogoUrl)}" alt="">` : "R"}</div>
-      <div><strong>${escapeHtml(state.title)}</strong><span>${escapeHtml(state.footerText || "Catalogo mayorista B2B")}</span></div>
+      <div><strong>${escapeHtml(displayTitle)}</strong><span>${escapeHtml(state.footerText)}</span></div>
     </div>
     <div class="web-preview-search">Buscar SKU, marca o categoria</div>
     <button type="button">Carrito</button>
   </header>
   <section class="web-preview-hero"${heroStyle}>
-    <div><p>Catalogo comercial B2B</p><h2>${escapeHtml(state.title)}</h2><span>${escapeHtml(state.heroSubtitle || DEFAULT_HERO_SUBTITLE)}</span></div>
+    <div><p>Catalogo comercial B2B</p><h2>${escapeHtml(displayTitle)}</h2><span>${escapeHtml(state.heroSubtitle || DEFAULT_HERO_SUBTITLE)}</span></div>
     <div class="web-preview-filter"><strong>Categorias</strong><span>Todos</span><span>General</span><span>Mayorista</span></div>
   </section>
   <section class="web-preview-promo">
     <div><p>Promocion configurable</p><h3>${escapeHtml(state.promotion.title || "Oferta destacada")}</h3><span>${escapeHtml(state.promotion.text || "Imagen o video opcional con fallback movil.")}</span></div>
-    <div class="web-preview-promo__media">${promoImage ? `<img src="${escapeHtml(promoImage)}" alt="">` : "Imagen / video promo"}</div>
+    <div class="web-preview-promo__media">${promoImage ? `<img src="${escapeHtml(promoImage)}" alt="">${promoImages.length > 1 ? `<small>${promoImages.length} imagenes</small>` : ""}` : "Imagen / video promo"}</div>
   </section>
   <section class="web-preview-grid">${products.map(renderWebPreviewCard).join("")}</section>
 </div>`;
 hydrateDynamicImages(webPreviewRoot);
+}
+
+function getPromotionPreviewImages() {
+return dedupeStringList([
+state.promotion.imageUrl,
+...(Array.isArray(state.promotion.imageUrls) ? state.promotion.imageUrls : [])
+].filter(Boolean));
 }
 
 function renderWebPreviewCard(product) {
@@ -564,9 +676,9 @@ async function exportWebPackage() {
 if (!isDesktop) return setWebExportStatus("La exportacion web requiere la app de escritorio.", true);
 if (!state.records.length) return setWebExportStatus("Primero carga un Excel y las imagenes del catalogo.", true);
 if (!state.webExport.outputDir) return setWebExportStatus("Selecciona una carpeta de salida para el paquete web.", true);
-if (!confirmMissingMainImages()) return;
+if (!(await confirmMissingMainImages())) return;
 if (state.brandExportMode === "single" && !state.brandFilter) return setWebExportStatus("Selecciona una marca para generar un catalogo por marca.", true);
-const slug = buildScopedCatalogSlug(sanitizeSlug(state.webExport.slug || state.title) || "catalogo-publicable", state.brandExportMode === "single" ? state.brandFilter : "");
+const slug = buildScopedCatalogSlug(sanitizeSlug(state.webExport.slug || state.title) || "catalogo-publicable", state.brandExportMode === "single" ? state.brandFilter : "", state.smartCategoryFilter);
 hideHostingProgressUi();
 setWebExportStatus("Preparando paquete web publicable...");
 try {
@@ -577,7 +689,7 @@ updateGeneratedLinkPreview(slug);
 setWebExportStatus(`Catalogos por marca listos: ${results.length}. Carpeta base: ${state.webExport.outputDir}.`);
 return;
 }
-const payload = buildWebExportPayload(slug);
+const payload = buildWebExportPayload(slug, { localPreview:true });
 const result = await desktopApi.exportWebPackage(payload);
 state.webExport.generatedLink = buildGeneratedLink(slug);
 updateGeneratedLinkPreview(slug);
@@ -595,9 +707,9 @@ if (!state.webExport.outputDir) return setWebExportStatus("Selecciona una carpet
 const hosting = state.webExport.hosting || {};
 if (!hosting.ftpHost || !hosting.ftpUser || !hosting.ftpPassword) return setWebExportStatus("Completa FTP host, usuario y clave.", true);
 if (!state.webExport.apiBaseUrl || !hosting.apiKey) return setWebExportStatus("Completa la API base publica y la API key privada.", true);
-if (!confirmMissingMainImages()) return;
+if (!(await confirmMissingMainImages())) return;
 if (state.brandExportMode === "single" && !state.brandFilter) return setWebExportStatus("Selecciona una marca para publicar un catalogo por marca.", true);
-const slug = buildScopedCatalogSlug(sanitizeSlug(state.webExport.slug || state.title) || "catalogo-publicable", state.brandExportMode === "single" ? state.brandFilter : "");
+const slug = buildScopedCatalogSlug(sanitizeSlug(state.webExport.slug || state.title) || "catalogo-publicable", state.brandExportMode === "single" ? state.brandFilter : "", state.smartCategoryFilter);
 if (state.brandExportMode === "separate") return setWebExportStatus("Para publicar separados por marca, exporta primero los paquetes por marca y publica uno por uno con una marca seleccionada.", true);
 const remoteCatalogDir = buildRemoteCatalogDir(hosting.remoteDir, slug);
 setWebExportStatus("Preparando subida al hosting...");
@@ -635,6 +747,8 @@ const result = await desktopApi.publishCatalogPackage({
         promoTitle: payload.metadata.promotion.title,
         promoText: payload.metadata.promotion.text,
         promoImageUrl: payload.metadata.promotion.imageUrl,
+        promoImages: payload.metadata.promotion.images,
+        promoSlideInterval: payload.metadata.promotion.slideInterval,
         promoVideoUrl: payload.metadata.promotion.videoUrl,
         promoLinkUrl: payload.metadata.promotion.linkUrl,
         promoLinkLabel: payload.metadata.promotion.linkLabel,
@@ -665,6 +779,7 @@ const originalRecords = state.records;
 const originalTitle = state.title;
 const originalBrandMode = state.brandExportMode;
 const originalBrandFilter = state.brandFilter;
+const originalVisual = captureCurrentVisualPreset("Catalogo completo");
 const results = [];
 try {
 for (const brand of brands) {
@@ -674,8 +789,9 @@ state.records = brandRecords;
 state.title = `${originalTitle} - ${brand}`;
 state.brandExportMode = "single";
 state.brandFilter = brand;
-const brandSlug = buildScopedCatalogSlug(baseSlug, brand);
-const payload = buildWebExportPayload(brandSlug);
+applyVisualForCurrentScope({ silent:true });
+const brandSlug = buildScopedCatalogSlug(baseSlug, brand, state.smartCategoryFilter);
+const payload = buildWebExportPayload(brandSlug, { localPreview:true });
 const result = await desktopApi.exportWebPackage(payload);
 results.push({ brand, slug:brandSlug, outputDir:result.outputDir });
 }
@@ -685,12 +801,13 @@ state.records = originalRecords;
 state.title = originalTitle;
 state.brandExportMode = originalBrandMode;
 state.brandFilter = originalBrandFilter;
+applyVisualPreset(originalVisual);
 renderCatalog({ syncInputs:false });
 renderWebPreview();
 }
 }
 
-function buildWebExportPayload(slug) {
+function buildWebExportPayload(slug, options = {}) {
 const currentState = {
 records: state.records,
 title: state.title,
@@ -712,15 +829,16 @@ pageBackgroundOpacity: state.pageBackgroundOpacity,
 promotion: { ...state.promotion },
 };
 const records = state.records.slice();
-state.title = getScopedCatalogTitle(state.title, state.brandExportMode === "single" ? state.brandFilter : "");
+state.title = getCatalogDisplayTitle();
 const assets = [];
 const exportImageMap = new Map();
 const mediaCatalog = {};
+const exportAssetNames = new Map();
 const now = new Date();
 const expiresAt = new Date(now.getTime() + (state.webExport.expiryDays || 30) * 24 * 60 * 60 * 1000);
 records.forEach((record, recordIndex) => {
 const normalizedItem = normalizeIdentifier(record.item);
-const exportBaseName = buildExportAssetBaseName(record.item, normalizedItem, recordIndex);
+const exportBaseName = buildExportAssetBaseName(record.item, normalizedItem, recordIndex, exportAssetNames);
 const sourcePath = state.imageSourceMap.get(normalizedItem);
 const shouldPrepareImageAssetsForUpload = state.imageStorage.mode === "backblaze" || state.imageStorage.mode === "hybrid";
 let localMainRelative = "";
@@ -774,15 +892,21 @@ mediaCatalog[record.item] = { item:record.item, description:record.description, 
 const coverRelative = state.coverImagePath ? `media/brand/cover${getWebImageExtension(state.coverImagePath)}` : "";
 const logoRelative = state.pageLogoPath ? `media/brand/logo${getWebLogoExtension(state.pageLogoPath)}` : "";
 const backgroundRelative = state.pageBackgroundPath ? `media/brand/background${getWebImageExtension(state.pageBackgroundPath)}` : "";
-const heroRelative = state.heroImagePath ? `media/brand/hero${getWebImageExtension(state.heroImagePath)}` : "";
+const heroRelative = state.heroImagePath ? `media/promo/hero${getWebImageExtension(state.heroImagePath)}` : "";
 const promoImageRelative = state.promotion.imagePath ? `media/promo/promo${getWebImageExtension(state.promotion.imagePath)}` : "";
+const promoImageSources = getPromotionImageAssetSources();
+const promoImageRelatives = promoImageSources.map((sourcePath, index) => `media/promo/promo-${index + 1}${getWebImageExtension(sourcePath)}`);
 const promoVideoRelative = state.promotion.videoPath ? `media/promo/promo${getPathExtension(state.promotion.videoPath) || ".mp4"}` : "";
-if (state.coverImagePath) assets.push({ sourcePath:state.coverImagePath, relativePath:coverRelative });
-if (state.pageLogoPath) assets.push({ sourcePath:state.pageLogoPath, relativePath:logoRelative });
-if (state.pageBackgroundPath) assets.push({ sourcePath:state.pageBackgroundPath, relativePath:backgroundRelative });
-if (state.heroImagePath) assets.push({ sourcePath:state.heroImagePath, relativePath:heroRelative });
-if (state.promotion.imagePath) assets.push({ sourcePath:state.promotion.imagePath, relativePath:promoImageRelative });
-if (state.promotion.videoPath) assets.push({ sourcePath:state.promotion.videoPath, relativePath:promoVideoRelative });
+const brandFilterState = buildBrandFilterState(records);
+const featuredBrandAssets = buildFeaturedBrandAssets(brandFilterState.brands);
+if (coverRelative) assets.push({ sourcePath:state.coverImagePath, relativePath:coverRelative });
+if (logoRelative) assets.push({ sourcePath:state.pageLogoPath, relativePath:logoRelative });
+if (backgroundRelative) assets.push({ sourcePath:state.pageBackgroundPath, relativePath:backgroundRelative });
+if (heroRelative) assets.push({ sourcePath:state.heroImagePath, relativePath:heroRelative });
+if (promoImageRelative) assets.push({ sourcePath:state.promotion.imagePath, relativePath:promoImageRelative });
+promoImageSources.forEach((sourcePath, index) => assets.push({ sourcePath, relativePath:promoImageRelatives[index] }));
+if (promoVideoRelative) assets.push({ sourcePath:state.promotion.videoPath, relativePath:promoVideoRelative });
+featuredBrandAssets.forEach((asset) => assets.push(asset));
 state.records = records;
 state.imageMap = exportImageMap;
 state.coverImageUrl = coverRelative ? `./${coverRelative}` : "";
@@ -806,6 +930,7 @@ outputDir: state.webExport.outputDir,
 slug,
 snapshotHtml,
   metadata: {
+  localPreview: options.localPreview === true,
   title: state.title,
   footerText: state.footerText,
   slug,
@@ -824,13 +949,17 @@ snapshotHtml,
   priceMode: state.priceMode,
   priceModeLabel: getPriceModeLabel(state.priceMode),
   entryFilter: state.entryFilter,
+  smartCategoryFilter: state.smartCategoryFilter,
   promotion: {
     title: state.promotion.title,
     text: state.promotion.text,
     imageUrl: promoImageRelative ? `./${promoImageRelative}` : "",
+    images: promoImageRelatives.map((relativePath) => `./${relativePath}`),
+    imageUrls: promoImageRelatives.map((relativePath) => `./${relativePath}`),
     videoUrl: promoVideoRelative ? `./${promoVideoRelative}` : "",
     linkLabel: state.promotion.linkLabel,
-    linkUrl: state.promotion.linkUrl
+    linkUrl: state.promotion.linkUrl,
+    slideInterval: normalizePromoSlideInterval(state.promotion.slideInterval)
   },
   legacyPdfUrl: "",
   modernPdfUrl: "",
@@ -844,35 +973,206 @@ imageSource: { ...state.imageSource },
 imageStorage: { ...state.imageStorage },
 brandFilter: state.brandExportMode === "single" ? state.brandFilter : "",
 brandExportMode: state.brandExportMode,
-catalog: records.map((record) => ({ item:record.item, description:record.description, shortDescription:record.shortDescription, price:record.price, originalPrice:record.originalPrice || record.price, priceMode:state.priceMode, entry:record.entry || "", available:record.available, package:record.package, empaque:record.package, packageQty:parsePackageQty(record.package), packageLabel:record.package, saleUnit:record.saleUnit || record.um || "bulto", minimumOrder:record.minimumOrder || 1, multipleQty:record.multipleQty || 1, brand:record.brand || "", material:record.material || "", size:record.size || record.measureBadge || "", category:record.category || "General", remote_image_url:resolveProductRemoteImageUrl(record), remoteImageUrl:resolveProductRemoteImageUrl(record), media:mediaCatalog[record.item] || { gallery:[], video:"" } })),
+brandFilterEnabled: brandFilterState.enabled,
+brands: brandFilterState.brands,
+activeBrand: brandFilterState.activeBrand,
+brandMetadata: brandFilterState.brands,
+showFeaturedBrands: state.brandExportMode === "complete" && state.featuredBrandsEnabled !== false,
+featuredBrands: buildFeaturedBrandMetadata(brandFilterState.brands, featuredBrandAssets),
+catalog: records.map((record) => ({ item:record.item, description:record.description, shortDescription:record.shortDescription, price:record.price, originalPrice:record.originalPrice || record.price, priceMode:state.priceMode, entry:record.entry || "", available:record.available, package:record.package, empaque:record.package, packageQty:parsePackageQty(record.package), packageLabel:record.package, saleUnit:record.saleUnit || record.um || "bulto", minimumOrder:record.minimumOrder || 1, multipleQty:record.multipleQty || 1, brand:record.brand || "", brandSlug:sanitizeSlug(record.brand || ""), material:record.material || "", size:record.size || record.measureBadge || "", category:record.category || "General", smartCategory:getRecordFilterCategory(record), categoryOriginal:record.categoryOriginal || record.category || "", remote_image_url:resolveProductRemoteImageUrl(record), remoteImageUrl:resolveProductRemoteImageUrl(record), media:mediaCatalog[record.item] || { gallery:[], video:"" } })),
 },
 assets: dedupeAssets(assets),
 };
 }
 
 function dedupeAssets(assets) { const seen = new Set(); return assets.filter((asset) => { const key = `${asset.sourcePath}|${asset.relativePath}`; if (!asset.sourcePath || seen.has(key)) return false; seen.add(key); return true; }); }
-function confirmMissingMainImages() {
+function getPromotionImageAssetSources() {
+return dedupeStringList(Array.isArray(state.promotion.imagePaths) ? state.promotion.imagePaths.filter(Boolean) : []);
+}
+function buildFeaturedBrandAssets(availableBrands = []) {
+if (state.brandExportMode !== "complete" || state.featuredBrandsEnabled === false) return [];
+const available = new Set((availableBrands || []).map((brand) => normalizeBrandValue(brand.name || brand)));
+return state.featuredBrands
+.filter((brand) => brand.logoPath && available.has(normalizeBrandValue(brand.name)))
+.map((brand) => ({
+sourcePath:brand.logoPath,
+relativePath:`assets/brands/${sanitizeSlug(brand.name)}${getWebLogoExtension(brand.logoPath)}`
+}));
+}
+function buildFeaturedBrandMetadata(availableBrands = [], assets = []) {
+if (state.brandExportMode !== "complete" || state.featuredBrandsEnabled === false) return [];
+const availableBySlug = new Map((availableBrands || []).map((brand) => [sanitizeSlug(brand.name || brand), brand.name || brand]));
+const assetBySlug = new Map((assets || []).map((asset) => [sanitizeSlug(String(asset.relativePath || "").replace(/^.*\/([^/.]+)\.[^.]+$/, "$1")), `./${asset.relativePath}`]));
+const configured = state.featuredBrands.length ? state.featuredBrands : DEFAULT_FEATURED_BRANDS.map((name) => ({ name, slug:sanitizeSlug(name), logoPath:"" }));
+return configured
+.map((brand) => {
+const slug = sanitizeSlug(brand.slug || brand.name);
+const name = availableBySlug.get(slug);
+if (!name) return null;
+return {
+name,
+slug,
+logo:assetBySlug.get(slug) || `./assets/brands/${slug}.png`
+};
+})
+.filter(Boolean);
+}
+function normalizePromoSlideInterval(value) {
+const interval = Number(value);
+return [3000, 5000, 8000, 15000].includes(interval) ? interval : 15000;
+}
+function buildBrandFilterState(records) {
+const brands = dedupeStringList((records || []).map((record) => safeText(record?.brand)).filter(Boolean))
+.sort((a, b) => a.localeCompare(b))
+.map((brand) => ({ name:brand, slug:sanitizeSlug(brand) }));
+return {
+enabled: brands.length > 1,
+brands,
+activeBrand: brands.length === 1 ? brands[0] : null
+};
+}
+async function confirmMissingMainImages() {
 if (state.imageSource.mode === "remote") return true;
 if (state.imageSource.mode === "hybrid" && (state.imageSource.editedBaseUrl || state.imageSource.originalBaseUrl)) return true;
 const total = state.records.length;
-const indexed = state.imageSourceMap.size;
-if (!total || indexed >= total) return true;
-const missingItems = state.records
-.filter((record) => !state.imageSourceMap.has(normalizeIdentifier(record.item)))
-.map((record) => record.item)
-.filter(Boolean);
-const missing = missingItems.length || (total - indexed);
+const missingRecords = getMissingMainImageRecords();
+if (!total || !missingRecords.length) return true;
+const missingItems = missingRecords.map((row) => row.item).filter(Boolean);
+const missing = missingItems.length;
 const sample = missingItems.slice(0, 12).join(", ");
 const more = missingItems.length > 12 ? ` y ${missingItems.length - 12} mas` : "";
 const message = `Hay ${missing} producto(s) sin imagen principal indexada de ${total}. ${sample ? `ITEM sin imagen: ${sample}${more}. ` : ""}Revisa que los nombres de archivo coincidan con el ITEM antes de publicar.`;
 setWebExportStatus(message, true);
+await maybeExportMissingImagesReport(missingRecords);
 return window.confirm(`${message}\n\nQuieres continuar de todos modos?`);
 }
-function reindexMainImages() { revokeObjectUrls(state.imageUrls); state.imageMap = buildImageMapFromFiles(state.imageFiles || []); state.imageUrls = Array.from(state.imageMap.values()); state.imageSourceMap = buildImageSourceMapFromFiles(state.imageFiles || []); if (state.imageFiles?.length) setStatus(`Imagenes principales indexadas: ${state.imageMap.size} de ${state.imageFiles.length}.`); }
-function buildImageSourceMapFromFiles(files) { const map = new Map(); const knownItems = new Set(state.records.map((record) => normalizeIdentifier(record.item)).filter(Boolean)); files.forEach((file) => { const stem = resolveMainMediaItemKey(file.name || "", knownItems); if (!stem || map.has(stem) || !file.path) return; map.set(stem, file.path); }); return map; }
-function buildExtraMediaMapFromFiles(files) { const map = new Map(); const knownItems = new Set(state.records.map((record) => normalizeIdentifier(record.item)).filter(Boolean)); files.forEach((file) => { const path = file.path || ""; if (!path) return; const ext = getPathExtension(file.name || path); const parsed = parseExtraMediaStem(file.name || path, knownItems); if (!parsed.itemKey) return; if (!map.has(parsed.itemKey)) map.set(parsed.itemKey, { gallery:[], videoPath:"" }); const bucket = map.get(parsed.itemKey); if (isVideoExtension(ext)) { if (!bucket.videoPath) bucket.videoPath = path; return; } bucket.gallery.push(path); }); return map; }
+function getMissingMainImageRecords() {
+return state.records
+.filter((record) => !recordHasMainImage(record))
+.map((record) => ({
+item: safeText(record.item),
+description: safeText(record.description || record.shortDescription),
+brand: safeText(record.brand),
+category: getRecordFilterCategory(record),
+expectedNames: buildExpectedImageNames(record.item)
+}))
+.filter((row) => row.item);
+}
+function buildExpectedImageNames(item) {
+const raw = safeText(item);
+if (!raw) return [];
+const safeDash = sanitizeItemAssetName(raw);
+const normalized = normalizeIdentifier(raw);
+const variants = [
+raw,
+`${raw}.jpg`,
+`${raw}_1.jpg`,
+`${raw}-1.jpg`,
+`${raw}-main.jpg`,
+`${raw}_main.jpg`,
+safeDash && safeDash !== raw ? `${safeDash}.jpg` : "",
+safeDash && safeDash !== raw ? `${safeDash}-main.jpg` : "",
+normalized && normalized !== safeDash.toLowerCase() ? `${normalized}.jpg` : ""
+];
+return dedupeStringList(variants.filter(Boolean));
+}
+async function maybeExportMissingImagesReport(rows) {
+if (!rows.length || !isDesktop || !desktopApi?.saveMissingImagesReport) return;
+const wantsReport = window.confirm(`Hay ${rows.length} ITEM sin imagen. Deseas exportar el reporte de imagenes faltantes?`);
+if (!wantsReport) return;
+const requestedFormat = window.prompt('Formato del reporte: escribe "TXT" o "EXCEL".', "TXT");
+if (!requestedFormat) return;
+const format = /^excel|xlsx|csv$/i.test(requestedFormat.trim()) ? "excel" : "txt";
+try {
+const result = await desktopApi.saveMissingImagesReport({
+format,
+rows,
+catalogTitle:getCatalogDisplayTitle(),
+fileName:`imagenes-faltantes-${sanitizeSlug(getCatalogDisplayTitle() || state.webExport.slug || "catalogo")}`
+});
+if (result?.filePath) setWebExportStatus(`Reporte de imagenes faltantes guardado en ${result.filePath}`, false);
+} catch (error) {
+console.error(error);
+setWebExportStatus(`No se pudo guardar el reporte de imagenes faltantes: ${error.message}`, true);
+}
+}
+async function matchImagesByItemFromDirectory() {
+if (!isDesktop || !desktopApi.findImagesForItems) {
+setStatus("La busqueda por ITEM requiere abrir el proyecto como app local con Electron.", true);
+return;
+}
+const items = getManualFilteredRecords(false).map((record) => record.item).filter(Boolean);
+if (!items.length) {
+setStatus("Primero carga el Excel para conocer los ITEM que se deben buscar.", true);
+return;
+}
+const rootDir = await desktopApi.chooseDirectory({ title:"Selecciona la carpeta raiz donde estan las imagenes" });
+if (!rootDir) return;
+setStatus(`Buscando imagenes para ${items.length} ITEM(s) sin cargar toda la carpeta...`);
+try {
+const result = await desktopApi.findImagesForItems({ rootDir, items });
+const matches = Array.isArray(result.matches) ? result.matches : [];
+state.imageFiles = [];
+state.imageMatchMode = "item-directory";
+revokeObjectUrls(state.imageUrls);
+state.imageUrls = [];
+state.imageMap = new Map();
+state.imageSourceMap = new Map();
+matches.forEach((match) => {
+const normalizedItem = match.normalizedItem || normalizeIdentifier(match.item);
+if (!normalizedItem || !match.filePath || state.imageSourceMap.has(normalizedItem)) return;
+state.imageSourceMap.set(normalizedItem, match.filePath);
+state.imageMap.set(normalizedItem, pathToFileUrl(match.filePath));
+});
+if (state.hideMissingImages) applyManualRecordFilters();
+const missingCount = Array.isArray(result.missingItems) ? result.missingItems.length : Math.max(0, items.length - matches.length);
+const limitNote = result.stoppedEarly ? " Se alcanzo el limite de archivos revisados; prueba una carpeta mas especifica." : "";
+const sampleNote = matches[0]?.fileName ? ` Ejemplo: ${matches[0].fileName}.` : "";
+setStatus(`Imagenes por ITEM: ${matches.length} encontradas, ${missingCount} sin imagen. Archivos revisados: ${result.scannedFiles || 0}.${sampleNote}${limitNote}`, Boolean(result.stoppedEarly));
+refreshCatalogIfReady();
+} catch (error) {
+console.error(error);
+setStatus(`No fue posible buscar imagenes por ITEM: ${error.message}`, true);
+}
+}
+function reindexMainImages() {
+if (state.imageMatchMode === "item-directory") {
+if (state.imageSourceMap.size) setStatus(`Imagenes por ITEM conservadas: ${state.imageSourceMap.size}.`);
+if (state.hideMissingImages) applyManualRecordFilters();
+return;
+}
+revokeObjectUrls(state.imageUrls);
+state.imageMap = buildImageMapFromFiles(state.imageFiles || []);
+state.imageUrls = Array.from(state.imageMap.values());
+state.imageSourceMap = buildImageSourceMapFromFiles(state.imageFiles || []);
+if (state.hideMissingImages) applyManualRecordFilters();
+if (state.imageFiles?.length) setStatus(`Imagenes principales indexadas: ${state.imageMap.size} de ${state.imageFiles.length}.`);
+}
+function buildImageSourceMapFromFiles(files) { const map = new Map(); const knownItems = getKnownItemsForImageIndex(); files.forEach((file) => { const stem = resolveMainMediaItemKey(file.name || "", knownItems); if (!stem || map.has(stem) || !file.path) return; map.set(stem, file.path); }); return map; }
+function buildExtraMediaMapFromFiles(files) { const map = new Map(); const knownItems = getKnownItemsForImageIndex(); files.forEach((file) => { const path = file.path || ""; if (!path) return; const ext = getPathExtension(file.name || path); const parsed = parseExtraMediaStem(file.name || path, knownItems); if (!parsed.itemKey) return; if (!map.has(parsed.itemKey)) map.set(parsed.itemKey, { gallery:[], videoPath:"" }); const bucket = map.get(parsed.itemKey); if (isVideoExtension(ext)) { if (!bucket.videoPath) bucket.videoPath = path; return; } bucket.gallery.push(path); }); return map; }
 function resolveMainMediaItemKey(fileName, knownItems = new Set()) { const parsed = parseExtraMediaStem(fileName, knownItems); return parsed.itemKey || normalizeIdentifier(String(fileName || "").replace(/\.[^.]+$/, "")); }
-function parseExtraMediaStem(fileName, knownItems = new Set()) { const rawStem = String(fileName || "").replace(/\.[^.]+$/, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim(); const copyCleanStem = rawStem.replace(/\s*\(\d+\)\s*$/i, "").trim(); const cleanedStem = copyCleanStem.replace(/(?:[_\-\s](?:main|principal|gallery|galeria|extra|image|img|foto|video|vid))(?:[_\-\s]?\d+)?$/i, "").replace(/(?:[_\-\s]\d+)$/i, "").trim(); const normalizedRaw = normalizeIdentifier(rawStem); const knownPrefix = Array.from(knownItems).filter((item) => normalizedRaw.startsWith(item)).sort((a, b) => b.length - a.length)[0] || ""; const candidates = [ knownPrefix, normalizedRaw, normalizeIdentifier(copyCleanStem), normalizeIdentifier(cleanedStem), normalizeIdentifier(rawStem.split(/[_\s]+/)[0]), normalizeIdentifier(cleanedStem.split(/[_\s]+/)[0]), normalizeIdentifier((rawStem.match(/^(.+?)(?:[_\s]+(?:\d+|main|principal|gallery|galeria|extra|image|img|foto|video|vid).*)$/i) || [])[1] || "") ].filter(Boolean); const itemKey = candidates.find((candidate) => knownItems.has(candidate)) || candidates[0] || ""; return { itemKey }; }
+function parseExtraMediaStem(fileName, knownItems = new Set()) {
+const rawStem = String(fileName || "").replace(/\.[^.]+$/, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+const copyCleanStem = rawStem.replace(/\s*\(\d+\)\s*$/i, "").trim();
+const cleanedStem = copyCleanStem.replace(/(?:[_\-\s](?:main|principal|gallery|galeria|extra|image|img|foto|video|vid|photo|pic|web|edited|editada))(?:[_\-\s]?\d+)?$/i, "").replace(/(?:[_\-\s]\d+)$/i, "").trim();
+const normalizedRaw = normalizeIdentifier(rawStem);
+const normalizedCopyClean = normalizeIdentifier(copyCleanStem);
+const normalizedCleaned = normalizeIdentifier(cleanedStem);
+const exactCandidates = [normalizedRaw, normalizedCopyClean, normalizedCleaned].filter(Boolean);
+const exactItem = exactCandidates.find((candidate) => knownItems.has(candidate));
+if (exactItem) return { itemKey:exactItem };
+const rawBoundary = normalizeBoundaryIdentifier(copyCleanStem);
+const cleanedBoundary = normalizeBoundaryIdentifier(cleanedStem);
+const sortedItems = Array.from(knownItems).sort((a, b) => b.length - a.length);
+const boundaryItem = sortedItems.find((item) => {
+const itemBoundary = normalizeBoundaryIdentifier(item);
+if (!itemBoundary) return false;
+if (rawBoundary === itemBoundary || cleanedBoundary === itemBoundary) return true;
+if (!rawBoundary.startsWith(`${itemBoundary}-`)) return false;
+return isAllowedMediaVariantSuffix(rawBoundary.slice(itemBoundary.length + 1));
+});
+return { itemKey: boundaryItem || "" };
+}
 function getPathExtension(filePath) { return String(filePath || "").match(/\.[^.]+$/)?.[0]?.toLowerCase() || ""; }
 function getWebImageExtension(filePath) { const ext = getPathExtension(filePath); return ext === ".svg" ? ".svg" : ".jpg"; }
 function getWebLogoExtension(filePath) {
@@ -893,7 +1193,24 @@ function sanitizeHexColor(value, fallback) {
 const normalized = String(value || "").trim();
 return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : fallback;
 }
-function buildExportAssetBaseName(rawItem, normalizedItem, index) { const safeBase = normalizeIdentifier(rawItem) || normalizeIdentifier(normalizedItem) || sanitizeFileName(rawItem || "item") || "item"; return `${safeBase}-${index + 1}`; }
+function buildExportAssetBaseName(rawItem, normalizedItem, index, usedNames = new Map()) {
+const safeBase = sanitizeItemAssetName(rawItem) || sanitizeItemAssetName(normalizedItem) || `item-${index + 1}`;
+const count = (usedNames.get(safeBase.toLowerCase()) || 0) + 1;
+usedNames.set(safeBase.toLowerCase(), count);
+return count > 1 ? `${safeBase}-${count}` : safeBase;
+}
+function sanitizeItemAssetName(value) {
+return String(value || "")
+.normalize("NFD")
+.replace(/[\u0300-\u036f]/g, "")
+.trim()
+.replace(/[\\/]+/g, "-")
+.replace(/\s+/g, "-")
+.replace(/[^A-Za-z0-9._-]+/g, "-")
+.replace(/-+/g, "-")
+.replace(/^-+|-+$/g, "")
+.slice(0, 120);
+}
 function setWebExportStatus(message, isError = false) { if (!webExportStatus) return; webExportStatus.textContent = message; webExportStatus.style.color = isError ? "#ffd6d6" : "rgba(255,255,255,0.82)"; }
 function sanitizeBaseUrl(value) { return String(value || "").trim().replace(/\/+$/, ""); }
 function buildGeneratedLink(slug) { return state.webExport.baseUrl ? `${sanitizeBaseUrl(state.webExport.baseUrl)}/${slug}/` : ""; }
@@ -920,8 +1237,15 @@ if (testHostingButton) testHostingButton.disabled = false;
 }
 function sanitizeRemoteDir(value) { const raw = String(value ?? "").trim().replace(/\\/g, "/"); if (!raw || raw === "." || raw === "/") return ""; const normalized = raw.replace(/\/+$/, ""); return normalized === "." ? "" : normalized; }
 function buildRemoteCatalogDir(remoteDir, slug) { const baseDir = sanitizeRemoteDir(remoteDir); return baseDir ? `${baseDir}/${slug}` : slug; }
-function buildScopedCatalogSlug(baseSlug, brand = "") { const brandSlug = sanitizeSlug(brand || ""); return brandSlug ? `${sanitizeSlug(baseSlug)}-${brandSlug}` : sanitizeSlug(baseSlug); }
+function buildScopedCatalogSlug(baseSlug, brand = "", category = "") {
+const parts = [sanitizeSlug(baseSlug), sanitizeSlug(brand || ""), sanitizeSlug(category || "")].filter(Boolean);
+return parts.join("-") || "catalogo-publicable";
+}
 function getScopedCatalogTitle(baseTitle, brand = "") { const cleanBrand = safeText(brand); const cleanTitle = safeText(baseTitle) || "Catalogo"; if (!cleanBrand) return cleanTitle; return normalizeBrandValue(cleanTitle).endsWith(normalizeBrandValue(cleanBrand)) ? cleanTitle : `${cleanTitle} - ${cleanBrand}`; }
+function getCatalogDisplayTitle() {
+const brand = state.brandExportMode === "single" ? safeText(state.brandFilter) : "";
+return brand || safeText(state.title) || "Catalogo";
+}
 function loadHostingSettings() { try { const raw = window.localStorage?.getItem(HOSTING_SETTINGS_STORAGE_KEY); if (!raw) return { ...DEFAULT_HOSTING_SETTINGS }; return normalizeHostingSettings(JSON.parse(raw)); } catch (error) { console.error(error); return { ...DEFAULT_HOSTING_SETTINGS }; } }
 // Modulo de fuente de imagenes hibridas: mantiene Local actual y agrega modos Remoto e Hibrido.
 function loadImageSourceSettings() { try { const raw = window.localStorage?.getItem(IMAGE_SOURCE_SETTINGS_STORAGE_KEY); if (!raw) return { ...DEFAULT_IMAGE_SOURCE_SETTINGS }; return normalizeImageSourceSettings(JSON.parse(raw)); } catch (error) { console.error(error); return { ...DEFAULT_IMAGE_SOURCE_SETTINGS }; } }
@@ -1055,7 +1379,7 @@ function resolveImageCandidatesForProduct(product, localImageUrl = "") {
 const mode = state.imageSource.mode === "remote" ? "remote" : (state.imageSource.mode === "hybrid" ? "hybrid" : "local");
 if (mode === "local") return dedupeStringList([localImageUrl]);
 const remoteCandidates = [resolveProductRemoteImageUrl(product), ...buildRemoteMainCandidates(product?.item)].filter(Boolean);
-return mode === "remote" ? dedupeStringList(remoteCandidates) : dedupeStringList([...remoteCandidates, localImageUrl]);
+return mode === "remote" ? dedupeStringList(remoteCandidates.length ? remoteCandidates : [localImageUrl]) : dedupeStringList([...remoteCandidates, localImageUrl]);
 }
 function resolveProductRemoteImageUrl(product = {}) {
 return sanitizeRemoteImageUrl(product.remote_image_url || product.remoteImageUrl || product.remoteImage || "");
@@ -1183,6 +1507,34 @@ function createDefaultLayoutPreset() { return { id:"default", name:"Predetermina
 function normalizeLayoutPreset(preset) { const defaults = createDefaultLayoutBlocks(); const safePreset = preset && typeof preset === "object" ? preset : {}; const blocks = {}; Object.keys(defaults).forEach((blockId) => { const source = safePreset.blocks?.[blockId] || {}; blocks[blockId] = { x:Number.isFinite(source.x) ? source.x : defaults[blockId].x, y:Number.isFinite(source.y) ? source.y : defaults[blockId].y, scale:Number.isFinite(source.scale) ? source.scale : defaults[blockId].scale }; }); return { id:String(safePreset.id || `preset-${Date.now()}`), name:String(safePreset.name || "Plantilla personalizada"), blocks }; }
 function loadLayoutPresets() { try { const raw = window.localStorage?.getItem(LAYOUT_STORAGE_KEY); if (!raw) return { default:createDefaultLayoutPreset() }; const parsed = JSON.parse(raw); const presets = { default:createDefaultLayoutPreset() }; Object.entries(parsed || {}).forEach(([id, preset]) => { if (id === "default") return; presets[id] = normalizeLayoutPreset({ ...preset, id }); }); return presets; } catch (error) { console.error(error); return { default:createDefaultLayoutPreset() }; } }
 function saveLayoutPresets() { try { window.localStorage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(state.layoutPresets)); } catch (error) { console.error(error); } }
+function loadBrandVisualPresets() { try { const raw = window.localStorage?.getItem(BRAND_VISUAL_PRESETS_STORAGE_KEY); const parsed = raw ? JSON.parse(raw) : {}; const presets = {}; Object.entries(parsed || {}).forEach(([key, preset]) => { const normalized = normalizeBrandVisualPreset(preset); if (normalized.brand || key === GENERAL_VISUAL_PRESET_KEY) presets[key] = normalized; }); if (!presets[GENERAL_VISUAL_PRESET_KEY]) presets[GENERAL_VISUAL_PRESET_KEY] = normalizeBrandVisualPreset(DEFAULT_GENERAL_VISUAL); return presets; } catch (error) { console.error(error); return { [GENERAL_VISUAL_PRESET_KEY]:normalizeBrandVisualPreset(DEFAULT_GENERAL_VISUAL) }; } }
+function saveBrandVisualPresets() { try { window.localStorage?.setItem(BRAND_VISUAL_PRESETS_STORAGE_KEY, JSON.stringify(state.brandVisualPresets)); } catch (error) { console.error(error); } }
+function normalizeBrandVisualPreset(preset) {
+const source = preset && typeof preset === "object" ? preset : {};
+return {
+brand:safeText(source.brand),
+primaryColor:sanitizeHexColor(source.primaryColor, "#2c4695"),
+secondaryColor:sanitizeHexColor(source.secondaryColor, "#1d1d1b"),
+coverImagePath:String(source.coverImagePath || ""),
+pageLogoPath:String(source.pageLogoPath || ""),
+pageLogoPosition:source.pageLogoPosition === "left" ? "left" : "right",
+pageBackgroundPath:String(source.pageBackgroundPath || ""),
+pageBackgroundOpacity:Number.isFinite(Number(source.pageBackgroundOpacity)) ? Number(source.pageBackgroundOpacity) : 0.12,
+heroImagePath:String(source.heroImagePath || ""),
+heroSubtitle:String(source.heroSubtitle || DEFAULT_HERO_SUBTITLE),
+promotion:{
+title:String(source.promotion?.title || ""),
+text:String(source.promotion?.text || ""),
+imagePath:String(source.promotion?.imagePath || ""),
+imagePaths:Array.isArray(source.promotion?.imagePaths) ? source.promotion.imagePaths.map((value) => String(value || "")).filter(Boolean) : [],
+videoPath:String(source.promotion?.videoPath || ""),
+linkLabel:String(source.promotion?.linkLabel || ""),
+linkUrl:String(source.promotion?.linkUrl || ""),
+slideInterval:normalizePromoSlideInterval(source.promotion?.slideInterval)
+},
+updatedAt:String(source.updatedAt || "")
+};
+}
 function getActiveLayoutPreset() { return state.layoutPresets[state.activeLayoutPresetId] || state.layoutPresets.default; }
 function getBlockLayout(blockId) { return getActiveLayoutPreset().blocks?.[blockId] || createDefaultLayoutBlocks()[blockId]; }
 function layoutStyleAttr(blockId) { const layout = state.mode === "manual" ? getBlockLayout(blockId) : createDefaultLayoutBlocks()[blockId]; return `--layout-x:${layout.x}px; --layout-y:${layout.y}px; --layout-scale:${layout.scale};`; }
@@ -1228,7 +1580,7 @@ window.addEventListener("pointerup", onUp);
 async function loadRecordsFromFile(file) {
 if (!window.XLSX) return setStatus("No se pudo cargar la libreria XLSX en el navegador.", true);
 setStatus("Leyendo Excel...");
-try { const buffer = await file.arrayBuffer(); state.sourceRecords = parseWorkbookFromBuffer(buffer); syncBrandFilterInputs(); applyManualRecordFilters(); state.sourceExcelName = file.name || ""; if (webCatalogSlugInput && !state.webExport.slugEdited && (!webCatalogSlugInput.value || webCatalogSlugInput.value === "catalogo-publicable")) { const nextSlug = sanitizeSlug(file.name.replace(/\.[^.]+$/, "")) || "catalogo-publicable"; webCatalogSlugInput.value = nextSlug; state.webExport.slug = nextSlug; updateGeneratedLinkPreview(); } reindexMainImages(); reindexExtraMedia(); setStatus(`${buildManualRecordStatus()} Imagenes principales indexadas: ${state.imageMap.size}.`); refreshCatalogIfReady(); } catch (error) { console.error(error); setStatus(`No fue posible leer el Excel: ${error.message}`, true); }
+try { const buffer = await file.arrayBuffer(); state.sourceRecords = parseWorkbookFromBuffer(buffer); syncBrandFilterInputs(); syncSmartCategoryFilterInputs(); applyManualRecordFilters(); state.sourceExcelName = file.name || ""; if (webCatalogSlugInput && !state.webExport.slugEdited && (!webCatalogSlugInput.value || webCatalogSlugInput.value === "catalogo-publicable")) { const nextSlug = sanitizeSlug(file.name.replace(/\.[^.]+$/, "")) || "catalogo-publicable"; webCatalogSlugInput.value = nextSlug; state.webExport.slug = nextSlug; updateGeneratedLinkPreview(); } reindexMainImages(); reindexExtraMedia(); setStatus(`${buildManualRecordStatus()} Imagenes principales indexadas: ${state.imageMap.size}.`); refreshCatalogIfReady(); } catch (error) { console.error(error); setStatus(`No fue posible leer el Excel: ${error.message}`, true); }
 }
 
 function parseWorkbookFromBuffer(buffer) {
@@ -1253,16 +1605,18 @@ function normalizeRecord(row, columnMap) {
 const description = safeText(row[columnMap.description]);
 const rawPrice = row[columnMap.price];
 const numericPrice = parsePriceNumber(rawPrice);
-const category = safeText(row.CATEGORIA || row.CATEGORY || row.LINEA || row.LINE || row.FAMILIA);
+const category = safeText(columnMap.category ? row[columnMap.category] : (row.CATEGORIA || row.CATEGORY || row.LINEA || row.LINE || row.FAMILIA));
 const brand = safeText(columnMap.brand ? row[columnMap.brand] : (row.MARCA || row.BRAND || row.FABRICANTE));
-const material = safeText(row.MATERIAL);
-const size = safeText(row.TAMANO || row['TAMAÑO'] || row.SIZE);
+const material = safeText(columnMap.material ? row[columnMap.material] : row.MATERIAL);
+const size = safeText(columnMap.size ? row[columnMap.size] : (row.TAMANO || row['TAMAÃ‘O'] || row.SIZE));
 const entry = safeText(columnMap.entry ? row[columnMap.entry] : (row.ENTRADA || row.ENTRY || row.LOTE || row.IMPORTACION));
-const saleUnit = safeText(row['UNIDAD_VENTA'] || row['UNIDAD DE VENTA'] || row.VENTA || row.UM) || "bulto";
-const minimumOrder = parsePackageQty(row.MINIMO || row['MINIMO PEDIDO'] || 1);
-const multipleQty = parsePackageQty(row.MULTIPLO || row['MULTIPLO'] || 1);
-const remoteImageUrl = sanitizeRemoteImageUrl(row.REMOTE_IMAGE_URL || row.REMOTE_IMAGE || row.IMAGE_URL || row.IMAGEN_URL || row.URL_IMAGEN);
-return { item:safeText(row[columnMap.item]), description, shortTitle:summarizeTitle(description), shortDescription:summarizeDescription(description), price:formatPrice(rawPrice), originalPrice:formatPrice(rawPrice), priceBaseValue:numericPrice, priceRaw:safeText(rawPrice), entry, available:safeText(row[columnMap.available]), barcode:safeText(row[columnMap.barcode]), package:safeText(row[columnMap.package]), um:safeText(row[columnMap.um]), ctn:safeText(row[columnMap.ctn]), cub:safeText(row[columnMap.cub]), measureBadge:extractMeasureBadge(description), category, brand, material, size, remoteImageUrl, remote_image_url:remoteImageUrl, saleUnit, minimumOrder, multipleQty };
+const saleUnit = safeText(columnMap.saleUnit ? row[columnMap.saleUnit] : (row['UNIDAD_VENTA'] || row['UNIDAD DE VENTA'] || row.VENTA || row.UM)) || "bulto";
+const minimumOrder = parsePackageQty(columnMap.minimumOrder ? row[columnMap.minimumOrder] : (row.MINIMO || row['MINIMO PEDIDO'] || 1));
+const multipleQty = parsePackageQty(columnMap.multipleQty ? row[columnMap.multipleQty] : (row.MULTIPLO || row['MULTIPLO'] || 1));
+const remoteImageUrl = sanitizeRemoteImageUrl(columnMap.remoteImageUrl ? row[columnMap.remoteImageUrl] : (row.REMOTE_IMAGE_URL || row.REMOTE_IMAGE || row.IMAGE_URL || row.IMAGEN_URL || row.URL_IMAGEN));
+const item = safeText(row[columnMap.item]);
+const smartCategory = inferSmartCategory({ item, description, category, brand, material, size });
+return { item, description, shortTitle:summarizeTitle(description), shortDescription:summarizeDescription(description), price:formatPrice(rawPrice), originalPrice:formatPrice(rawPrice), priceBaseValue:numericPrice, priceRaw:safeText(rawPrice), entry, available:safeText(row[columnMap.available]), barcode:safeText(row[columnMap.barcode]), package:safeText(row[columnMap.package]), um:safeText(row[columnMap.um]), ctn:safeText(row[columnMap.ctn]), cub:safeText(row[columnMap.cub]), measureBadge:extractMeasureBadge(description), category, smartCategory, categoryOriginal:category, brand, material, size, remoteImageUrl, remote_image_url:remoteImageUrl, saleUnit, minimumOrder, multipleQty };
 }
 
 function renderCatalog(options = {}) {
@@ -1279,6 +1633,7 @@ hydrateDynamicImages(catalogRoot);
 
 function renderCover() {
 const template = getCurrentTemplate();
+const displayTitle = getCatalogDisplayTitle();
 const art = state.coverImageUrl ? `<div class="cover-page__art cover-page__art--full"><img src="${state.coverImageUrl}" alt="Portada"></div>` : `<div class="cover-page__art cover-page__art--placeholder"><span>${escapeHtml(template.coverIntro)}</span></div>`;
 return `
 <section class="cover-page ${template.coverClass}">
@@ -1288,7 +1643,7 @@ return `
 ${art}
 <div class="cover-page__title" data-layout-block="coverTitle" style="${layoutStyleAttr("coverTitle")}">
 <p class="cover-page__eyebrow">${escapeHtml(template.coverIntro)}</p>
-<h2>${escapeHtml(state.title)}</h2>
+<h2>${escapeHtml(displayTitle)}</h2>
 <p class="cover-page__subtitle">${escapeHtml(state.footerText)}</p>
 </div>
 </section>`;
@@ -1296,6 +1651,7 @@ ${art}
 
 function renderPage(products, pageNumber, totalPages) {
 const template = getCurrentTemplate();
+const displayTitle = getCatalogDisplayTitle();
 if (template.pageRenderer) return template.pageRenderer(products, pageNumber, totalPages);
 const backgroundMarkup = state.pageBackgroundUrl ? `<div class="catalog-page__bg catalog-page__bg--image" style="background-image: url('${escapeHtml(state.pageBackgroundUrl)}'); opacity: ${state.pageBackgroundOpacity.toFixed(2)};"></div>` : `<div class="catalog-page__bg"></div>`;
 const headerClass = state.pageLogoUrl ? `page-header page-header--with-logo page-header--logo-${state.pageLogoPosition}` : "page-header";
@@ -1303,7 +1659,7 @@ return `
 <section class="catalog-page ${template.pageClass}">
 ${backgroundMarkup}
 <div class="catalog-page__chrome"></div>
-<div class="${headerClass}" data-layout-block="pageHeader" style="${layoutStyleAttr("pageHeader")}">${renderPageLogo()}<div class="page-header__accent"></div><div class="page-header__copy"><p class="page-header__eyebrow">${escapeHtml(template.headerEyebrow)}</p><h2 class="page-header__title">${escapeHtml(state.title)}</h2></div></div>
+<div class="${headerClass}" data-layout-block="pageHeader" style="${layoutStyleAttr("pageHeader")}">${renderPageLogo()}<div class="page-header__accent"></div><div class="page-header__copy"><p class="page-header__eyebrow">${escapeHtml(template.headerEyebrow)}</p><h2 class="page-header__title">${escapeHtml(displayTitle)}</h2></div></div>
 <div class="products-grid" data-layout-block="productsGrid" style="${layoutStyleAttr("productsGrid")}">${products.map((product) => template.cardRenderer(product, resolveProductImage(product), buildMetaItems(product))).join("")}</div>
 <footer class="page-footer" data-layout-block="pageFooter" style="${layoutStyleAttr("pageFooter")}"><div class="page-footer__line"></div><div class="page-footer__band"><span class="page-footer__label">${escapeHtml(state.footerText)}</span></div><div class="page-footer__number ${pageNumber === totalPages ? "page-footer__number--right" : ""}">${pageNumber}</div></footer>
 </section>`;
@@ -1311,6 +1667,7 @@ ${backgroundMarkup}
 
 function renderCampinPage(products, pageNumber, totalPages) {
 const template = getCurrentTemplate();
+const displayTitle = getCatalogDisplayTitle();
 const [heroProduct, ...secondaryProducts] = products;
 const heroImage = heroProduct ? resolveProductImage(heroProduct) : { url:PLACEHOLDER_DATA_URI, isPlaceholder:true };
 const backgroundMarkup = state.pageBackgroundUrl ? `<div class="catalog-page__bg catalog-page__bg--image" style="background-image: url('${escapeHtml(state.pageBackgroundUrl)}'); opacity: ${state.pageBackgroundOpacity.toFixed(2)};"></div>` : `<div class="catalog-page__bg"></div>`;
@@ -1320,13 +1677,13 @@ return `
 <section class="catalog-page ${template.pageClass}">
 ${backgroundMarkup}
 <div class="catalog-page__chrome"></div>
-<div class="${headerClass}" data-layout-block="pageHeader" style="${layoutStyleAttr("pageHeader")}"><div class="campin1-header__brand">${renderPageLogo()}<div class="campin1-header__copy"><p class="campin1-header__eyebrow">${escapeHtml(template.headerEyebrow)}</p><h2 class="campin1-header__title">${escapeHtml(state.title || "CAMPIN1")}</h2><p class="campin1-header__sub">Outdoor catalog premium</p></div></div><div class="campin1-header__pill">Camping</div></div>
+<div class="${headerClass}" data-layout-block="pageHeader" style="${layoutStyleAttr("pageHeader")}"><div class="campin1-header__brand">${renderPageLogo()}<div class="campin1-header__copy"><p class="campin1-header__eyebrow">${escapeHtml(template.headerEyebrow)}</p><h2 class="campin1-header__title">${escapeHtml(displayTitle || "CAMPIN1")}</h2><p class="campin1-header__sub">Outdoor catalog premium</p></div></div><div class="campin1-header__pill">Camping</div></div>
 <section class="campin1-hero" ${heroProduct ? `data-item="${escapeHtml(heroProduct.item)}"` : ""}>
 <div class="campin1-hero__copy"><p class="campin1-hero__kicker">Hero product</p><h3 class="campin1-hero__title" data-layout-block="productCode" style="${layoutStyleAttr("productCode")}">${escapeHtml(heroProduct?.description || heroProduct?.shortTitle || heroProduct?.item || "Equipo listo para cada aventura")}</h3><p class="campin1-hero__description" data-layout-block="productDescription" style="${layoutStyleAttr("productDescription")}">${escapeHtml(heroProduct ? (heroProduct.shortDescription || heroProduct.description || "") : "Catalogo editorial de camping con imagen protagonista, precio visible y datos comerciales claros.")}</p><div class="campin1-hero__badges" data-layout-block="productMeta" style="${layoutStyleAttr("productMeta")}"><span class="campin1-badge">Outdoor</span><span class="campin1-badge">Venta directa</span>${heroProduct?.measureBadge ? `<span class="campin1-badge">${escapeHtml(heroProduct.measureBadge)}</span>` : ""}</div><div class="campin1-hero__price" data-layout-block="productPrice" style="${layoutStyleAttr("productPrice")}">${escapeHtml(heroProduct?.price || "$0.00")}</div><div class="campin1-hero__meta">${heroProduct ? `<span>ITEM: ${escapeHtml(heroProduct.item)}</span>` : ""}${heroProduct?.available ? `<span>Disponible: ${escapeHtml(heroProduct.available)}</span>` : ""}${heroMeta.map((item) => `<span>${escapeHtml(item.label)}: ${escapeHtml(item.value)}</span>`).join("")}</div></div>
 <div class="campin1-hero__visual" data-layout-block="productImage" style="${layoutStyleAttr("productImage")}">${renderImage(heroImage, heroProduct?.item || "Hero")}</div>
 </section>
 <div class="campin1-grid" data-layout-block="productsGrid" style="${layoutStyleAttr("productsGrid")}">${secondaryProducts.map((product) => template.cardRenderer(product, resolveProductImage(product), buildMetaItems(product))).join("")}</div>
-<footer class="page-footer campin1-footer" data-layout-block="pageFooter" style="${layoutStyleAttr("pageFooter")}"><div class="page-footer__line"></div><div class="page-footer__band"><span class="page-footer__label">${escapeHtml(state.footerText || "Catalogo comercial · CAMPIN1")}</span></div><div class="page-footer__number ${pageNumber === totalPages ? "page-footer__number--right" : ""}">${pageNumber}</div></footer>
+<footer class="page-footer campin1-footer" data-layout-block="pageFooter" style="${layoutStyleAttr("pageFooter")}"><div class="page-footer__line"></div><div class="page-footer__band"><span class="page-footer__label">${escapeHtml(state.footerText)}</span></div><div class="page-footer__number ${pageNumber === totalPages ? "page-footer__number--right" : ""}">${pageNumber}</div></footer>
 </section>`;
 }
 
@@ -1381,10 +1738,11 @@ batchCategoryList.innerHTML = state.batch.categories.map((category, index) => `
 function renderTemplateOptions(selectedValue) { return Object.entries(TEMPLATE_DEFS).map(([value, template]) => `<option value="${value}" ${value === selectedValue ? "selected" : ""}>${escapeHtml(template.name)}</option>`).join(""); }
 function setMode(mode) { state.mode = mode; const isManual = mode === "manual"; manualModeButton?.classList.toggle("mode-switch__button--active", isManual); batchModeButton?.classList.toggle("mode-switch__button--active", !isManual); manualPanels.forEach((panel) => { panel.hidden = !isManual; }); batchPanels.forEach((panel) => { panel.hidden = isManual; }); if (!isManual && state.layoutEditor.enabled) toggleLayoutEditor(false); refreshLayoutEditorOverlay(); }
 function refreshCatalogIfReady() { if (state.records.length) renderCatalog(); else if (catalogRoot) catalogRoot.innerHTML = ""; renderWebPreview(); }
-function syncStateFromManualInputs() { state.title = titleInput?.value.trim() || state.title; state.footerText = footerInput?.value.trim() || state.footerText; state.heroSubtitle = heroSubtitleInput?.value.trim() || DEFAULT_HERO_SUBTITLE; state.includeCover = Boolean(includeCoverInput?.checked); state.template = templateSelect?.value || state.template; state.primaryColor = primaryColorInput?.value || state.primaryColor; state.secondaryColor = secondaryColorInput?.value || state.secondaryColor; state.pageLogoPosition = pageLogoPositionInput?.value || state.pageLogoPosition; state.priceMode = normalizePriceMode(priceModeSelect?.value || state.priceMode); state.entryFilter = entryFilterInput?.value.trim() || ""; state.brandExportMode = normalizeBrandExportMode(brandExportModeInput?.value || state.brandExportMode); state.brandFilter = brandFilterSelect?.value || ""; state.pageBackgroundOpacity = readBackgroundOpacity(pageBackgroundOpacityInput); const perPage = Number(productsPerPageInput?.value); state.productsPerPage = Number.isFinite(perPage) && perPage > 0 ? perPage : state.productsPerPage; }
+function syncStateFromManualInputs() { state.title = titleInput?.value.trim() || state.title; state.footerText = footerInput ? footerInput.value.trim() : state.footerText; state.heroSubtitle = heroSubtitleInput?.value.trim() || DEFAULT_HERO_SUBTITLE; state.includeCover = Boolean(includeCoverInput?.checked); state.template = templateSelect?.value || state.template; state.primaryColor = primaryColorInput?.value || state.primaryColor; state.secondaryColor = secondaryColorInput?.value || state.secondaryColor; state.pageLogoPosition = pageLogoPositionInput?.value || state.pageLogoPosition; state.priceMode = normalizePriceMode(priceModeSelect?.value || state.priceMode); state.entryFilter = entryFilterInput?.value.trim() || ""; state.brandExportMode = normalizeBrandExportMode(brandExportModeInput?.value || state.brandExportMode); state.brandFilter = brandFilterSelect?.value || ""; state.smartCategoryFilter = smartCategoryFilterSelect?.value || ""; state.featuredBrandsEnabled = featuredBrandsEnabledInput ? Boolean(featuredBrandsEnabledInput.checked) : state.featuredBrandsEnabled; state.hideMissingImages = Boolean(hideMissingImagesInput?.checked); state.promotion.slideInterval = normalizePromoSlideInterval(promoSliderIntervalInput?.value || state.promotion.slideInterval); state.pageBackgroundOpacity = readBackgroundOpacity(pageBackgroundOpacityInput); const perPage = Number(productsPerPageInput?.value); state.productsPerPage = Number.isFinite(perPage) && perPage > 0 ? perPage : state.productsPerPage; }
 function applyThemeVariables() { document.documentElement.style.setProperty("--red-primary", state.primaryColor); document.documentElement.style.setProperty("--red-dark", state.primaryColor); document.documentElement.style.setProperty("--footer-black", state.secondaryColor); }
 function setStatus(message, isError = false) { if (!statusMessage) return; statusMessage.textContent = message; statusMessage.style.color = isError ? "#ffd6d6" : "rgba(255,255,255,0.82)"; }
 function setBatchStatus(message, isError = false) { if (!batchStatusMessage) return; batchStatusMessage.textContent = message; batchStatusMessage.style.color = isError ? "#ffd6d6" : "rgba(255,255,255,0.82)"; }
+function setBrandVisualPresetStatus(message, isError = false) { if (!brandVisualPresetStatus) return; brandVisualPresetStatus.textContent = message; brandVisualPresetStatus.style.color = isError ? "#ffd6d6" : "rgba(255,255,255,0.82)"; }
 function syncBrandFilterInputs() {
 state.brandExportMode = normalizeBrandExportMode(state.brandExportMode);
 const brands = getAvailableBrandsForCurrentEntry();
@@ -1396,6 +1754,224 @@ brandFilterSelect.value = current;
 brandFilterSelect.disabled = state.brandExportMode !== "single";
 state.brandFilter = current;
 }
+syncFeaturedBrandControls();
+}
+function syncFeaturedBrandControls() {
+const brands = getAvailableBrandsForCurrentEntry();
+const isComplete = state.brandExportMode === "complete";
+if (featuredBrandsEnabledInput) {
+featuredBrandsEnabledInput.checked = state.featuredBrandsEnabled !== false;
+featuredBrandsEnabledInput.disabled = !isComplete;
+}
+if (featuredBrandSelect) {
+const used = new Set(state.featuredBrands.map((brand) => normalizeBrandValue(brand.name)));
+const available = brands.filter((brand) => !used.has(normalizeBrandValue(brand)));
+featuredBrandSelect.innerHTML = `<option value="">Selecciona una marca</option>${available.map((brand) => `<option value="${escapeHtml(brand)}">${escapeHtml(brand)}</option>`).join("")}`;
+featuredBrandSelect.disabled = !isComplete || !available.length;
+}
+if (featuredBrandLogoFileInput) featuredBrandLogoFileInput.disabled = !isComplete;
+if (addFeaturedBrandButton) addFeaturedBrandButton.disabled = !isComplete;
+renderFeaturedBrandsEditorList();
+}
+function addFeaturedBrandFromInputs() {
+syncStateFromManualInputs();
+if (state.brandExportMode !== "complete") {
+setBrandVisualPresetStatus("Las marcas destacadas solo se usan en catalogo completo.", true);
+return;
+}
+const name = safeText(featuredBrandSelect?.value || "");
+if (!name) {
+setBrandVisualPresetStatus("Selecciona una marca para destacarla.", true);
+return;
+}
+const file = featuredBrandLogoFileInput?.files?.[0] || null;
+const existingIndex = state.featuredBrands.findIndex((brand) => normalizeBrandValue(brand.name) === normalizeBrandValue(name));
+const nextBrand = {
+name,
+slug:sanitizeSlug(name),
+logoPath:file?.path || "",
+logoUrl:file ? URL.createObjectURL(file) : ""
+};
+if (existingIndex >= 0) {
+if (state.featuredBrands[existingIndex].logoUrl?.startsWith("blob:")) URL.revokeObjectURL(state.featuredBrands[existingIndex].logoUrl);
+state.featuredBrands[existingIndex] = nextBrand;
+} else {
+state.featuredBrands.push(nextBrand);
+}
+if (featuredBrandLogoFileInput) featuredBrandLogoFileInput.value = "";
+setBrandVisualPresetStatus(`Marca destacada agregada: ${name}.`);
+syncFeaturedBrandControls();
+renderWebPreview();
+}
+function removeFeaturedBrand(index) {
+const [removed] = state.featuredBrands.splice(index, 1);
+if (removed?.logoUrl?.startsWith("blob:")) URL.revokeObjectURL(removed.logoUrl);
+syncFeaturedBrandControls();
+renderWebPreview();
+}
+function renderFeaturedBrandsEditorList() {
+if (!featuredBrandsList) return;
+if (state.brandExportMode !== "complete") {
+featuredBrandsList.innerHTML = `<p class="status-message">Esta opcion aparece solo al generar catalogo completo.</p>`;
+return;
+}
+if (!state.featuredBrands.length) {
+featuredBrandsList.innerHTML = `<p class="status-message">Agrega logos de marcas para mostrarlos en Acceso rapido del catalogo completo.</p>`;
+return;
+}
+featuredBrandsList.innerHTML = state.featuredBrands.map((brand, index) => `
+  <div class="featured-brand-editor-item">
+    ${brand.logoUrl ? `<img src="${escapeHtml(brand.logoUrl)}" alt="${escapeHtml(brand.name)}">` : `<img src="" alt="" hidden>`}
+    <div><strong>${escapeHtml(brand.name)}</strong><small>${escapeHtml(brand.logoPath || "Sin logo: se mostrara texto si falta el archivo")}</small></div>
+    <button type="button" data-featured-brand-remove="${index}">Quitar</button>
+  </div>
+`).join("");
+featuredBrandsList.querySelectorAll("[data-featured-brand-remove]").forEach((button) => {
+button.addEventListener("click", () => removeFeaturedBrand(Number(button.getAttribute("data-featured-brand-remove"))));
+});
+}
+function syncSmartCategoryFilterInputs() {
+const categories = getAvailableSmartCategoriesForCurrentScope();
+if (!smartCategoryFilterSelect) {
+state.smartCategoryFilter = categories.includes(state.smartCategoryFilter) ? state.smartCategoryFilter : "";
+return;
+}
+const current = categories.includes(state.smartCategoryFilter) ? state.smartCategoryFilter : "";
+smartCategoryFilterSelect.innerHTML = `<option value="">Todas las categorias</option>${categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}`;
+smartCategoryFilterSelect.value = current;
+smartCategoryFilterSelect.disabled = !categories.length;
+state.smartCategoryFilter = current;
+}
+function getSelectedBrandVisualPresetKey() {
+if (state.brandExportMode !== "single" || !state.brandFilter) return "";
+return normalizeBrandValue(state.brandFilter) || sanitizeSlug(state.brandFilter);
+}
+function captureCurrentVisualPreset(brand) {
+return normalizeBrandVisualPreset({
+brand,
+primaryColor:state.primaryColor,
+secondaryColor:state.secondaryColor,
+coverImagePath:state.coverImagePath,
+pageLogoPath:state.pageLogoPath,
+pageLogoPosition:state.pageLogoPosition,
+pageBackgroundPath:state.pageBackgroundPath,
+pageBackgroundOpacity:state.pageBackgroundOpacity,
+heroImagePath:state.heroImagePath,
+heroSubtitle:state.heroSubtitle,
+promotion:{
+title:state.promotion.title,
+text:state.promotion.text,
+imagePath:state.promotion.imagePath,
+imagePaths:Array.isArray(state.promotion.imagePaths) ? state.promotion.imagePaths.slice() : [],
+videoPath:state.promotion.videoPath,
+linkLabel:state.promotion.linkLabel,
+linkUrl:state.promotion.linkUrl,
+slideInterval:normalizePromoSlideInterval(state.promotion.slideInterval)
+},
+updatedAt:new Date().toISOString()
+});
+}
+function saveBrandVisualPresetForSelectedBrand() {
+syncStateFromManualInputs();
+if (state.brandExportMode !== "single") {
+state.brandVisualPresets[GENERAL_VISUAL_PRESET_KEY] = captureCurrentVisualPreset("Catalogo completo");
+saveBrandVisualPresets();
+setBrandVisualPresetStatus("Visual general guardado para catalogo completo.");
+return;
+}
+const key = getSelectedBrandVisualPresetKey();
+if (!key) {
+setBrandVisualPresetStatus("Selecciona Generacion por marca: Solo una marca y elige una marca antes de guardar.", true);
+return;
+}
+state.brandVisualPresets[key] = captureCurrentVisualPreset(state.brandFilter);
+saveBrandVisualPresets();
+setBrandVisualPresetStatus(`Configuracion visual guardada para ${state.brandFilter}.`);
+}
+function applyBrandVisualPresetForSelectedBrand(options = {}) {
+const key = getSelectedBrandVisualPresetKey();
+if (!key) {
+if (!options.silent) setBrandVisualPresetStatus("Selecciona una marca guardada para aplicar su configuracion visual.", true);
+return false;
+}
+const preset = state.brandVisualPresets[key];
+if (!preset) {
+if (!options.silent) setBrandVisualPresetStatus(`No hay configuracion visual guardada para ${state.brandFilter}.`, true);
+return false;
+}
+applyVisualPreset(preset);
+if (!options.silent) setBrandVisualPresetStatus(`Configuracion visual aplicada para ${state.brandFilter}.`);
+return true;
+}
+function applyVisualForCurrentScope(options = {}) {
+if (state.brandExportMode === "single" && state.brandFilter) {
+if (applyBrandVisualPresetForSelectedBrand({ silent:true })) {
+if (!options.silent) setBrandVisualPresetStatus(`Visual de marca aplicado para ${state.brandFilter}.`);
+return true;
+}
+const general = getGeneralVisualPreset();
+applyVisualPreset({ ...general, brand:state.brandFilter });
+if (!options.silent) setBrandVisualPresetStatus(`No hay visual guardado para ${state.brandFilter}; se uso visual general.`, true);
+return false;
+}
+applyVisualPreset(getGeneralVisualPreset());
+if (!options.silent) setBrandVisualPresetStatus("Visual general aplicado para catalogo completo.");
+return true;
+}
+function getGeneralVisualPreset() {
+return state.brandVisualPresets[GENERAL_VISUAL_PRESET_KEY] || normalizeBrandVisualPreset(DEFAULT_GENERAL_VISUAL);
+}
+function applyVisualPreset(preset) {
+const normalized = normalizeBrandVisualPreset(preset);
+state.primaryColor = normalized.primaryColor;
+state.secondaryColor = normalized.secondaryColor;
+state.coverImagePath = normalized.coverImagePath;
+state.coverImageUrl = assetUrlFromStoredPath(normalized.coverImagePath);
+state.pageLogoPath = normalized.pageLogoPath || getGeneralVisualPreset().pageLogoPath || DEFAULT_GENERAL_VISUAL.pageLogoPath;
+state.pageLogoUrl = assetUrlFromStoredPath(state.pageLogoPath);
+state.pageLogoPosition = normalized.pageLogoPosition;
+state.pageBackgroundPath = normalized.pageBackgroundPath;
+state.pageBackgroundUrl = assetUrlFromStoredPath(normalized.pageBackgroundPath);
+state.pageBackgroundOpacity = normalized.pageBackgroundOpacity;
+state.heroImagePath = normalized.heroImagePath;
+state.heroImageUrl = assetUrlFromStoredPath(normalized.heroImagePath);
+state.heroSubtitle = normalized.heroSubtitle || DEFAULT_HERO_SUBTITLE;
+state.promotion = {
+...state.promotion,
+title:normalized.promotion.title,
+text:normalized.promotion.text,
+imagePath:normalized.promotion.imagePath,
+imageUrl:assetUrlFromStoredPath(normalized.promotion.imagePath),
+imagePaths:Array.isArray(normalized.promotion.imagePaths) ? normalized.promotion.imagePaths.slice() : [],
+imageUrls:(Array.isArray(normalized.promotion.imagePaths) ? normalized.promotion.imagePaths : []).map(assetUrlFromStoredPath).filter(Boolean),
+videoPath:normalized.promotion.videoPath,
+videoUrl:assetUrlFromStoredPath(normalized.promotion.videoPath),
+linkLabel:normalized.promotion.linkLabel,
+linkUrl:normalized.promotion.linkUrl,
+slideInterval:normalizePromoSlideInterval(normalized.promotion.slideInterval)
+};
+syncVisualPresetInputs();
+applyThemeVariables();
+refreshCatalogIfReady();
+}
+function assetUrlFromStoredPath(filePath) {
+if (!filePath) return "";
+const normalized = String(filePath).replace(/\\/g, "/");
+if (/^(?:[a-z]+:)?\/\//i.test(normalized) || normalized.startsWith("data:") || normalized.startsWith("blob:")) return normalized;
+if (!/^(?:[A-Za-z]:|\/)/.test(normalized)) return normalized;
+return pathToFileUrl(filePath);
+}
+function syncVisualPresetInputs() {
+if (primaryColorInput) primaryColorInput.value = state.primaryColor;
+if (secondaryColorInput) secondaryColorInput.value = state.secondaryColor;
+if (pageLogoPositionInput) pageLogoPositionInput.value = state.pageLogoPosition;
+if (pageBackgroundOpacityInput) pageBackgroundOpacityInput.value = String(state.pageBackgroundOpacity);
+if (heroSubtitleInput) heroSubtitleInput.value = state.heroSubtitle;
+if (promoTitleInput) promoTitleInput.value = state.promotion.title;
+if (promoTextInput) promoTextInput.value = state.promotion.text;
+if (promoLinkLabelInput) promoLinkLabelInput.value = state.promotion.linkLabel;
+if (promoLinkUrlInput) promoLinkUrlInput.value = state.promotion.linkUrl;
+if (promoSliderIntervalInput) promoSliderIntervalInput.value = String(normalizePromoSlideInterval(state.promotion.slideInterval));
 }
 function normalizeBrandExportMode(value) {
 return ["complete","single","separate"].includes(value) ? value : "complete";
@@ -1404,29 +1980,80 @@ function getAvailableBrandsForCurrentEntry() {
 const records = filterRecordsByEntry(state.sourceRecords.length ? state.sourceRecords : state.records, state.entryFilter);
 return dedupeStringList(records.map((record) => safeText(record.brand))).sort((a, b) => a.localeCompare(b));
 }
+function getAvailableSmartCategoriesForCurrentScope() {
+const baseRecords = state.sourceRecords.length ? state.sourceRecords : state.records;
+const entryRecords = filterRecordsByEntry(baseRecords, state.entryFilter);
+const brandRecords = state.brandExportMode === "single" ? filterRecordsByBrand(entryRecords, state.brandFilter) : entryRecords;
+return dedupeStringList(brandRecords.map(getRecordFilterCategory).filter(Boolean)).sort((a, b) => a.localeCompare(b));
+}
 function filterRecordsByBrand(records, brand) {
 const normalizedBrand = normalizeBrandValue(brand);
 if (!normalizedBrand) return (records || []).slice();
 return (records || []).filter((record) => normalizeBrandValue(record?.brand) === normalizedBrand);
 }
+function filterRecordsBySmartCategory(records, category) {
+const normalizedCategory = normalizeSmartText(category);
+if (!normalizedCategory) return (records || []).slice();
+return (records || []).filter((record) => normalizeSmartText(getRecordFilterCategory(record)) === normalizedCategory);
+}
 function normalizeBrandValue(value) {
 return safeText(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
 }
+function normalizeSmartText(value) {
+return safeText(value)
+.normalize("NFD")
+.replace(/[\u0300-\u036f]/g, "")
+.replace(/[^a-zA-Z0-9]+/g, " ")
+.replace(/\s+/g, " ")
+.trim()
+.toLowerCase();
+}
+function inferSmartCategory(record) {
+const searchText = normalizeSmartText([
+record?.description,
+record?.category,
+record?.material,
+record?.size,
+record?.item
+].filter(Boolean).join(" "));
+if (!searchText) return "";
+const paddedText = ` ${searchText} `;
+const match = SMART_CATEGORY_RULES.find((rule) => rule.terms.some((term) => {
+const normalizedTerm = normalizeSmartText(term);
+return normalizedTerm && paddedText.includes(` ${normalizedTerm} `);
+}));
+return match ? match.name : "";
+}
+function getRecordFilterCategory(record) {
+return safeText(record?.smartCategory || record?.category || "General") || "General";
+}
 function applyManualRecordFilters() {
-const baseRecords = state.sourceRecords.length ? state.sourceRecords : state.records;
-const entryRecords = filterRecordsByEntry(baseRecords, state.entryFilter);
-state.records = state.brandExportMode === "single" ? filterRecordsByBrand(entryRecords, state.brandFilter) : entryRecords;
+state.records = getManualFilteredRecords(true);
 applyPriceModeToRecords(state.records, state.priceMode);
 return state.records;
+}
+function getManualFilteredRecords(applyMissingImagePolicy = true) {
+const baseRecords = state.sourceRecords.length ? state.sourceRecords : state.records;
+const entryRecords = filterRecordsByEntry(baseRecords, state.entryFilter);
+const brandRecords = state.brandExportMode === "single" ? filterRecordsByBrand(entryRecords, state.brandFilter) : entryRecords;
+const categoryRecords = filterRecordsBySmartCategory(brandRecords, state.smartCategoryFilter);
+return applyMissingImagePolicy && state.hideMissingImages ? categoryRecords.filter(recordHasMainImage) : categoryRecords.slice();
+}
+function recordHasMainImage(record) {
+const normalizedItem = normalizeIdentifier(record?.item);
+return Boolean((normalizedItem && state.imageSourceMap.has(normalizedItem)) || resolveProductRemoteImageUrl(record));
 }
 function buildManualRecordStatus() {
 const total = state.sourceRecords.length || state.records.length;
 const entryText = state.entryFilter ? ` Entrada: ${state.entryFilter}.` : " Entrada: todas.";
 const brandText = state.brandExportMode === "single" && state.brandFilter ? ` Marca: ${state.brandFilter}.` : (state.brandExportMode === "separate" ? " Marcas: catalogos separados." : " Marca: todas.");
-return `Productos detectados: ${state.records.length}${total && total !== state.records.length ? ` de ${total}` : ""}.${entryText}${brandText} Precio: ${getPriceModeLabel(state.priceMode)}.`;
+const categoryText = state.smartCategoryFilter ? ` Categoria: ${state.smartCategoryFilter}.` : " Categoria: todas.";
+const imageText = state.hideMissingImages ? " Sin imagen: excluidos." : " Sin imagen: incluidos.";
+return `Productos detectados: ${state.records.length}${total && total !== state.records.length ? ` de ${total}` : ""}.${entryText}${brandText}${categoryText}${imageText} Precio: ${getPriceModeLabel(state.priceMode)}.`;
 }
 function buildBatchEntryStatus() { return state.batch.entryFilter ? `Entrada del lote: ${state.batch.entryFilter}.` : "Entrada del lote: todas."; }
-function buildImageMapFromFiles(files) { const map = new Map(); const knownItems = new Set(state.records.map((record) => normalizeIdentifier(record.item)).filter(Boolean)); files.forEach((file) => { const stem = resolveMainMediaItemKey(file.name || "", knownItems); if (!stem || map.has(stem)) return; map.set(stem, URL.createObjectURL(file)); }); return map; }
+function getKnownItemsForImageIndex() { return new Set(getManualFilteredRecords(false).map((record) => normalizeIdentifier(record.item)).filter(Boolean)); }
+function buildImageMapFromFiles(files) { const map = new Map(); const knownItems = getKnownItemsForImageIndex(); files.forEach((file) => { const stem = resolveMainMediaItemKey(file.name || "", knownItems); if (!stem || map.has(stem)) return; map.set(stem, URL.createObjectURL(file)); }); return map; }
 async function buildCompressedImageMapFromPaths(paths, quality) { const map = new Map(); for (const filePath of paths) { const stem = normalizeIdentifier(String(filePath).split(/[\\/]/).pop().replace(/\.[^.]+$/, "")); if (!stem || map.has(stem)) continue; map.set(stem, await compressImagePath(filePath, quality, 1800)); } return map; }
 function buildPreviewImageMapFromPaths(paths) { const map = new Map(); for (const filePath of paths) { const stem = normalizeIdentifier(String(filePath).split(/[\\/]/).pop().replace(/\.[^.]+$/, "")); if (!stem || map.has(stem)) continue; map.set(stem, pathToFileUrl(filePath)); } return map; }
 async function compressImagePath(filePath, quality, maxDimension) { const lower = String(filePath).toLowerCase(); if (lower.endsWith(".svg")) return pathToFileUrl(filePath); const source = pathToFileUrl(filePath); const img = await loadImage(source); const scale = Math.min(1, maxDimension / Math.max(img.naturalWidth, img.naturalHeight)); const width = Math.max(1, Math.round(img.naturalWidth * scale)); const height = Math.max(1, Math.round(img.naturalHeight * scale)); const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height; const ctx = canvas.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, width, height); ctx.drawImage(img, 0, 0, width, height); return canvas.toDataURL("image/jpeg", quality); }
@@ -1524,13 +2151,32 @@ function extractMeasureBadge(text) { const clean = collapseWhitespace(text).toUp
 function paginate(items, perPage) { const pages = []; for (let index = 0; index < items.length; index += perPage) pages.push(items.slice(index, index + perPage)); return pages; }
 function normalizeKey(value) { return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase(); }
 function normalizeIdentifier(value) { return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9]+/g, "").trim().toLowerCase(); }
+function normalizeBoundaryIdentifier(value) {
+return String(value || "")
+.normalize("NFD")
+.replace(/[\u0300-\u036f]/g, "")
+.replace(/\.[^.]+$/, "")
+.replace(/[^A-Za-z0-9]+/g, "-")
+.replace(/-+/g, "-")
+.replace(/^-+|-+$/g, "")
+.toLowerCase();
+}
+function isAllowedMediaVariantSuffix(value) {
+const suffix = normalizeBoundaryIdentifier(value);
+if (!suffix) return true;
+return /^(?:\d+|main|principal|gallery|galeria|extra|image|img|foto|video|vid|photo|pic|web|edited|editada)(?:-\d+)?$/.test(suffix);
+}
 function readBackgroundOpacity(input) { const value = Number(input?.value); return Number.isFinite(value) ? Math.min(Math.max(value, 0), 0.35) : 0.12; }
 function escapeHtml(text) { return String(text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;"); }
 function sanitizeFileName(value) { return String(value || "catalogo").replace(/[<>:\"/\\|?*]+/g, "").trim() || "catalogo"; }
 function pickDefaultCategoryColor(index, type) { const palettes = [["#2c4695", "#1d1d1b"], ["#7f8f55", "#2f3b29"], ["#1d6f8b", "#173642"], ["#c46a2d", "#4b2d1c"], ["#824d84", "#2f2232"], ["#4f6c88", "#243646"]]; const pair = palettes[index % palettes.length]; return type === "primary" ? pair[0] : pair[1]; }
 function byId(id) { return document.getElementById(id); }
-function pathToFileUrl(filePath) { return `file:///${String(filePath).replace(/\\/g, "/")}`; }
+function pathToFileUrl(filePath) {
+const normalizedPath = String(filePath || "").replace(/\\/g, "/");
+if (!normalizedPath) return "";
+return encodeURI(`file:///${normalizedPath.replace(/^\/+/, "")}`);
+}
 function createPlaceholderDataUri() { const svg = ["<svg xmlns='http://www.w3.org/2000/svg' width='420' height='280'>", "<rect width='100%' height='100%' rx='18' fill='#f6f4ef' stroke='#ddd8d0' stroke-width='2'/>", "<text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='#8d8b85' font-family='Arial, Helvetica, sans-serif' font-size='22'>Imagen no disponible</text>", "</svg>"].join(""); return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`; }
 async function waitForImagesToLoad(container) { const images = Array.from(container.querySelectorAll("img")); await Promise.all(images.map((img) => { if (img.complete) return Promise.resolve(); return new Promise((resolve) => { img.addEventListener("load", resolve, { once: true }); img.addEventListener("error", resolve, { once: true }); }); })); }
-window.addEventListener("beforeunload", () => { if (state.coverImageUrl?.startsWith("blob:")) URL.revokeObjectURL(state.coverImageUrl); if (state.pageLogoUrl?.startsWith("blob:")) URL.revokeObjectURL(state.pageLogoUrl); if (state.pageBackgroundUrl?.startsWith("blob:")) URL.revokeObjectURL(state.pageBackgroundUrl); if (state.heroImageUrl?.startsWith("blob:")) URL.revokeObjectURL(state.heroImageUrl); revokeObjectUrls(state.imageUrls); });
+window.addEventListener("beforeunload", () => { if (state.coverImageUrl?.startsWith("blob:")) URL.revokeObjectURL(state.coverImageUrl); if (state.pageLogoUrl?.startsWith("blob:")) URL.revokeObjectURL(state.pageLogoUrl); if (state.pageBackgroundUrl?.startsWith("blob:")) URL.revokeObjectURL(state.pageBackgroundUrl); if (state.heroImageUrl?.startsWith("blob:")) URL.revokeObjectURL(state.heroImageUrl); if (state.promotion.imageUrl?.startsWith("blob:")) URL.revokeObjectURL(state.promotion.imageUrl); if (state.promotion.videoUrl?.startsWith("blob:")) URL.revokeObjectURL(state.promotion.videoUrl); revokeObjectUrls(state.promotion.imageUrls || []); revokeObjectUrls(state.imageUrls); revokeObjectUrls(state.featuredBrands.map((brand) => brand.logoUrl).filter(Boolean)); });
 })();

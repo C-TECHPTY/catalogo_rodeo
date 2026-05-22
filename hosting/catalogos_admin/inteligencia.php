@@ -476,6 +476,7 @@ admin_header('Inteligencia', 'inteligencia.php');
         <div class="wide toolbar__actions">
             <button class="button--primary" type="submit">Aplicar filtros</button>
             <a class="button" href="inteligencia.php">Limpiar</a>
+            <a class="button" href="reportes_productos.php">Reporte Excel con imagenes</a>
         </div>
     </form>
 </section>

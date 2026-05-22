@@ -1,8 +1,10 @@
-# Image Storage Configuration
+# Configuracion de almacenamiento de imagenes
 
-This project keeps the current hosting image flow as the default.
+El proyecto conserva el flujo actual del hosting como comportamiento por defecto, pero ya incluye soporte opcional para Backblaze B2/CDN en el panel del hosting.
 
-Optional image storage variables:
+## Configuracion local de la app Electron
+
+Variables opcionales para el flujo local/app:
 
 ```env
 IMAGE_STORAGE_MODE=hosting
@@ -14,75 +16,110 @@ B2_ENDPOINT=
 ```
 
 Modes:
+Modos:
 
-- `hosting`: current behavior. Images are copied into the generated catalog package and served from the hosting.
-- `backblaze`: remote/CDN image URLs are preferred.
-- `hybrid`: remote/CDN image URLs are preferred, with fallback to the current hosting image path.
+- `hosting`: comportamiento actual. Las imagenes se copian dentro del paquete del catalogo y se sirven desde el hosting.
+- `backblaze`: se prefieren URLs remotas/CDN.
+- `hybrid`: se prefieren URLs remotas/CDN, con fallback al path local del hosting.
 
-Security notes:
+Notas de seguridad:
 
-- Keep real credentials in a private `.env` file or local machine settings only.
-- Do not commit `.env`, Backblaze keys, bucket secrets, or production `config.php`.
-- The checked-in `.env.example` is only a template and contains no secrets.
+- Mantener credenciales reales solo en `.env`, configuracion local o `catalogos_api/config.php` privado.
+- No commitear `.env`, claves Backblaze, secretos del bucket ni `config.php` de produccion.
+- Los archivos example son solo plantillas y no deben contener secretos reales.
 
-Current phase:
+## Configuracion en hosting PHP
 
-- These values are documented and safe to configure later.
-- Runtime behavior remains unchanged until the storage resolver/uploader phases are implemented.
+Para que las imagenes subidas desde el panel admin vayan directo a Backblaze/CDN, agregar en `catalogos_api/config.php`:
+
+```php
+'backblaze' => [
+    'enabled' => true,
+    'endpoint' => 'https://s3.us-west-004.backblazeb2.com',
+    'region' => 'us-west-004',
+    'bucket' => 'NOMBRE_DEL_BUCKET',
+    'key_id' => 'B2_KEY_ID',
+    'application_key' => 'B2_APPLICATION_KEY',
+    'cdn_base_url' => 'https://rodeo-catalogos-img.b-cdn.net',
+    'timeout' => 45,
+],
+```
+
+Si `enabled` queda en `false`, el sistema guarda imagenes en el hosting local como antes.
 
 ## Backblaze setup
 
-Recommended bucket settings:
+Configuracion recomendada del bucket:
 
 - Bucket type: `Public`
 - Object Lock: disabled
-- Default encryption: optional; disabled keeps the simplest public/CDN flow
-- Endpoint example: `https://s3.us-east-005.backblazeb2.com`
+- Default encryption: opcional; desactivado mantiene el flujo publico/CDN mas simple
+- Endpoint ejemplo: `https://s3.us-west-004.backblazeb2.com`
 
-Create an application key scoped to the image bucket with read/write permissions. Store the real secret only in a private `.env` file.
+Crear una application key limitada al bucket de imagenes con permisos de lectura/escritura. Recomendacion: usar prefijo `catalogos/` para que la llave solo trabaje dentro de esa ruta.
 
-Example local `.env`:
+Ejemplo local `.env`:
 
 ```env
 IMAGE_STORAGE_MODE=hybrid
-IMAGE_CDN_BASE_URL=https://f005.backblazeb2.com/file/rodeo-catalogos-img
+IMAGE_CDN_BASE_URL=https://rodeo-catalogos-img.b-cdn.net
 B2_BUCKET_NAME=rodeo-catalogos-img
 B2_KEY_ID=your_key_id
 B2_APPLICATION_KEY=your_private_application_key
-B2_ENDPOINT=https://s3.us-east-005.backblazeb2.com
+B2_ENDPOINT=https://s3.us-west-004.backblazeb2.com
 ```
 
-## Using the app
+## Uso desde el panel admin
 
-- `Hosting actual`: default. Keeps the current hosting image flow.
-- `Backblaze B2/CDN`: uploads catalog images to B2/CDN and prefers remote URLs.
-- `Hibrido recomendado`: uploads to B2/CDN, prefers remote URLs, and keeps hosting/local fallback.
-
-Backblaze upload logs are written inside the exported package:
+Pantalla:
 
 ```text
-logs/backblaze-upload.log
+catalogos_admin/catalog_update_images.php
+```
+
+Funciones:
+
+- actualizar imagen por ITEM;
+- subir a Backblaze/CDN si esta habilitado;
+- guardar en hosting local si Backblaze esta deshabilitado;
+- crear miniatura para imagen nueva;
+- generar miniaturas faltantes para imagenes existentes.
+
+Rutas usadas en Backblaze:
+
+```text
+catalogos/{slug}/updates/{ITEM-fecha}.jpg
+catalogos/{slug}/updates/thumbs/{ITEM-fecha}.webp
 ```
 
 ## CDN
 
-`IMAGE_CDN_BASE_URL` should be the public base URL that serves files from the bucket. It can be:
+`cdn_base_url` o `IMAGE_CDN_BASE_URL` debe ser la URL publica que sirve archivos desde el bucket. Puede ser:
 
-- A direct Backblaze public bucket URL.
-- A CDN pull zone/custom domain in front of the bucket.
+- URL publica directa de Backblaze.
+- Pull Zone de Bunny CDN.
+- Dominio personalizado apuntando al CDN.
 
-The final object URLs are built as:
+Ejemplo con Bunny:
 
 ```text
-IMAGE_CDN_BASE_URL/catalogos/{slug}/{archivo}
+https://rodeo-catalogos-img.b-cdn.net/catalogos/{slug}/updates/ITEM-20260515.jpg
 ```
 
-## Safe rollback
+## Rollback seguro
 
-Set the storage mode back to hosting:
+Para volver al flujo local:
 
 ```env
 IMAGE_STORAGE_MODE=hosting
 ```
 
-Then regenerate/export/publish the catalog. Existing hosting image paths remain available because local package images are still copied.
+Y en `catalogos_api/config.php`:
+
+```php
+'backblaze' => [
+    'enabled' => false,
+],
+```
+
+Las imagenes que ya existen en el hosting local siguen funcionando. Las imagenes ya subidas a Backblaze/CDN tambien siguen disponibles mientras el bucket/CDN exista.

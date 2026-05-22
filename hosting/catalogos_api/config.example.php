@@ -22,6 +22,16 @@ return [
         'order_email_logo_url' => 'https://rodeoimportzl.com/catalogos_admin/assets/logo-rodeo-blanco.png',
         'order_email_no_image_url' => 'https://rodeoimportzl.com/catalogos_admin/assets/no-image.png',
     ],
+    'backblaze' => [
+        'enabled' => false,
+        'endpoint' => 'https://s3.us-west-004.backblazeb2.com',
+        'region' => 'us-west-004',
+        'bucket' => 'NOMBRE_DEL_BUCKET',
+        'key_id' => 'B2_KEY_ID',
+        'application_key' => 'B2_APPLICATION_KEY',
+        'cdn_base_url' => 'https://cdn.tudominio.com',
+        'timeout' => 45,
+    ],
     'mail' => [
         'from_name' => 'Catalogo Rodeo B2B',
         'from_email' => 'no-reply@tuempresa.com',
