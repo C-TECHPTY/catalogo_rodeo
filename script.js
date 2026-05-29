@@ -73,7 +73,7 @@ heroSubtitle:DEFAULT_HERO_SUBTITLE,
 promotion:{ title:"Oferta destacada para compras mayoristas", text:"Imagen o video opcional con fallback movil.", imagePath:"", imagePaths:[], videoPath:"", linkLabel:"Consultar promocion", linkUrl:"", slideInterval:15000 },
 updatedAt:""
 };
-const state = { mode:"manual", previewMode:"web", records:[], sourceRecords:[], sourceExcelName:"", imageFiles:[], imageMap:new Map(), imageUrls:[], imageSourceMap:new Map(), imageMatchMode:"file-input", hideMissingImages:false, extraMediaFiles:[], extraMediaMap:new Map(), remoteImageCheckCache:new Map(), title:"Acenox Catalogo Comercial", footerText:"Catalogo comercial interno Acenox", includeCover:true, template:"classic", productsPerPage:6, primaryColor:"#2c4695", secondaryColor:"#1d1d1b", coverImageUrl:"", coverImagePath:"", pageLogoUrl:"", pageLogoPath:"", pageLogoPosition:"right", pageBackgroundUrl:"", pageBackgroundPath:"", pageBackgroundOpacity:0.12, heroImageUrl:"", heroImagePath:"", heroSubtitle:DEFAULT_HERO_SUBTITLE, priceMode:"original", entryFilter:"", brandExportMode:"complete", brandFilter:"", smartCategoryFilter:"", featuredBrandsEnabled:true, featuredBrands:[], imageStorage:loadImageStorageSettings(), imageSource:loadImageSourceSettings(), brandVisualPresets:loadBrandVisualPresets(), promotion:{ title:"Oferta destacada para compras mayoristas", text:"Configura una imagen liviana o video opcional sin afectar la carga movil.", imageUrl:"", imagePath:"", imageUrls:[], imagePaths:[], videoUrl:"", videoPath:"", linkLabel:"Consultar promocion", linkUrl:"", slideInterval:15000 }, webExport:{ slug:"catalogo-publicable", slugEdited:false, expiryDays:30, outputDir:"", baseUrl:initialHostingSettings.publicBaseUrl, apiBaseUrl:initialHostingSettings.apiBaseUrl, generatedLink:"", hosting:initialHostingSettings }, layoutPresets:loadLayoutPresets(), activeLayoutPresetId:"default", layoutEditor:{ enabled:false, selectedBlock:"coverTitle", drag:null }, batch:{ excelPath:"", imagesRoot:"", outputRoot:"", template:"editorial", quality:0.72, priceMode:"original", entryFilter:"", primaryColor:"#2c4695", secondaryColor:"#1d1d1b", logoPosition:"right", categories:[], previewIndex:-1, progress:{ completed:0, total:0 } } };
+const state = { mode:"manual", previewMode:"web", records:[], sourceRecords:[], sourceExcelName:"", imageFiles:[], imageMap:new Map(), imageUrls:[], imageSourceMap:new Map(), imageMatchMode:"file-input", hideMissingImages:false, extraMediaFiles:[], extraMediaMap:new Map(), remoteImageCheckCache:new Map(), title:"Acenox Catalogo Comercial", footerText:"Catalogo comercial interno Acenox", includeCover:true, template:"classic", productsPerPage:6, primaryColor:"#2c4695", secondaryColor:"#1d1d1b", coverImageUrl:"", coverImagePath:"", pageLogoUrl:"", pageLogoPath:"", pageLogoPosition:"right", pageBackgroundUrl:"", pageBackgroundPath:"", pageBackgroundOpacity:0.12, heroImageUrl:"", heroImagePath:"", heroSubtitle:DEFAULT_HERO_SUBTITLE, priceMode:"original", entryFilter:"", brandExportMode:"complete", brandFilter:"", smartCategoryFilter:"", descriptionSearch:"", featuredBrandsEnabled:true, featuredBrands:[], imageStorage:loadImageStorageSettings(), imageSource:loadImageSourceSettings(), brandVisualPresets:loadBrandVisualPresets(), promotion:{ title:"Oferta destacada para compras mayoristas", text:"Configura una imagen liviana o video opcional sin afectar la carga movil.", imageUrl:"", imagePath:"", imageUrls:[], imagePaths:[], videoUrl:"", videoPath:"", linkLabel:"Consultar promocion", linkUrl:"", slideInterval:15000 }, webExport:{ slug:"catalogo-publicable", slugEdited:false, expiryDays:30, outputDir:"", baseUrl:initialHostingSettings.publicBaseUrl, apiBaseUrl:initialHostingSettings.apiBaseUrl, generatedLink:"", hosting:initialHostingSettings }, layoutPresets:loadLayoutPresets(), activeLayoutPresetId:"default", layoutEditor:{ enabled:false, selectedBlock:"coverTitle", drag:null }, batch:{ excelPath:"", imagesRoot:"", outputRoot:"", template:"editorial", quality:0.72, priceMode:"original", entryFilter:"", primaryColor:"#2c4695", secondaryColor:"#1d1d1b", logoPosition:"right", categories:[], previewIndex:-1, progress:{ completed:0, total:0 } } };
 const REQUIRED_ALIASES = { item:["ITEM"], description:["DESCRIPCION","DESCRIPCION ","NOMBRE","PRODUCTO"], price:["PRECIO","PRICE","PVP"], category:["CATEGORIA","CATEGORY","LINEA","LINE","FAMILIA","GRUPO","DEPARTAMENTO","RUBRO","TIPO"], entry:["ENTRADA","ENTRY","LOTE","IMPORTACION"], brand:["MARCA","BRAND","FABRICANTE"], available:["DISPONIBLE","DISP.","DISP","STOCK","EXISTENCIA"], barcode:["CBARRA","CB","CODIGOBARRAS","CODIGO DE BARRAS"], package:["EMPAQUE","PACK","PAQUETE"], um:["UM"], ctn:["CTN"], cub:["CUB.","CUB","CUBICAJE"], material:["MATERIAL"], size:["TAMANO","SIZE","MEDIDA","MEDIDAS","DIMENSION"], saleUnit:["UNIDAD_VENTA","UNIDAD DE VENTA","VENTA","UM"], minimumOrder:["MINIMO","MINIMO PEDIDO"], multipleQty:["MULTIPLO"], remoteImageUrl:["REMOTE_IMAGE_URL","REMOTE_IMAGE","IMAGE_URL","IMAGEN_URL","URL_IMAGEN"] };
 const SMART_CATEGORY_RULES = [
 { name:"Sartenes", terms:["sarten","sartenes","set de sarten","set de sartenes","sarten antiadherente"] },
@@ -88,6 +88,12 @@ const SMART_CATEGORY_RULES = [
 { name:"Lavanderia", terms:["lavadora","cubierta de lavadora","cesto","canasto","tendedero","lavanderia"] },
 { name:"Organizacion", terms:["organizador","organizadores","canasta","estante","caja","cajonera"] },
 { name:"Limpieza", terms:["atomizador","cepillo","escoba","limpieza","mopa","trapeador"] }
+];
+const DESCRIPTION_SEARCH_STOP_WORDS = new Set(["de","del","la","las","el","los","y","o","en","para","con","por","un","una","unos","unas","set","juego"]);
+const DESCRIPTION_SEARCH_SYNONYMS = [
+{ triggers:["vajilla","vajillas"], terms:["vajilla","vajillas","set vajilla","set de vajilla","set de vajillas"] },
+{ triggers:["corniza","cornizas","barra cortina","barra de cortina","barra de cortinas"], terms:["corniza","cornizas","barra cortina","barra de cortina","barra de cortinas","cortina","cortinas"] },
+{ triggers:["vaso","vasos"], terms:["vaso","vasos"] }
 ];
 const TEMPLATE_DEFS = {
 classic: templateDef("catalog-page--classic","cover-page--classic","Clasica original","Catalogo comercial","Coleccion general",renderClassicCard),
@@ -133,6 +139,7 @@ const entryFilterInput = byId("entryFilterInput");
 const brandExportModeInput = byId("brandExportMode");
 const brandFilterSelect = byId("brandFilterSelect");
 const smartCategoryFilterSelect = byId("smartCategoryFilter");
+const descriptionSearchInput = byId("descriptionSearchInput");
 const featuredBrandsEnabledInput = byId("featuredBrandsEnabled");
 const featuredBrandSelect = byId("featuredBrandSelect");
 const featuredBrandLogoFileInput = byId("featuredBrandLogoFile");
@@ -335,6 +342,14 @@ addFeaturedBrandFromInputs();
 });
 smartCategoryFilterSelect?.addEventListener("change", () => {
 state.smartCategoryFilter = smartCategoryFilterSelect.value;
+applyManualRecordFilters();
+setStatus(buildManualRecordStatus());
+reindexMainImages();
+reindexExtraMedia();
+refreshCatalogIfReady();
+});
+descriptionSearchInput?.addEventListener("input", () => {
+state.descriptionSearch = descriptionSearchInput.value.trim();
 applyManualRecordFilters();
 setStatus(buildManualRecordStatus());
 reindexMainImages();
@@ -678,7 +693,7 @@ if (!state.records.length) return setWebExportStatus("Primero carga un Excel y l
 if (!state.webExport.outputDir) return setWebExportStatus("Selecciona una carpeta de salida para el paquete web.", true);
 if (!(await confirmMissingMainImages())) return;
 if (state.brandExportMode === "single" && !state.brandFilter) return setWebExportStatus("Selecciona una marca para generar un catalogo por marca.", true);
-const slug = buildScopedCatalogSlug(sanitizeSlug(state.webExport.slug || state.title) || "catalogo-publicable", state.brandExportMode === "single" ? state.brandFilter : "", state.smartCategoryFilter);
+const slug = buildScopedCatalogSlug(sanitizeSlug(state.webExport.slug || state.title) || "catalogo-publicable", state.brandExportMode === "single" ? state.brandFilter : "", state.smartCategoryFilter, state.descriptionSearch);
 hideHostingProgressUi();
 setWebExportStatus("Preparando paquete web publicable...");
 try {
@@ -709,7 +724,7 @@ if (!hosting.ftpHost || !hosting.ftpUser || !hosting.ftpPassword) return setWebE
 if (!state.webExport.apiBaseUrl || !hosting.apiKey) return setWebExportStatus("Completa la API base publica y la API key privada.", true);
 if (!(await confirmMissingMainImages())) return;
 if (state.brandExportMode === "single" && !state.brandFilter) return setWebExportStatus("Selecciona una marca para publicar un catalogo por marca.", true);
-const slug = buildScopedCatalogSlug(sanitizeSlug(state.webExport.slug || state.title) || "catalogo-publicable", state.brandExportMode === "single" ? state.brandFilter : "", state.smartCategoryFilter);
+const slug = buildScopedCatalogSlug(sanitizeSlug(state.webExport.slug || state.title) || "catalogo-publicable", state.brandExportMode === "single" ? state.brandFilter : "", state.smartCategoryFilter, state.descriptionSearch);
 if (state.brandExportMode === "separate") return setWebExportStatus("Para publicar separados por marca, exporta primero los paquetes por marca y publica uno por uno con una marca seleccionada.", true);
 const remoteCatalogDir = buildRemoteCatalogDir(hosting.remoteDir, slug);
 setWebExportStatus("Preparando subida al hosting...");
@@ -790,7 +805,7 @@ state.title = `${originalTitle} - ${brand}`;
 state.brandExportMode = "single";
 state.brandFilter = brand;
 applyVisualForCurrentScope({ silent:true });
-const brandSlug = buildScopedCatalogSlug(baseSlug, brand, state.smartCategoryFilter);
+const brandSlug = buildScopedCatalogSlug(baseSlug, brand, state.smartCategoryFilter, state.descriptionSearch);
 const payload = buildWebExportPayload(brandSlug, { localPreview:true });
 const result = await desktopApi.exportWebPackage(payload);
 results.push({ brand, slug:brandSlug, outputDir:result.outputDir });
@@ -950,6 +965,7 @@ snapshotHtml,
   priceModeLabel: getPriceModeLabel(state.priceMode),
   entryFilter: state.entryFilter,
   smartCategoryFilter: state.smartCategoryFilter,
+  descriptionSearch: state.descriptionSearch,
   promotion: {
     title: state.promotion.title,
     text: state.promotion.text,
@@ -1237,8 +1253,8 @@ if (testHostingButton) testHostingButton.disabled = false;
 }
 function sanitizeRemoteDir(value) { const raw = String(value ?? "").trim().replace(/\\/g, "/"); if (!raw || raw === "." || raw === "/") return ""; const normalized = raw.replace(/\/+$/, ""); return normalized === "." ? "" : normalized; }
 function buildRemoteCatalogDir(remoteDir, slug) { const baseDir = sanitizeRemoteDir(remoteDir); return baseDir ? `${baseDir}/${slug}` : slug; }
-function buildScopedCatalogSlug(baseSlug, brand = "", category = "") {
-const parts = [sanitizeSlug(baseSlug), sanitizeSlug(brand || ""), sanitizeSlug(category || "")].filter(Boolean);
+function buildScopedCatalogSlug(baseSlug, brand = "", category = "", searchQuery = "") {
+const parts = [sanitizeSlug(baseSlug), sanitizeSlug(brand || ""), sanitizeSlug(category || ""), sanitizeSlug(searchQuery || "")].filter(Boolean);
 return parts.join("-") || "catalogo-publicable";
 }
 function getScopedCatalogTitle(baseTitle, brand = "") { const cleanBrand = safeText(brand); const cleanTitle = safeText(baseTitle) || "Catalogo"; if (!cleanBrand) return cleanTitle; return normalizeBrandValue(cleanTitle).endsWith(normalizeBrandValue(cleanBrand)) ? cleanTitle : `${cleanTitle} - ${cleanBrand}`; }
@@ -1738,7 +1754,7 @@ batchCategoryList.innerHTML = state.batch.categories.map((category, index) => `
 function renderTemplateOptions(selectedValue) { return Object.entries(TEMPLATE_DEFS).map(([value, template]) => `<option value="${value}" ${value === selectedValue ? "selected" : ""}>${escapeHtml(template.name)}</option>`).join(""); }
 function setMode(mode) { state.mode = mode; const isManual = mode === "manual"; manualModeButton?.classList.toggle("mode-switch__button--active", isManual); batchModeButton?.classList.toggle("mode-switch__button--active", !isManual); manualPanels.forEach((panel) => { panel.hidden = !isManual; }); batchPanels.forEach((panel) => { panel.hidden = isManual; }); if (!isManual && state.layoutEditor.enabled) toggleLayoutEditor(false); refreshLayoutEditorOverlay(); }
 function refreshCatalogIfReady() { if (state.records.length) renderCatalog(); else if (catalogRoot) catalogRoot.innerHTML = ""; renderWebPreview(); }
-function syncStateFromManualInputs() { state.title = titleInput?.value.trim() || state.title; state.footerText = footerInput ? footerInput.value.trim() : state.footerText; state.heroSubtitle = heroSubtitleInput?.value.trim() || DEFAULT_HERO_SUBTITLE; state.includeCover = Boolean(includeCoverInput?.checked); state.template = templateSelect?.value || state.template; state.primaryColor = primaryColorInput?.value || state.primaryColor; state.secondaryColor = secondaryColorInput?.value || state.secondaryColor; state.pageLogoPosition = pageLogoPositionInput?.value || state.pageLogoPosition; state.priceMode = normalizePriceMode(priceModeSelect?.value || state.priceMode); state.entryFilter = entryFilterInput?.value.trim() || ""; state.brandExportMode = normalizeBrandExportMode(brandExportModeInput?.value || state.brandExportMode); state.brandFilter = brandFilterSelect?.value || ""; state.smartCategoryFilter = smartCategoryFilterSelect?.value || ""; state.featuredBrandsEnabled = featuredBrandsEnabledInput ? Boolean(featuredBrandsEnabledInput.checked) : state.featuredBrandsEnabled; state.hideMissingImages = Boolean(hideMissingImagesInput?.checked); state.promotion.slideInterval = normalizePromoSlideInterval(promoSliderIntervalInput?.value || state.promotion.slideInterval); state.pageBackgroundOpacity = readBackgroundOpacity(pageBackgroundOpacityInput); const perPage = Number(productsPerPageInput?.value); state.productsPerPage = Number.isFinite(perPage) && perPage > 0 ? perPage : state.productsPerPage; }
+function syncStateFromManualInputs() { state.title = titleInput?.value.trim() || state.title; state.footerText = footerInput ? footerInput.value.trim() : state.footerText; state.heroSubtitle = heroSubtitleInput?.value.trim() || DEFAULT_HERO_SUBTITLE; state.includeCover = Boolean(includeCoverInput?.checked); state.template = templateSelect?.value || state.template; state.primaryColor = primaryColorInput?.value || state.primaryColor; state.secondaryColor = secondaryColorInput?.value || state.secondaryColor; state.pageLogoPosition = pageLogoPositionInput?.value || state.pageLogoPosition; state.priceMode = normalizePriceMode(priceModeSelect?.value || state.priceMode); state.entryFilter = entryFilterInput?.value.trim() || ""; state.brandExportMode = normalizeBrandExportMode(brandExportModeInput?.value || state.brandExportMode); state.brandFilter = brandFilterSelect?.value || ""; state.smartCategoryFilter = smartCategoryFilterSelect?.value || ""; state.descriptionSearch = descriptionSearchInput?.value.trim() || ""; state.featuredBrandsEnabled = featuredBrandsEnabledInput ? Boolean(featuredBrandsEnabledInput.checked) : state.featuredBrandsEnabled; state.hideMissingImages = Boolean(hideMissingImagesInput?.checked); state.promotion.slideInterval = normalizePromoSlideInterval(promoSliderIntervalInput?.value || state.promotion.slideInterval); state.pageBackgroundOpacity = readBackgroundOpacity(pageBackgroundOpacityInput); const perPage = Number(productsPerPageInput?.value); state.productsPerPage = Number.isFinite(perPage) && perPage > 0 ? perPage : state.productsPerPage; }
 function applyThemeVariables() { document.documentElement.style.setProperty("--red-primary", state.primaryColor); document.documentElement.style.setProperty("--red-dark", state.primaryColor); document.documentElement.style.setProperty("--footer-black", state.secondaryColor); }
 function setStatus(message, isError = false) { if (!statusMessage) return; statusMessage.textContent = message; statusMessage.style.color = isError ? "#ffd6d6" : "rgba(255,255,255,0.82)"; }
 function setBatchStatus(message, isError = false) { if (!batchStatusMessage) return; batchStatusMessage.textContent = message; batchStatusMessage.style.color = isError ? "#ffd6d6" : "rgba(255,255,255,0.82)"; }
@@ -1996,6 +2012,55 @@ const normalizedCategory = normalizeSmartText(category);
 if (!normalizedCategory) return (records || []).slice();
 return (records || []).filter((record) => normalizeSmartText(getRecordFilterCategory(record)) === normalizedCategory);
 }
+function filterRecordsByDescriptionSearch(records, query) {
+const normalizedQuery = normalizeSmartText(query);
+if (!normalizedQuery) return (records || []).slice();
+const phrases = expandDescriptionSearchPhrases(normalizedQuery);
+return (records || []).filter((record) => recordMatchesDescriptionSearch(record, phrases));
+}
+function expandDescriptionSearchPhrases(normalizedQuery) {
+const phrases = dedupeStringList(String(normalizedQuery || "").split(/[;,|]+/).map((phrase) => phrase.trim()).filter(Boolean));
+DESCRIPTION_SEARCH_SYNONYMS.forEach((group) => {
+const hasTrigger = group.triggers.some((trigger) => phraseMatchesSearchTokens(normalizedQuery, normalizeSmartText(trigger)));
+if (hasTrigger) phrases.push(...group.terms.map(normalizeSmartText).filter(Boolean));
+});
+return dedupeStringList(phrases);
+}
+function recordMatchesDescriptionSearch(record, phrases) {
+const haystack = normalizeSmartText([
+record?.item,
+record?.description,
+record?.shortDescription,
+record?.category,
+record?.categoryOriginal,
+record?.smartCategory,
+record?.brand,
+record?.material,
+record?.size,
+record?.measureBadge,
+record?.package,
+record?.saleUnit,
+record?.um
+].filter(Boolean).join(" "));
+if (!haystack) return false;
+return phrases.some((phrase) => phraseMatchesSearchTokens(haystack, phrase));
+}
+function phraseMatchesSearchTokens(haystack, phrase) {
+const normalizedPhrase = normalizeSmartText(phrase);
+if (!normalizedPhrase) return true;
+if (haystack.includes(normalizedPhrase)) return true;
+const tokens = normalizedPhrase.split(" ").filter((token) => token.length > 1 && !DESCRIPTION_SEARCH_STOP_WORDS.has(token));
+if (!tokens.length) return false;
+return tokens.every((token) => searchTokenMatches(haystack, token));
+}
+function searchTokenMatches(haystack, token) {
+const variants = new Set([token]);
+if (token.endsWith("es") && token.length > 4) variants.add(token.slice(0, -2));
+if (token.endsWith("s") && token.length > 3) variants.add(token.slice(0, -1));
+if (!token.endsWith("s")) variants.add(`${token}s`);
+if (!token.endsWith("es")) variants.add(`${token}es`);
+return Array.from(variants).some((variant) => variant && haystack.includes(variant));
+}
 function normalizeBrandValue(value) {
 return safeText(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
 }
@@ -2037,7 +2102,8 @@ const baseRecords = state.sourceRecords.length ? state.sourceRecords : state.rec
 const entryRecords = filterRecordsByEntry(baseRecords, state.entryFilter);
 const brandRecords = state.brandExportMode === "single" ? filterRecordsByBrand(entryRecords, state.brandFilter) : entryRecords;
 const categoryRecords = filterRecordsBySmartCategory(brandRecords, state.smartCategoryFilter);
-return applyMissingImagePolicy && state.hideMissingImages ? categoryRecords.filter(recordHasMainImage) : categoryRecords.slice();
+const searchRecords = filterRecordsByDescriptionSearch(categoryRecords, state.descriptionSearch);
+return applyMissingImagePolicy && state.hideMissingImages ? searchRecords.filter(recordHasMainImage) : searchRecords.slice();
 }
 function recordHasMainImage(record) {
 const normalizedItem = normalizeIdentifier(record?.item);
@@ -2048,8 +2114,9 @@ const total = state.sourceRecords.length || state.records.length;
 const entryText = state.entryFilter ? ` Entrada: ${state.entryFilter}.` : " Entrada: todas.";
 const brandText = state.brandExportMode === "single" && state.brandFilter ? ` Marca: ${state.brandFilter}.` : (state.brandExportMode === "separate" ? " Marcas: catalogos separados." : " Marca: todas.");
 const categoryText = state.smartCategoryFilter ? ` Categoria: ${state.smartCategoryFilter}.` : " Categoria: todas.";
+const searchText = state.descriptionSearch ? ` Busqueda: "${state.descriptionSearch}".` : "";
 const imageText = state.hideMissingImages ? " Sin imagen: excluidos." : " Sin imagen: incluidos.";
-return `Productos detectados: ${state.records.length}${total && total !== state.records.length ? ` de ${total}` : ""}.${entryText}${brandText}${categoryText}${imageText} Precio: ${getPriceModeLabel(state.priceMode)}.`;
+return `Productos detectados: ${state.records.length}${total && total !== state.records.length ? ` de ${total}` : ""}.${entryText}${brandText}${categoryText}${searchText}${imageText} Precio: ${getPriceModeLabel(state.priceMode)}.`;
 }
 function buildBatchEntryStatus() { return state.batch.entryFilter ? `Entrada del lote: ${state.batch.entryFilter}.` : "Entrada del lote: todas."; }
 function getKnownItemsForImageIndex() { return new Set(getManualFilteredRecords(false).map((record) => normalizeIdentifier(record.item)).filter(Boolean)); }

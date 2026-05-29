@@ -80,6 +80,17 @@ $pdo = db();
 $pdo->beginTransaction();
 
 try {
+    $clientId = order_resolve_client_id($pdo, [
+        'client_id' => $context['client_id'] ?: null,
+        'seller_id' => $context['seller_id'] ?: null,
+        'company_name' => $companyName,
+        'contact_name' => $contactName,
+        'contact_email' => $contactEmail,
+        'contact_phone' => $contactPhone,
+        'address_zone' => $addressZone,
+        'order_number' => $orderNumber,
+    ]);
+
     $orderData = [
         'catalog_id' => $catalog['id'],
         'order_number' => $orderNumber,
@@ -93,7 +104,7 @@ try {
         'share_link_id' => $context['share_link']['id'] ?? null,
         'seller_id' => $context['seller_id'] ?: null,
         'seller_token' => $context['seller_token'] ?: $sellerToken,
-        'client_id' => $context['client_id'] ?: null,
+        'client_id' => $clientId,
         'catalog_slug' => $catalog['slug'],
         'company_name' => $companyName,
         'customer_name' => $companyName !== '' ? $companyName : $contactName,
@@ -204,7 +215,9 @@ if (
 $seller = fetch_seller($context['seller_id'] ? (int) $context['seller_id'] : null);
 $sellerDisplayName = (string) (($seller['name'] ?? '') ?: ($context['seller_name'] ?? ''));
 $clientDisplayName = $companyName !== '' ? $companyName : $contactName;
-$adminOrderUrl = build_admin_order_url($orderId);
+$includePublicExportLinks = (bool) catalog_config('mail.include_order_export_links', false);
+$publicOrderXlsxUrl = $includePublicExportLinks ? build_public_order_export_url($orderId, $orderNumber, 'xlsx') : '';
+$publicOrderCsvUrl = $includePublicExportLinks ? build_public_order_export_url($orderId, $orderNumber, 'csv') : '';
 $orderForExport = [
     'id' => $orderId,
     'order_number' => $orderNumber,
@@ -255,11 +268,16 @@ $lines = [
     'Vendedor asociado: ' . ($sellerDisplayName ?: 'No definido'),
     'Cliente asociado: ' . ($context['client_name'] ?: 'No definido'),
     'Confirmacion del cliente: Si, revisado y autorizado',
-    'Ver pedido en admin: ' . ($adminOrderUrl ?: 'No disponible'),
     'Total: ' . format_money($subtotal, (string) ($catalog['currency'] ?: 'USD')),
     '',
     'Detalle:',
 ];
+if ($publicOrderXlsxUrl !== '') {
+    array_splice($lines, 16, 0, [
+        'Descargar Excel del pedido: ' . $publicOrderXlsxUrl,
+        'Descargar CSV del pedido: ' . ($publicOrderCsvUrl ?: 'No disponible'),
+    ]);
+}
 
 foreach ($normalizedItems as $item) {
     $lines[] = sprintf(
@@ -283,7 +301,7 @@ if ($comments !== '') {
 $plainBody = implode("\n", $lines);
 $orderEmailLogoUrl = trim((string) catalog_config('branding.order_email_logo_url', 'https://rodeoimportzl.com/catalogos_admin/assets/logo-rodeo-blanco.png'));
 $orderEmailNoImageUrl = trim((string) catalog_config('branding.order_email_no_image_url', 'https://rodeoimportzl.com/catalogos_admin/assets/no-image.png'));
-$htmlBody = build_order_notification_html([
+$orderEmailData = [
     'order_number' => $orderNumber,
     'catalog_title' => (string) ($catalog['title'] ?? ''),
     'catalog_slug' => (string) ($catalog['slug'] ?? ''),
@@ -295,7 +313,8 @@ $htmlBody = build_order_notification_html([
     'seller_name' => $sellerDisplayName,
     'client_name' => (string) ($context['client_name'] ?? ''),
     'customer_confirmed_label' => 'Si, revisado y autorizado',
-    'admin_order_url' => $adminOrderUrl,
+    'public_order_xlsx_url' => $publicOrderXlsxUrl,
+    'public_order_csv_url' => $publicOrderCsvUrl,
     'sales_contact_name' => (string) ($salesContact['name'] ?? ''),
     'sales_contact_email' => (string) ($salesContact['email'] ?? ''),
     'sales_contact_phone' => (string) ($salesContact['phone'] ?? ''),
@@ -305,25 +324,28 @@ $htmlBody = build_order_notification_html([
     'created_at' => date('Y-m-d H:i:s'),
     'logo_url' => $orderEmailLogoUrl,
     'no_image_url' => $orderEmailNoImageUrl,
-], $normalizedItems);
+];
+$htmlBody = build_order_notification_simple_html($orderEmailData, $normalizedItems);
 
 $mailRecipients = build_notification_recipients([
     'contact_email' => $contactEmail,
 ], $seller);
 $mailAttachments = [];
-if (!empty($exportFiles['csv_path'])) {
-    $mailAttachments[] = [
-        'path' => $exportFiles['csv_path'],
-        'name' => basename((string) $exportFiles['csv_path']),
-        'mime' => 'text/csv',
-    ];
-}
-if (!empty($exportFiles['xlsx_path'])) {
-    $mailAttachments[] = [
-        'path' => $exportFiles['xlsx_path'],
-        'name' => basename((string) $exportFiles['xlsx_path']),
-        'mime' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ];
+if ((bool) catalog_config('mail.attach_order_exports', true)) {
+    if (!empty($exportFiles['xlsx_path'])) {
+        $mailAttachments[] = [
+            'path' => $exportFiles['xlsx_path'],
+            'name' => basename((string) $exportFiles['xlsx_path']),
+            'mime' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ];
+    }
+    if ((bool) catalog_config('mail.attach_order_csv', false) && !empty($exportFiles['csv_path'])) {
+        $mailAttachments[] = [
+            'path' => $exportFiles['csv_path'],
+            'name' => basename((string) $exportFiles['csv_path']),
+            'mime' => 'text/csv',
+        ];
+    }
 }
 
 $mailStatus = 'pending';
@@ -359,6 +381,16 @@ audit_log('order.created_from_public_catalog', 'orders', $orderId, [
     'share_link_id' => $context['share_link']['id'] ?? null,
 ]);
 
+try {
+    if (function_exists('admin_push_notify_new_order')) {
+        admin_push_notify_new_order($orderId, $orderNumber, $clientDisplayName, $sellerDisplayName);
+    }
+} catch (Throwable $exception) {
+    audit_log('order.push_notification_failed', 'orders', $orderId, [
+        'error' => $exception->getMessage(),
+    ]);
+}
+
 json_response([
     'ok' => true,
     'order' => [
@@ -370,6 +402,153 @@ json_response([
         'status' => 'new',
     ],
 ]);
+
+function order_resolve_client_id(PDO $pdo, array $data): ?int
+{
+    if (!catalog_table_exists('clients')) {
+        return !empty($data['client_id']) ? (int) $data['client_id'] : null;
+    }
+
+    $clientId = !empty($data['client_id']) ? (int) $data['client_id'] : 0;
+    if ($clientId > 0) {
+        order_update_client_from_order($pdo, $clientId, $data);
+        return $clientId;
+    }
+
+    $clientId = order_find_existing_client($pdo, $data);
+    if ($clientId > 0) {
+        order_update_client_from_order($pdo, $clientId, $data);
+        return $clientId;
+    }
+
+    $businessName = trim((string) ($data['company_name'] ?? ''));
+    $contactName = trim((string) ($data['contact_name'] ?? ''));
+    if ($businessName === '' && $contactName === '') {
+        return null;
+    }
+
+    $insert = [
+        'code' => order_generate_client_code($pdo),
+        'business_name' => $businessName !== '' ? $businessName : $contactName,
+        'contact_name' => $contactName,
+        'email' => filter_var((string) ($data['contact_email'] ?? ''), FILTER_VALIDATE_EMAIL) ? strtolower(trim((string) $data['contact_email'])) : '',
+        'phone' => trim((string) ($data['contact_phone'] ?? '')),
+        'zone' => trim((string) ($data['address_zone'] ?? '')),
+        'seller_id' => !empty($data['seller_id']) ? (int) $data['seller_id'] : null,
+        'notes' => 'Creado automaticamente desde pedido ' . trim((string) ($data['order_number'] ?? '')),
+        'is_active' => 1,
+    ];
+
+    $columns = [];
+    $params = [];
+    foreach ($insert as $column => $value) {
+        if (catalog_column_exists('clients', $column)) {
+            $columns[] = $column;
+            $params[$column] = $value;
+        }
+    }
+
+    if (!in_array('business_name', $columns, true)) {
+        return null;
+    }
+
+    $statement = $pdo->prepare(
+        'INSERT INTO clients (`' . implode('`, `', $columns) . '`) VALUES (:' . implode(', :', $columns) . ')'
+    );
+    $statement->execute($params);
+
+    return (int) $pdo->lastInsertId();
+}
+
+function order_find_existing_client(PDO $pdo, array $data): int
+{
+    $email = filter_var((string) ($data['contact_email'] ?? ''), FILTER_VALIDATE_EMAIL) ? strtolower(trim((string) $data['contact_email'])) : '';
+    if ($email !== '' && catalog_column_exists('clients', 'email')) {
+        $statement = $pdo->prepare('SELECT id FROM clients WHERE LOWER(email) = :email ORDER BY id DESC LIMIT 1');
+        $statement->execute(['email' => $email]);
+        $id = (int) $statement->fetchColumn();
+        if ($id > 0) {
+            return $id;
+        }
+    }
+
+    $phone = trim((string) ($data['contact_phone'] ?? ''));
+    if ($phone !== '' && catalog_column_exists('clients', 'phone')) {
+        $statement = $pdo->prepare('SELECT id FROM clients WHERE phone = :phone ORDER BY id DESC LIMIT 1');
+        $statement->execute(['phone' => $phone]);
+        $id = (int) $statement->fetchColumn();
+        if ($id > 0) {
+            return $id;
+        }
+    }
+
+    $businessName = trim((string) ($data['company_name'] ?? ''));
+    if ($businessName !== '' && catalog_column_exists('clients', 'business_name')) {
+        $sql = 'SELECT id FROM clients WHERE business_name = :business_name';
+        $params = ['business_name' => $businessName];
+        if (!empty($data['seller_id']) && catalog_column_exists('clients', 'seller_id')) {
+            $sql .= ' AND (seller_id = :seller_id OR seller_id IS NULL)';
+            $params['seller_id'] = (int) $data['seller_id'];
+        }
+        $sql .= ' ORDER BY id DESC LIMIT 1';
+        $statement = $pdo->prepare($sql);
+        $statement->execute($params);
+        return (int) $statement->fetchColumn();
+    }
+
+    return 0;
+}
+
+function order_update_client_from_order(PDO $pdo, int $clientId, array $data): void
+{
+    if ($clientId <= 0 || !catalog_table_exists('clients')) {
+        return;
+    }
+
+    $candidateValues = [
+        'contact_name' => trim((string) ($data['contact_name'] ?? '')),
+        'email' => filter_var((string) ($data['contact_email'] ?? ''), FILTER_VALIDATE_EMAIL) ? strtolower(trim((string) $data['contact_email'])) : '',
+        'phone' => trim((string) ($data['contact_phone'] ?? '')),
+        'zone' => trim((string) ($data['address_zone'] ?? '')),
+        'seller_id' => !empty($data['seller_id']) ? (int) $data['seller_id'] : null,
+    ];
+
+    $sets = [];
+    $params = ['id' => $clientId];
+    foreach ($candidateValues as $column => $value) {
+        if (!catalog_column_exists('clients', $column) || $value === '' || $value === null) {
+            continue;
+        }
+        $sets[] = "`{$column}` = CASE WHEN `{$column}` IS NULL OR `{$column}` = '' THEN :{$column} ELSE `{$column}` END";
+        $params[$column] = $value;
+    }
+    if (catalog_column_exists('clients', 'updated_at')) {
+        $sets[] = 'updated_at = NOW()';
+    }
+    if (!$sets) {
+        return;
+    }
+
+    $pdo->prepare('UPDATE clients SET ' . implode(', ', $sets) . ' WHERE id = :id')->execute($params);
+}
+
+function order_generate_client_code(PDO $pdo): string
+{
+    if (!catalog_column_exists('clients', 'code')) {
+        return 'CLI-' . date('YmdHis');
+    }
+
+    for ($i = 0; $i < 8; $i++) {
+        $code = 'CLI-' . date('Ymd') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 6));
+        $statement = $pdo->prepare('SELECT COUNT(*) FROM clients WHERE code = :code');
+        $statement->execute(['code' => $code]);
+        if ((int) $statement->fetchColumn() === 0) {
+            return $code;
+        }
+    }
+
+    return 'CLI-' . date('YmdHis') . '-' . random_int(100, 999);
+}
 
 function update_order_columns(int $orderId, array $values): void
 {
@@ -392,10 +571,17 @@ function update_order_columns(int $orderId, array $values): void
     db()->prepare('UPDATE orders SET ' . implode(', ', $sets) . ' WHERE id = :id')->execute($params);
 }
 
-function build_admin_order_url(int $orderId): string
+function build_public_order_export_url(int $orderId, string $orderNumber, string $format = 'xlsx'): string
 {
     $host = trim((string) ($_SERVER['HTTP_HOST'] ?? ''));
     if ($host === '') {
+        return '';
+    }
+
+    $token = function_exists('order_public_export_token')
+        ? order_public_export_token($orderId, $orderNumber)
+        : order_public_export_token_fallback($orderId, $orderNumber);
+    if ($token === '') {
         return '';
     }
 
@@ -403,9 +589,128 @@ function build_admin_order_url(int $orderId): string
         || (strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https');
     $scheme = $https ? 'https' : 'http';
     $scriptDir = str_replace('\\', '/', dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '/catalogos_api/submit_order.php')));
-    $adminDir = preg_replace('#/catalogos_api/?$#', '/catalogos_admin', $scriptDir) ?: '/catalogos_admin';
+    $apiDir = preg_replace('#/catalogos_api/?$#', '/catalogos_api', $scriptDir) ?: '/catalogos_api';
 
-    return $scheme . '://' . $host . rtrim($adminDir, '/') . '/pedidos.php?id=' . $orderId;
+    return $scheme . '://' . $host . rtrim($apiDir, '/') . '/download_order_export.php?' . http_build_query([
+        'id' => $orderId,
+        'format' => $format === 'csv' ? 'csv' : 'xlsx',
+        'token' => $token,
+    ]);
+}
+
+function order_public_export_token_fallback(int $orderId, string $orderNumber): string
+{
+    $secret = (string) catalog_config('api_key', '');
+    if ($orderId <= 0 || $orderNumber === '' || $secret === '') {
+        return '';
+    }
+
+    return hash_hmac('sha256', $orderId . '|' . $orderNumber, $secret);
+}
+
+function build_order_notification_simple_html(array $order, array $items): string
+{
+    $currency = (string) (($order['currency'] ?? '') ?: 'USD');
+    $total = (float) ($order['total'] ?? 0);
+    $customerName = trim((string) (($order['company_name'] ?? '') ?: ($order['contact_name'] ?? '')));
+    $sellerName = trim((string) ($order['seller_name'] ?? ''));
+    $includeImages = (bool) catalog_config('mail.include_order_item_images', false);
+    $rows = '';
+
+    foreach ($items as $item) {
+        $imageUrl = safeImageUrl((string) ($item['image_url'] ?? ''), '');
+        $imageCell = $includeImages
+            ? '<td align="center" style="border:1px solid #d9deea;padding:6px;width:62px;">'
+                . ($imageUrl !== ''
+                    ? '<img src="' . html_escape($imageUrl) . '" width="54" height="54" alt="' . safeText($item['item_code'] ?? '') . '" style="display:block;width:54px;height:54px;object-fit:contain;border:0;">'
+                    : '<span style="font-size:11px;color:#667085;">Sin imagen</span>')
+                . '</td>'
+            : '';
+        $rows .= '<tr>'
+            . $imageCell
+            . '<td style="border:1px solid #d9deea;padding:8px;">' . safeText($item['item_code'] ?? '') . '</td>'
+            . '<td style="border:1px solid #d9deea;padding:8px;">' . safeText($item['description'] ?? '') . '</td>'
+            . '<td align="center" style="border:1px solid #d9deea;padding:8px;">' . html_escape(format_plain_number((float) ($item['quantity'] ?? 0))) . '</td>'
+            . '<td align="center" style="border:1px solid #d9deea;padding:8px;">' . safeText($item['package_label'] ?? '') . ' ' . html_escape(format_plain_number((float) ($item['package_qty'] ?? 0))) . '</td>'
+            . '<td align="center" style="border:1px solid #d9deea;padding:8px;">' . html_escape(format_plain_number((float) ($item['pieces_total'] ?? 0))) . '</td>'
+            . '<td align="right" style="border:1px solid #d9deea;padding:8px;">' . money((float) ($item['unit_price'] ?? 0), $currency) . '</td>'
+            . '<td align="right" style="border:1px solid #d9deea;padding:8px;font-weight:700;">' . money((float) ($item['line_total'] ?? 0), $currency) . '</td>'
+            . '</tr>';
+    }
+
+    if ($rows === '') {
+        $rows = '<tr><td colspan="' . ($includeImages ? '8' : '7') . '" style="border:1px solid #d9deea;padding:10px;text-align:center;color:#667085;">Sin productos</td></tr>';
+    }
+
+    $imageHeader = $includeImages
+        ? '<th align="center" style="border:1px solid #d9deea;padding:8px;color:#2c4695;width:62px;">Imagen</th>'
+        : '';
+
+    return '<!doctype html><html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"></head>'
+        . '<body style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;color:#172033;">'
+        . '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4f6f8;"><tr><td align="center" style="padding:24px 12px;">'
+        . '<table role="presentation" width="760" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:760px;background:#ffffff;border:1px solid #d9deea;border-collapse:collapse;">'
+        . '<tr><td style="background:#2c4695;color:#ffffff;padding:24px 26px;">'
+        . '<div style="font-size:26px;line-height:32px;font-weight:700;">Rodeo Import</div>'
+        . '<div style="font-size:13px;line-height:18px;color:#dfe7ff;margin-top:4px;font-weight:700;">Nuevo pedido confirmado</div>'
+        . '<div style="font-size:28px;line-height:36px;font-weight:700;margin-top:18px;">' . safeText($order['order_number'] ?? '') . '</div>'
+        . '</td></tr>'
+        . '<tr><td style="padding:20px 24px;">'
+        . '<p style="margin:0 0 12px;font-size:15px;line-height:22px;">Se registro un nuevo pedido confirmado desde el catalogo publico.</p>'
+        . '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin:0 0 18px;">'
+        . '<tr>'
+        . simple_email_summary_card('Pedido', $order['order_number'] ?? '')
+        . simple_email_summary_card('Catalogo', $order['catalog_title'] ?? '')
+        . simple_email_summary_card('Cliente', $customerName)
+        . simple_email_summary_card('Total', money($total, $currency))
+        . '</tr>'
+        . '</table>'
+        . '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin:0 0 18px;">'
+        . simple_email_meta_row('Pedido', $order['order_number'] ?? '')
+        . simple_email_meta_row('Catalogo', $order['catalog_title'] ?? '')
+        . simple_email_meta_row('Cliente', $customerName)
+        . simple_email_meta_row('Contacto', $order['contact_name'] ?? '')
+        . simple_email_meta_row('Correo', $order['contact_email'] ?? '')
+        . simple_email_meta_row('Telefono', $order['contact_phone'] ?? '')
+        . simple_email_meta_row('Zona / Direccion', $order['address_zone'] ?? '')
+        . simple_email_meta_row('Vendedor', $sellerName !== '' ? $sellerName : 'No definido')
+        . simple_email_meta_row('Total', money($total, $currency))
+        . '</table>'
+        . '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;">'
+        . '<tr style="background:#eef2fb;">'
+        . $imageHeader
+        . '<th align="left" style="border:1px solid #d9deea;padding:8px;color:#2c4695;">Item</th>'
+        . '<th align="left" style="border:1px solid #d9deea;padding:8px;color:#2c4695;">Descripcion</th>'
+        . '<th align="center" style="border:1px solid #d9deea;padding:8px;color:#2c4695;">Cantidad</th>'
+        . '<th align="center" style="border:1px solid #d9deea;padding:8px;color:#2c4695;">Empaque</th>'
+        . '<th align="center" style="border:1px solid #d9deea;padding:8px;color:#2c4695;">Piezas</th>'
+        . '<th align="right" style="border:1px solid #d9deea;padding:8px;color:#2c4695;">Unitario</th>'
+        . '<th align="right" style="border:1px solid #d9deea;padding:8px;color:#2c4695;">Total</th>'
+        . '</tr>' . $rows
+        . '</table>'
+        . '<table role="presentation" width="280" cellspacing="0" cellpadding="0" border="0" align="right" style="border-collapse:collapse;margin-top:18px;background:#2c4695;">'
+        . '<tr><td style="padding:12px 16px;color:#dfe7ff;font-size:12px;font-weight:700;">TOTAL DEL PEDIDO</td></tr>'
+        . '<tr><td style="padding:0 16px 16px 16px;color:#ffffff;font-size:24px;line-height:30px;font-weight:700;">' . money($total, $currency) . '</td></tr>'
+        . '</table>'
+        . '<div style="clear:both;"></div>'
+        . '<p style="margin:18px 0 0;color:#667085;font-size:12px;line-height:18px;">El archivo Excel del pedido va adjunto a este correo. Este correo fue generado automaticamente por Catalogo Rodeo B2B.</p>'
+        . '</td></tr></table></td></tr></table></body></html>';
+}
+
+function simple_email_summary_card(string $label, mixed $value): string
+{
+    return '<td width="25%" style="border:1px solid #d9deea;background:#f8faff;padding:12px;vertical-align:top;">'
+        . '<div style="font-size:11px;line-height:16px;color:#667085;font-weight:700;text-transform:uppercase;">' . safeText($label) . '</div>'
+        . '<div style="font-size:14px;line-height:19px;color:#172033;font-weight:700;margin-top:4px;">' . order_email_value($value) . '</div>'
+        . '</td>';
+}
+
+function simple_email_meta_row(string $label, mixed $value): string
+{
+    return '<tr>'
+        . '<td style="width:160px;border:1px solid #d9deea;padding:8px;background:#f8faff;color:#667085;font-weight:700;">' . safeText($label) . '</td>'
+        . '<td style="border:1px solid #d9deea;padding:8px;color:#172033;">' . order_email_value($value) . '</td>'
+        . '</tr>';
 }
 
 function build_order_notification_html(array $order, array $items): string
@@ -486,7 +791,7 @@ function build_order_notification_html(array $order, array $items): string
         ])
         . '</tr></table>'
         . '</td></tr>'
-        . order_email_admin_link_block((string) ($order['admin_order_url'] ?? ''))
+        . order_email_export_links_block((string) ($order['public_order_xlsx_url'] ?? ''), (string) ($order['public_order_csv_url'] ?? ''))
         . $limitNote
         . '<tr><td style="background:#ffffff;padding:12px 24px 0 24px;">'
         . '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #d9deea;border-collapse:collapse;">'
@@ -543,13 +848,29 @@ function order_email_comments_block(string $comments): string
     return '<tr><td style="background:#ffffff;padding:0 24px 20px 24px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#fff8e6;border:1px solid #f3d68a;border-collapse:collapse;border-radius:8px;"><tr><td style="padding:13px 14px;"><div style="font-size:13px;font-weight:700;color:#8a6100;margin-bottom:6px;">Observaciones</div><div style="font-size:13px;line-height:19px;color:#172033;">' . safeText($comments) . '</div></td></tr></table></td></tr>';
 }
 
-function order_email_admin_link_block(string $adminOrderUrl): string
+function order_email_export_links_block(string $xlsxUrl, string $csvUrl): string
 {
-    if (trim($adminOrderUrl) === '') {
+    $xlsxUrl = trim($xlsxUrl);
+    $csvUrl = trim($csvUrl);
+    if ($xlsxUrl === '' && $csvUrl === '') {
         return '';
     }
 
-    return '<tr><td align="center" style="background:#ffffff;padding:4px 24px 18px 24px;"><table role="presentation" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;"><tr><td align="center" style="background:#2c4695;border-radius:8px;"><a href="' . html_escape($adminOrderUrl) . '" style="display:inline-block;padding:13px 18px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">Ver pedido en admin</a></td></tr></table></td></tr>';
+    $buttons = '';
+    if ($xlsxUrl !== '') {
+        $buttons .= '<td align="center" style="background:#16a34a;border-radius:8px;"><a href="' . html_escape($xlsxUrl) . '" style="display:inline-block;padding:12px 16px;color:#ffffff;font-size:13px;font-weight:700;text-decoration:none;">Descargar Excel</a></td>';
+    }
+    if ($xlsxUrl !== '' && $csvUrl !== '') {
+        $buttons .= '<td width="10" style="font-size:0;line-height:0;">&nbsp;</td>';
+    }
+    if ($csvUrl !== '') {
+        $buttons .= '<td align="center" style="background:#475467;border-radius:8px;"><a href="' . html_escape($csvUrl) . '" style="display:inline-block;padding:12px 16px;color:#ffffff;font-size:13px;font-weight:700;text-decoration:none;">Descargar CSV</a></td>';
+    }
+
+    return '<tr><td align="center" style="background:#ffffff;padding:0 24px 18px 24px;">'
+        . '<div style="font-size:13px;line-height:19px;color:#667085;margin-bottom:10px;">Copia descargable del pedido para cliente y facturacion.</div>'
+        . '<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;"><tr>' . $buttons . '</tr></table>'
+        . '</td></tr>';
 }
 
 function order_email_value(mixed $value): string

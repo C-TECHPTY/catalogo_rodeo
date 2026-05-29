@@ -233,13 +233,29 @@ function admin_header(string $title, string $active = 'dashboard.php'): void
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <?php if ($user): ?>
+            <meta name="theme-color" content="#0f2346">
+            <meta name="mobile-web-app-capable" content="yes">
+            <meta name="apple-mobile-web-app-capable" content="yes">
+            <meta name="apple-mobile-web-app-title" content="Rodeo Admin">
+            <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+            <link rel="manifest" href="<?= html_escape($adminPrefix) ?>manifest.json">
+            <link rel="apple-touch-icon" href="<?= html_escape($adminPrefix) ?>assets/logo-rodeo-azul.png">
+        <?php endif; ?>
         <title><?= html_escape($title) ?></title>
         <link rel="stylesheet" href="<?= html_escape($siblingPrefix) ?>assets/admin.css">
     </head>
     <body>
     <?php if ($user): ?>
         <div class="shell">
-            <aside class="sidebar">
+            <button class="mobile-menu-button" type="button" aria-controls="admin-sidebar" aria-expanded="false">
+                <span></span>
+                <span></span>
+                <span></span>
+                <strong>Menu</strong>
+            </button>
+            <button class="sidebar-backdrop" type="button" aria-label="Cerrar menu"></button>
+            <aside class="sidebar" id="admin-sidebar">
                 <div class="brand">
                     <?php if ($companyLogoUrl !== ''): ?>
                         <img class="brand__logo" src="<?= html_escape($companyLogoUrl) ?>" alt="<?= html_escape($companyName) ?>">
@@ -268,6 +284,8 @@ function admin_header(string $title, string $active = 'dashboard.php'): void
                     </div>
                     <div class="topbar__actions">
                         <span class="pill"><?= html_escape(date('Y-m-d H:i')) ?></span>
+                        <button class="button button--ghost admin-install-app" type="button" data-admin-install-app hidden>Instalar app</button>
+                        <button class="button button--ghost admin-notifications-button" type="button" data-admin-enable-notifications hidden>Activar alertas</button>
                         <a class="button" href="<?= html_escape($siblingPrefix) ?>catalogos_vendedor/index.php">Vista vendedor</a>
                     </div>
                 </div>
@@ -283,7 +301,49 @@ function admin_header(string $title, string $active = 'dashboard.php'): void
 function admin_footer(): void
 {
     if (current_user()) {
-        echo '</main></div>';
+        ?>
+                <script>
+                (() => {
+                    const body = document.body;
+                    const menuButton = document.querySelector(".mobile-menu-button");
+                    const backdrop = document.querySelector(".sidebar-backdrop");
+                    const sidebar = document.getElementById("admin-sidebar");
+                    if (!menuButton || !backdrop || !sidebar) return;
+
+                    const setMenu = (open) => {
+                        body.classList.toggle("admin-menu-open", open);
+                        menuButton.setAttribute("aria-expanded", open ? "true" : "false");
+                    };
+
+                    menuButton.addEventListener("click", () => {
+                        setMenu(!body.classList.contains("admin-menu-open"));
+                    });
+                    backdrop.addEventListener("click", () => setMenu(false));
+                    sidebar.addEventListener("click", (event) => {
+                        if (event.target.closest("a") && window.matchMedia("(max-width: 900px)").matches) {
+                            setMenu(false);
+                        }
+                    });
+                    window.addEventListener("keydown", (event) => {
+                        if (event.key === "Escape") setMenu(false);
+                    });
+                    window.addEventListener("resize", () => {
+                        if (!window.matchMedia("(max-width: 900px)").matches) setMenu(false);
+                    });
+                })();
+                </script>
+                <script
+                    src="<?= html_escape($adminPrefix) ?>assets/js/admin-alerts.js"
+                    data-latest-url="<?= html_escape($adminPrefix) ?>api/orders_latest.php"
+                    data-push-key-url="<?= html_escape($adminPrefix) ?>api/push_public_key.php"
+                    data-push-subscribe-url="<?= html_escape($adminPrefix) ?>api/push_subscribe.php"
+                    data-orders-url="<?= html_escape($adminPrefix) ?>pedidos.php"
+                    data-sw-url="<?= html_escape($adminPrefix) ?>service-worker.js"
+                    data-sw-scope="<?= html_escape($adminPrefix) ?>"
+                    defer></script>
+            </main>
+        </div>
+        <?php
     }
     echo '</body></html>';
 }

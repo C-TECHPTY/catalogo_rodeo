@@ -1165,7 +1165,27 @@
     pruneUnavailableCartItems();
     const items = Array.from(state.cart.values());
     const cartCount = items.reduce((sum, entry) => sum + entry.quantity, 0);
-    if (els.cartButton) els.cartButton.textContent = `Carrito`;
+    if (els.cartButton) {
+      let label = els.cartButton.querySelector(".cart-button-label");
+      let badge = els.cartButton.querySelector(".cart-badge");
+      Array.from(els.cartButton.childNodes).forEach((node) => {
+        if (node.nodeType === 3 && node.textContent.trim()) node.remove();
+      });
+      if (!label) {
+        label = document.createElement("span");
+        label.className = "cart-button-label";
+        label.textContent = "Carrito";
+        els.cartButton.prepend(label);
+      }
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = "cart-badge";
+        badge.id = "cartBadge";
+        els.cartButton.appendChild(badge);
+        els.cartBadge = badge;
+      }
+      els.cartButton.setAttribute("aria-label", cartCount > 0 ? `Abrir carrito, ${cartCount} productos` : "Abrir carrito");
+    }
     if (els.cartBadge) els.cartBadge.textContent = String(cartCount);
     if (els.cartLines) {
       els.cartLines.innerHTML = items.length ? "" : `<p class="cart-empty">Todavia no has agregado productos.</p>`;

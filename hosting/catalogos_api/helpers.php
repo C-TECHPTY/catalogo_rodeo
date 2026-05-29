@@ -1144,6 +1144,7 @@ function send_notification_mail(string $subject, string $message, array $recipie
 {
     $finalRecipients = normalize_email_recipients($recipients);
     if (!$finalRecipients) {
+        log_notification_attempt($orderId, 'sin destinatarios', $subject, $message, [], 'failed', 'No hay destinatarios validos para enviar la notificacion.');
         return 'failed';
     }
 
@@ -1430,11 +1431,15 @@ function build_notification_recipients(array $order, ?array $seller = null): arr
         }
     }
 
-    if ($seller && !empty($seller['email'])) {
+    if (!normalize_email_recipients($recipients)) {
+        $recipients[] = (string) catalog_config('sales_contact.email', '');
+    }
+
+    if (app_setting('mail_copy_seller', '1') === '1' && $seller && !empty($seller['email'])) {
         $recipients[] = $seller['email'];
     }
 
-    if (!empty($order['contact_email'])) {
+    if (app_setting('mail_copy_client', '1') === '1' && !empty($order['contact_email'])) {
         $recipients[] = $order['contact_email'];
     }
 
@@ -1464,6 +1469,345 @@ function sales_contact_info(): array
         'email' => (string) catalog_config('sales_contact.email', 'ventas@rodeoimportzl.com'),
         'phone' => (string) catalog_config('sales_contact.phone', '4418710'),
     ];
+}
+
+function order_public_export_token(int $orderId, string $orderNumber): string
+{
+    $secret = (string) catalog_config('api_key', '');
+    if ($orderId <= 0 || $orderNumber === '' || $secret === '') {
+        return '';
+    }
+
+    return hash_hmac('sha256', $orderId . '|' . $orderNumber, $secret);
+}
+
+function admin_push_public_key(): string
+{
+    return trim((string) catalog_config('push.vapid_public_key', ''));
+}
+
+function admin_push_private_key(): string
+{
+    return trim((string) catalog_config('push.vapid_private_key', ''));
+}
+
+function admin_push_is_configured(): bool
+{
+    return admin_push_public_key() !== ''
+        && admin_push_private_key() !== ''
+        && function_exists('openssl_pkey_new')
+        && function_exists('openssl_pkey_derive');
+}
+
+function admin_push_notify_new_order(int $orderId, string $orderNumber, string $customerName, string $sellerName = ''): void
+{
+    if (!admin_push_is_configured() || !catalog_table_exists('admin_push_subscriptions')) {
+        return;
+    }
+
+    $payload = [
+        'title' => 'Nuevo pedido ' . ($orderNumber !== '' ? $orderNumber : ('#' . $orderId)),
+        'body' => trim($customerName . ($sellerName !== '' ? "\nVendedor: " . $sellerName : '')),
+        'url' => '../catalogos_admin/pedidos.php?id=' . $orderId,
+        'tag' => 'rodeo-order-' . $orderId,
+    ];
+
+    try {
+        $statement = db()->query(
+            'SELECT id, endpoint, p256dh_key, auth_key
+             FROM admin_push_subscriptions
+             WHERE is_active = 1
+             ORDER BY id DESC
+             LIMIT 200'
+        );
+        foreach ($statement ? $statement->fetchAll() : [] as $subscription) {
+            $result = admin_push_send_subscription($subscription, $payload);
+            if (!$result['ok'] && in_array((int) $result['status'], [404, 410], true)) {
+                db()->prepare('UPDATE admin_push_subscriptions SET is_active = 0 WHERE id = :id')->execute([
+                    'id' => (int) $subscription['id'],
+                ]);
+            }
+        }
+    } catch (Throwable $exception) {
+        audit_log('admin_push.notify_failed', 'orders', $orderId, [
+            'error' => $exception->getMessage(),
+        ]);
+    }
+}
+
+function admin_push_send_subscription(array $subscription, array $payload): array
+{
+    $endpoint = trim((string) ($subscription['endpoint'] ?? ''));
+    $userPublicKey = admin_push_base64url_decode((string) ($subscription['p256dh_key'] ?? ''));
+    $authSecret = admin_push_base64url_decode((string) ($subscription['auth_key'] ?? ''));
+    if ($endpoint === '' || $userPublicKey === '' || $authSecret === '') {
+        return ['ok' => false, 'status' => 0, 'response' => 'Suscripcion incompleta.'];
+    }
+
+    $encodedPayload = admin_push_encrypt_payload(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $userPublicKey, $authSecret);
+    if (!$encodedPayload) {
+        return ['ok' => false, 'status' => 0, 'response' => 'No se pudo cifrar el push.'];
+    }
+
+    $headers = [
+        'TTL: 86400',
+        'Urgency: high',
+        'Content-Type: application/octet-stream',
+        'Content-Encoding: aes128gcm',
+        'Authorization: ' . admin_push_vapid_authorization_header($endpoint),
+    ];
+
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'POST',
+            'header' => implode("\r\n", $headers),
+            'content' => $encodedPayload,
+            'ignore_errors' => true,
+            'timeout' => 8,
+        ],
+    ]);
+    $response = @file_get_contents($endpoint, false, $context);
+    $status = admin_push_response_status($http_response_header ?? []);
+
+    return [
+        'ok' => $status >= 200 && $status < 300,
+        'status' => $status,
+        'response' => is_string($response) ? $response : '',
+    ];
+}
+
+function admin_push_encrypt_payload(string $payload, string $userPublicKey, string $authSecret): ?string
+{
+    $serverKey = openssl_pkey_new([
+        'private_key_type' => OPENSSL_KEYTYPE_EC,
+        'curve_name' => 'prime256v1',
+    ]);
+    if (!$serverKey) {
+        return null;
+    }
+
+    $serverDetails = openssl_pkey_get_details($serverKey);
+    $serverPublicKey = admin_push_ec_public_key_from_details($serverDetails);
+    $userPublicPem = admin_push_public_key_pem($userPublicKey);
+    $userPublicResource = openssl_pkey_get_public($userPublicPem);
+    if (!$serverPublicKey || !$userPublicResource) {
+        return null;
+    }
+
+    $sharedSecret = openssl_pkey_derive($userPublicResource, $serverKey, 32);
+    if (!is_string($sharedSecret) || $sharedSecret === '') {
+        return null;
+    }
+
+    $salt = random_bytes(16);
+    $prk = hash_hmac('sha256', $sharedSecret, $authSecret, true);
+    $ikm = admin_push_hkdf_expand($prk, "WebPush: info\0" . $userPublicKey . $serverPublicKey, 32);
+    $cek = admin_push_hkdf($ikm, 16, 'Content-Encoding: aes128gcm' . "\0", $salt);
+    $nonce = admin_push_hkdf($ikm, 12, 'Content-Encoding: nonce' . "\0", $salt);
+    $plainText = $payload . "\x02";
+    $tag = '';
+    $cipherText = openssl_encrypt($plainText, 'aes-128-gcm', $cek, OPENSSL_RAW_DATA, $nonce, $tag);
+    if (!is_string($cipherText)) {
+        return null;
+    }
+
+    return $salt . pack('N', 4096) . chr(strlen($serverPublicKey)) . $serverPublicKey . $cipherText . $tag;
+}
+
+function admin_push_vapid_authorization_header(string $endpoint): string
+{
+    $audience = admin_push_endpoint_audience($endpoint);
+    $subject = (string) catalog_config('push.subject', 'mailto:' . catalog_config('sales_contact.email', 'ventas@rodeoimportzl.com'));
+    $header = admin_push_base64url_encode(json_encode(['typ' => 'JWT', 'alg' => 'ES256']));
+    $claims = admin_push_base64url_encode(json_encode([
+        'aud' => $audience,
+        'exp' => time() + 43200,
+        'sub' => $subject,
+    ], JSON_UNESCAPED_SLASHES));
+    $signature = admin_push_es256_sign($header . '.' . $claims);
+
+    return 'vapid t=' . $header . '.' . $claims . '.' . $signature . ', k=' . admin_push_public_key();
+}
+
+function admin_push_es256_sign(string $input): string
+{
+    $privateKey = admin_push_private_key_pem(admin_push_private_key(), admin_push_public_key());
+    $signature = '';
+    openssl_sign($input, $signature, $privateKey, OPENSSL_ALGO_SHA256);
+    return admin_push_base64url_encode(admin_push_ecdsa_der_to_raw($signature));
+}
+
+function admin_push_private_key_pem(string $privateKey, string $publicKey): string
+{
+    $private = admin_push_base64url_decode($privateKey);
+    $public = admin_push_base64url_decode($publicKey);
+    $der = admin_push_der_sequence(
+        admin_push_der_integer("\x01")
+        . admin_push_der_octet_string($private)
+        . admin_push_der_context(0, admin_push_der_oid_prime256v1())
+        . admin_push_der_context(1, admin_push_der_bit_string($public))
+    );
+    return "-----BEGIN EC PRIVATE KEY-----\n" . chunk_split(base64_encode($der), 64, "\n") . "-----END EC PRIVATE KEY-----\n";
+}
+
+function admin_push_public_key_pem(string $publicKey): string
+{
+    $algorithm = admin_push_der_sequence(admin_push_der_oid_ec_public_key() . admin_push_der_oid_prime256v1());
+    $der = admin_push_der_sequence($algorithm . admin_push_der_bit_string($publicKey));
+    return "-----BEGIN PUBLIC KEY-----\n" . chunk_split(base64_encode($der), 64, "\n") . "-----END PUBLIC KEY-----\n";
+}
+
+function admin_push_ec_public_key_from_details(array|false $details): string
+{
+    if (!is_array($details) || empty($details['ec']['x']) || empty($details['ec']['y'])) {
+        return '';
+    }
+    return "\x04" . str_pad((string) $details['ec']['x'], 32, "\0", STR_PAD_LEFT) . str_pad((string) $details['ec']['y'], 32, "\0", STR_PAD_LEFT);
+}
+
+function admin_push_hkdf(string $ikm, int $length, string $info, string $salt): string
+{
+    $prk = hash_hmac('sha256', $ikm, $salt, true);
+    return admin_push_hkdf_expand($prk, $info, $length);
+}
+
+function admin_push_hkdf_expand(string $prk, string $info, int $length): string
+{
+    $output = '';
+    $last = '';
+    for ($i = 1; strlen($output) < $length; $i++) {
+        $last = hash_hmac('sha256', $last . $info . chr($i), $prk, true);
+        $output .= $last;
+    }
+    return substr($output, 0, $length);
+}
+
+function admin_push_endpoint_audience(string $endpoint): string
+{
+    $parts = parse_url($endpoint);
+    $scheme = (string) ($parts['scheme'] ?? 'https');
+    $host = (string) ($parts['host'] ?? '');
+    $port = isset($parts['port']) ? ':' . (string) $parts['port'] : '';
+    return $scheme . '://' . $host . $port;
+}
+
+function admin_push_response_status(array $headers): int
+{
+    foreach ($headers as $header) {
+        if (preg_match('#^HTTP/\S+\s+(\d{3})#', (string) $header, $matches)) {
+            return (int) $matches[1];
+        }
+    }
+    return 0;
+}
+
+function admin_push_base64url_encode(string $value): string
+{
+    return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
+}
+
+function admin_push_base64url_decode(string $value): string
+{
+    $padding = strlen($value) % 4;
+    if ($padding) {
+        $value .= str_repeat('=', 4 - $padding);
+    }
+    $decoded = base64_decode(strtr($value, '-_', '+/'), true);
+    return is_string($decoded) ? $decoded : '';
+}
+
+function admin_push_ecdsa_der_to_raw(string $der): string
+{
+    $offset = 0;
+    if ($der === '' || ord($der[$offset]) !== 0x30) {
+        return str_repeat("\0", 64);
+    }
+
+    $offset++;
+    admin_push_read_der_length($der, $offset);
+    if (!isset($der[$offset]) || ord($der[$offset]) !== 0x02) {
+        return str_repeat("\0", 64);
+    }
+
+    $offset++;
+    $rLength = admin_push_read_der_length($der, $offset);
+    $r = substr($der, $offset, $rLength);
+    $offset += $rLength;
+
+    if (!isset($der[$offset]) || ord($der[$offset]) !== 0x02) {
+        return str_repeat("\0", 64);
+    }
+
+    $offset++;
+    $sLength = admin_push_read_der_length($der, $offset);
+    $s = substr($der, $offset, $sLength);
+
+    return str_pad(ltrim($r, "\0"), 32, "\0", STR_PAD_LEFT) . str_pad(ltrim($s, "\0"), 32, "\0", STR_PAD_LEFT);
+}
+
+function admin_push_read_der_length(string $der, int &$offset): int
+{
+    $first = ord($der[$offset] ?? "\0");
+    $offset++;
+    if ($first < 0x80) {
+        return $first;
+    }
+
+    $bytes = $first & 0x7f;
+    $length = 0;
+    for ($i = 0; $i < $bytes; $i++) {
+        $length = ($length << 8) | ord($der[$offset] ?? "\0");
+        $offset++;
+    }
+    return $length;
+}
+
+function admin_push_der_length(int $length): string
+{
+    if ($length < 128) {
+        return chr($length);
+    }
+    $encoded = '';
+    while ($length > 0) {
+        $encoded = chr($length & 0xff) . $encoded;
+        $length >>= 8;
+    }
+    return chr(0x80 | strlen($encoded)) . $encoded;
+}
+
+function admin_push_der_sequence(string $value): string
+{
+    return "\x30" . admin_push_der_length(strlen($value)) . $value;
+}
+
+function admin_push_der_integer(string $value): string
+{
+    return "\x02" . admin_push_der_length(strlen($value)) . $value;
+}
+
+function admin_push_der_octet_string(string $value): string
+{
+    return "\x04" . admin_push_der_length(strlen($value)) . $value;
+}
+
+function admin_push_der_bit_string(string $value): string
+{
+    return "\x03" . admin_push_der_length(strlen($value) + 1) . "\0" . $value;
+}
+
+function admin_push_der_context(int $index, string $value): string
+{
+    return chr(0xa0 + $index) . admin_push_der_length(strlen($value)) . $value;
+}
+
+function admin_push_der_oid_ec_public_key(): string
+{
+    return "\x06\x07\x2A\x86\x48\xCE\x3D\x02\x01";
+}
+
+function admin_push_der_oid_prime256v1(): string
+{
+    return "\x06\x08\x2A\x86\x48\xCE\x3D\x03\x01\x07";
 }
 
 function build_company_signature(): string
@@ -2101,16 +2445,16 @@ function prepare_order_xlsx_logo_image(int $id): ?array
     if ($extension === '') {
         return null;
     }
-    $width = max(1, (int) ($info[0] ?? 260));
-    $height = max(1, (int) ($info[1] ?? 70));
-    $scale = min(260 / $width, 74 / $height, 1);
+    $width = max(1, (int) ($info[0] ?? 360));
+    $height = max(1, (int) ($info[1] ?? 90));
+    $scale = min(360 / $width, 90 / $height, 1);
     $displayWidth = max(1, (int) round($width * $scale));
     $displayHeight = max(1, (int) round($height * $scale));
 
     return [
         'id' => $id,
         'row' => 1,
-        'col' => 6,
+        'col' => 5,
         'name' => 'logo-rodeo.' . $extension,
         'extension' => $extension,
         'content' => $content,
@@ -2231,6 +2575,16 @@ function order_export_total_pieces(array $row): float
 
 function order_export_logo_file_path(): string
 {
+    $configuredLogo = trim((string) catalog_config('branding.order_excel_logo_path', ''));
+    if ($configuredLogo !== '' && is_file($configuredLogo)) {
+        return $configuredLogo;
+    }
+
+    $excelLogo = dirname(__DIR__) . '/catalogos_admin/assets/logo-rodeo-excel.jpg';
+    if (is_file($excelLogo)) {
+        return $excelLogo;
+    }
+
     $blueLogo = dirname(__DIR__) . '/catalogos_admin/assets/logo-rodeo-azul.png';
     if (is_file($blueLogo)) {
         return $blueLogo;

@@ -143,6 +143,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    if ($action === 'archive_current_orders') {
+        $confirmText = strtoupper(trim((string) ($_POST['confirm_archive_current_text'] ?? '')));
+        $maxOrderId = (int) ($_POST['archive_max_order_id'] ?? 0);
+        if ($confirmText !== 'OCULTAR ACTUALES' || $maxOrderId <= 0) {
+            flash_set('error', 'Debes escribir OCULTAR ACTUALES para archivar la vista actual.');
+            header('Location: pedidos.php');
+            exit;
+        }
+        if (!$orderColumns['deleted_at']) {
+            flash_set('error', 'Faltan columnas para ocultar pedidos sin eliminarlos.');
+            header('Location: pedidos.php');
+            exit;
+        }
+
+        $sets = ['deleted_at = NOW()'];
+        if ($orderColumns['status']) {
+            $sets[] = "status = 'archivado'";
+        }
+        if ($orderColumns['deleted_by']) {
+            $sets[] = 'deleted_by = :deleted_by';
+        }
+        if ($orderColumns['updated_at']) {
+            $sets[] = 'updated_at = NOW()';
+        }
+
+        $params = [
+            'max_order_id' => $maxOrderId,
+        ];
+        if ($orderColumns['deleted_by']) {
+            $params['deleted_by'] = current_user()['id'] ?? null;
+        }
+
+        $stmt = db()->prepare(
+            'UPDATE orders
+             SET ' . implode(', ', $sets) . '
+             WHERE deleted_at IS NULL
+               AND id <= :max_order_id'
+        );
+        $stmt->execute($params);
+        $affected = $stmt->rowCount();
+
+        audit_log('order.current_orders_archived', 'orders', null, [
+            'affected' => $affected,
+            'max_order_id' => $maxOrderId,
+            'mode' => 'hide_from_default_list',
+        ]);
+        flash_set('success', 'Pedidos actuales ocultados: ' . $affected . '. No se elimino ningun pedido; puedes verlos en Ver limpiados.');
+        header('Location: pedidos.php');
+        exit;
+    }
+
     flash_set('error', 'Accion no valida para pedidos.');
     header('Location: pedidos.php' . $redirectId);
     exit;
@@ -386,6 +437,7 @@ if ($orderId > 0) {
 
 $sellerFilter = (int) ($_GET['seller_id'] ?? 0);
 $linkFilter = (int) ($_GET['link_id'] ?? 0);
+$clientFilter = (int) ($_GET['client_id'] ?? 0);
 $showArchived = (int) ($_GET['archivados'] ?? 0) === 1;
 $conditions = [];
 $params = [];
@@ -396,6 +448,10 @@ if ($sellerFilter > 0 && $orderColumns['seller_id']) {
 if ($linkFilter > 0 && $orderColumns['share_link_id']) {
     $conditions[] = 'o.share_link_id = :link_id';
     $params['link_id'] = $linkFilter;
+}
+if ($clientFilter > 0 && $orderColumns['client_id']) {
+    $conditions[] = 'o.client_id = :client_id';
+    $params['client_id'] = $clientFilter;
 }
 if (!$showArchived && $orderColumns['deleted_at']) {
     $conditions[] = 'o.deleted_at IS NULL';
@@ -441,6 +497,10 @@ if ($hasOrders) {
 }
 
 admin_header('Pedidos', 'pedidos.php');
+$archiveCurrentMaxOrderId = 0;
+foreach ($orders as $order) {
+    $archiveCurrentMaxOrderId = max($archiveCurrentMaxOrderId, (int) ($order['id'] ?? 0));
+}
 ?>
 <?php if (!$hasOrders): ?>
     <section class="card">
@@ -454,7 +514,7 @@ admin_header('Pedidos', 'pedidos.php');
         <strong>Pedidos registrados</strong>
         <div class="toolbar__actions">
             <?php if ($showArchived): ?><a class="button" href="pedidos.php">Ocultar limpiados</a><?php else: ?><a class="button" href="pedidos.php?archivados=1">Ver limpiados</a><?php endif; ?>
-            <?php if ($sellerFilter > 0 || $linkFilter > 0): ?><a class="button" href="pedidos.php">Ver todos</a><?php endif; ?>
+            <?php if ($sellerFilter > 0 || $linkFilter > 0 || $clientFilter > 0): ?><a class="button" href="pedidos.php">Ver todos</a><?php endif; ?>
             <span class="pill"><?= count($orders) ?> resultados</span>
         </div>
     </div>
@@ -467,6 +527,16 @@ admin_header('Pedidos', 'pedidos.php');
         <button class="button--danger" type="submit" <?= $testOrdersCount <= 0 ? 'disabled' : '' ?>>Limpiar pedidos de prueba</button>
         <span class="pill"><?= $testOrdersCount ?> pedidos de prueba activos</span>
     </form>
+    <?php if (!$showArchived && $orderColumns['deleted_at'] && $archiveCurrentMaxOrderId > 0): ?>
+        <form class="toolbar" method="post" onsubmit="return confirm('Se ocultaran todos los pedidos actuales hasta este momento. No se eliminaran y podras verlos en Ver limpiados.') && confirm('Confirmas que desde ahora quieres dejar visible solo lo nuevo?');" style="margin-bottom:16px;">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="archive_current_orders">
+            <input type="hidden" name="archive_max_order_id" value="<?= (int) $archiveCurrentMaxOrderId ?>">
+            <label style="max-width:280px;"><span>Ocultar pedidos actuales</span><input name="confirm_archive_current_text" placeholder="OCULTAR ACTUALES" autocomplete="off"></label>
+            <button class="button" type="submit">Ocultar actuales</button>
+            <span class="pill">No elimina pedidos</span>
+        </form>
+    <?php endif; ?>
     <div class="table-wrap">
         <table>
             <thead><tr><th>Pedido</th><th>Catalogo</th><th>Vendedor</th><th>Empresa</th><th>Contacto</th><th>Total</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>

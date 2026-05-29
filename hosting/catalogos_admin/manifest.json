@@ -1,0 +1,24 @@
+{
+  "name": "Catalogo Rodeo Admin",
+  "short_name": "Rodeo Admin",
+  "description": "Panel administrativo del Catalogo Rodeo B2B.",
+  "start_url": "./dashboard.php",
+  "scope": "./",
+  "display": "standalone",
+  "theme_color": "#0f2346",
+  "background_color": "#0f2346",
+  "icons": [
+    {
+      "src": "assets/logo-rodeo-azul.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/logo-rodeo-azul.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

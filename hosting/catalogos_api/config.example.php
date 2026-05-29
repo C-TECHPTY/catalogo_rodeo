@@ -21,6 +21,12 @@ return [
     'branding' => [
         'order_email_logo_url' => 'https://rodeoimportzl.com/catalogos_admin/assets/logo-rodeo-blanco.png',
         'order_email_no_image_url' => 'https://rodeoimportzl.com/catalogos_admin/assets/no-image.png',
+        'order_excel_logo_path' => '',
+    ],
+    'push' => [
+        'vapid_public_key' => '',
+        'vapid_private_key' => '',
+        'subject' => 'mailto:ventas@rodeoimportzl.com',
     ],
     'backblaze' => [
         'enabled' => false,
@@ -35,6 +41,8 @@ return [
     'mail' => [
         'from_name' => 'Catalogo Rodeo B2B',
         'from_email' => 'no-reply@tuempresa.com',
+        'attach_order_exports' => false,
+        'include_order_export_links' => false,
         'smtp' => [
             'enabled' => false,
             'host' => 'mail.tuempresa.com',
