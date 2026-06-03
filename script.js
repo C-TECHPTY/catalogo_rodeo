@@ -913,6 +913,7 @@ const promoImageSources = getPromotionImageAssetSources();
 const promoImageRelatives = promoImageSources.map((sourcePath, index) => `media/promo/promo-${index + 1}${getWebImageExtension(sourcePath)}`);
 const promoVideoRelative = state.promotion.videoPath ? `media/promo/promo${getPathExtension(state.promotion.videoPath) || ".mp4"}` : "";
 const brandFilterState = buildBrandFilterState(records);
+const isEntryScopedCatalog = hasEntryFilter(state.entryFilter);
 const featuredBrandAssets = buildFeaturedBrandAssets(brandFilterState.brands);
 if (coverRelative) assets.push({ sourcePath:state.coverImagePath, relativePath:coverRelative });
 if (logoRelative) assets.push({ sourcePath:state.pageLogoPath, relativePath:logoRelative });
@@ -964,6 +965,7 @@ snapshotHtml,
   priceMode: state.priceMode,
   priceModeLabel: getPriceModeLabel(state.priceMode),
   entryFilter: state.entryFilter,
+  entryScopedCatalog: isEntryScopedCatalog,
   smartCategoryFilter: state.smartCategoryFilter,
   descriptionSearch: state.descriptionSearch,
   promotion: {
@@ -989,12 +991,12 @@ imageSource: { ...state.imageSource },
 imageStorage: { ...state.imageStorage },
 brandFilter: state.brandExportMode === "single" ? state.brandFilter : "",
 brandExportMode: state.brandExportMode,
-brandFilterEnabled: brandFilterState.enabled,
+brandFilterEnabled: !isEntryScopedCatalog && brandFilterState.enabled,
 brands: brandFilterState.brands,
 activeBrand: brandFilterState.activeBrand,
 brandMetadata: brandFilterState.brands,
-showFeaturedBrands: state.brandExportMode === "complete" && state.featuredBrandsEnabled !== false,
-featuredBrands: buildFeaturedBrandMetadata(brandFilterState.brands, featuredBrandAssets),
+showFeaturedBrands: !isEntryScopedCatalog && state.brandExportMode === "complete" && state.featuredBrandsEnabled !== false,
+featuredBrands: isEntryScopedCatalog ? [] : buildFeaturedBrandMetadata(brandFilterState.brands, featuredBrandAssets),
 catalog: records.map((record) => ({ item:record.item, description:record.description, shortDescription:record.shortDescription, price:record.price, originalPrice:record.originalPrice || record.price, priceMode:state.priceMode, entry:record.entry || "", available:record.available, package:record.package, empaque:record.package, packageQty:parsePackageQty(record.package), packageLabel:record.package, saleUnit:record.saleUnit || record.um || "bulto", minimumOrder:record.minimumOrder || 1, multipleQty:record.multipleQty || 1, brand:record.brand || "", brandSlug:sanitizeSlug(record.brand || ""), material:record.material || "", size:record.size || record.measureBadge || "", category:record.category || "General", smartCategory:getRecordFilterCategory(record), categoryOriginal:record.categoryOriginal || record.category || "", remote_image_url:resolveProductRemoteImageUrl(record), remoteImageUrl:resolveProductRemoteImageUrl(record), media:mediaCatalog[record.item] || { gallery:[], video:"" } })),
 },
 assets: dedupeAssets(assets),
@@ -1006,6 +1008,7 @@ function getPromotionImageAssetSources() {
 return dedupeStringList(Array.isArray(state.promotion.imagePaths) ? state.promotion.imagePaths.filter(Boolean) : []);
 }
 function buildFeaturedBrandAssets(availableBrands = []) {
+if (hasEntryFilter(state.entryFilter)) return [];
 if (state.brandExportMode !== "complete" || state.featuredBrandsEnabled === false) return [];
 const available = new Set((availableBrands || []).map((brand) => normalizeBrandValue(brand.name || brand)));
 return state.featuredBrands
@@ -1016,6 +1019,7 @@ relativePath:`assets/brands/${sanitizeSlug(brand.name)}${getWebLogoExtension(bra
 }));
 }
 function buildFeaturedBrandMetadata(availableBrands = [], assets = []) {
+if (hasEntryFilter(state.entryFilter)) return [];
 if (state.brandExportMode !== "complete" || state.featuredBrandsEnabled === false) return [];
 const availableBySlug = new Map((availableBrands || []).map((brand) => [sanitizeSlug(brand.name || brand), brand.name || brand]));
 const assetBySlug = new Map((assets || []).map((asset) => [sanitizeSlug(String(asset.relativePath || "").replace(/^.*\/([^/.]+)\.[^.]+$/, "$1")), `./${asset.relativePath}`]));
@@ -1650,11 +1654,17 @@ hydrateDynamicImages(catalogRoot);
 function renderCover() {
 const template = getCurrentTemplate();
 const displayTitle = getCatalogDisplayTitle();
-const art = state.coverImageUrl ? `<div class="cover-page__art cover-page__art--full"><img src="${state.coverImageUrl}" alt="Portada"></div>` : `<div class="cover-page__art cover-page__art--placeholder"><span>${escapeHtml(template.coverIntro)}</span></div>`;
+if (state.coverImageUrl) {
+return `
+<section class="cover-page ${template.coverClass} cover-page--image-only">
+<div class="cover-page__art cover-page__art--full"><img src="${state.coverImageUrl}" alt="Portada"></div>
+</section>`;
+}
+const art = `<div class="cover-page__art cover-page__art--placeholder"><span>${escapeHtml(template.coverIntro)}</span></div>`;
 return `
 <section class="cover-page ${template.coverClass}">
 <div class="cover-page__bg"></div>
-<div class="cover-page__overlay ${state.coverImageUrl ? "cover-page__overlay--with-art" : ""}"></div>
+<div class="cover-page__overlay"></div>
 <div class="cover-page__frame"></div>
 ${art}
 <div class="cover-page__title" data-layout-block="coverTitle" style="${layoutStyleAttr("coverTitle")}">
@@ -1761,13 +1771,21 @@ function setBatchStatus(message, isError = false) { if (!batchStatusMessage) ret
 function setBrandVisualPresetStatus(message, isError = false) { if (!brandVisualPresetStatus) return; brandVisualPresetStatus.textContent = message; brandVisualPresetStatus.style.color = isError ? "#ffd6d6" : "rgba(255,255,255,0.82)"; }
 function syncBrandFilterInputs() {
 state.brandExportMode = normalizeBrandExportMode(state.brandExportMode);
+const isEntryScoped = hasEntryFilter(state.entryFilter);
+if (isEntryScoped) {
+state.brandExportMode = "complete";
+state.brandFilter = "";
+}
 const brands = getAvailableBrandsForCurrentEntry();
-if (brandExportModeInput) brandExportModeInput.value = state.brandExportMode;
+if (brandExportModeInput) {
+brandExportModeInput.value = state.brandExportMode;
+brandExportModeInput.disabled = isEntryScoped;
+}
 if (brandFilterSelect) {
 const current = brands.includes(state.brandFilter) ? state.brandFilter : "";
 brandFilterSelect.innerHTML = `<option value="">Todas las marcas</option>${brands.map((brand) => `<option value="${escapeHtml(brand)}">${escapeHtml(brand)}</option>`).join("")}`;
 brandFilterSelect.value = current;
-brandFilterSelect.disabled = state.brandExportMode !== "single";
+brandFilterSelect.disabled = isEntryScoped || state.brandExportMode !== "single";
 state.brandFilter = current;
 }
 syncFeaturedBrandControls();
@@ -1775,24 +1793,29 @@ syncFeaturedBrandControls();
 function syncFeaturedBrandControls() {
 const brands = getAvailableBrandsForCurrentEntry();
 const isComplete = state.brandExportMode === "complete";
+const isEntryScoped = hasEntryFilter(state.entryFilter);
 if (featuredBrandsEnabledInput) {
 featuredBrandsEnabledInput.checked = state.featuredBrandsEnabled !== false;
-featuredBrandsEnabledInput.disabled = !isComplete;
+featuredBrandsEnabledInput.disabled = isEntryScoped || !isComplete;
 }
 if (featuredBrandSelect) {
 const used = new Set(state.featuredBrands.map((brand) => normalizeBrandValue(brand.name)));
 const available = brands.filter((brand) => !used.has(normalizeBrandValue(brand)));
 featuredBrandSelect.innerHTML = `<option value="">Selecciona una marca</option>${available.map((brand) => `<option value="${escapeHtml(brand)}">${escapeHtml(brand)}</option>`).join("")}`;
-featuredBrandSelect.disabled = !isComplete || !available.length;
+featuredBrandSelect.disabled = isEntryScoped || !isComplete || !available.length;
 }
-if (featuredBrandLogoFileInput) featuredBrandLogoFileInput.disabled = !isComplete;
-if (addFeaturedBrandButton) addFeaturedBrandButton.disabled = !isComplete;
+if (featuredBrandLogoFileInput) featuredBrandLogoFileInput.disabled = isEntryScoped || !isComplete;
+if (addFeaturedBrandButton) addFeaturedBrandButton.disabled = isEntryScoped || !isComplete;
 renderFeaturedBrandsEditorList();
 }
 function addFeaturedBrandFromInputs() {
 syncStateFromManualInputs();
 if (state.brandExportMode !== "complete") {
 setBrandVisualPresetStatus("Las marcas destacadas solo se usan en catalogo completo.", true);
+return;
+}
+if (hasEntryFilter(state.entryFilter)) {
+setBrandVisualPresetStatus("Las marcas destacadas no se usan cuando generas una entrada del catalogo.", true);
 return;
 }
 const name = safeText(featuredBrandSelect?.value || "");
@@ -1827,6 +1850,10 @@ renderWebPreview();
 }
 function renderFeaturedBrandsEditorList() {
 if (!featuredBrandsList) return;
+if (hasEntryFilter(state.entryFilter)) {
+featuredBrandsList.innerHTML = `<p class="status-message">En entradas del catalogo se genera todo junto, sin marcas destacadas.</p>`;
+return;
+}
 if (state.brandExportMode !== "complete") {
 featuredBrandsList.innerHTML = `<p class="status-message">Esta opcion aparece solo al generar catalogo completo.</p>`;
 return;
@@ -2100,7 +2127,7 @@ return state.records;
 function getManualFilteredRecords(applyMissingImagePolicy = true) {
 const baseRecords = state.sourceRecords.length ? state.sourceRecords : state.records;
 const entryRecords = filterRecordsByEntry(baseRecords, state.entryFilter);
-const brandRecords = state.brandExportMode === "single" ? filterRecordsByBrand(entryRecords, state.brandFilter) : entryRecords;
+const brandRecords = !hasEntryFilter(state.entryFilter) && state.brandExportMode === "single" ? filterRecordsByBrand(entryRecords, state.brandFilter) : entryRecords;
 const categoryRecords = filterRecordsBySmartCategory(brandRecords, state.smartCategoryFilter);
 const searchRecords = filterRecordsByDescriptionSearch(categoryRecords, state.descriptionSearch);
 return applyMissingImagePolicy && state.hideMissingImages ? searchRecords.filter(recordHasMainImage) : searchRecords.slice();
@@ -2112,13 +2139,14 @@ return Boolean((normalizedItem && state.imageSourceMap.has(normalizedItem)) || r
 function buildManualRecordStatus() {
 const total = state.sourceRecords.length || state.records.length;
 const entryText = state.entryFilter ? ` Entrada: ${state.entryFilter}.` : " Entrada: todas.";
-const brandText = state.brandExportMode === "single" && state.brandFilter ? ` Marca: ${state.brandFilter}.` : (state.brandExportMode === "separate" ? " Marcas: catalogos separados." : " Marca: todas.");
+const brandText = hasEntryFilter(state.entryFilter) ? " Marca: todas en esta entrada." : (state.brandExportMode === "single" && state.brandFilter ? ` Marca: ${state.brandFilter}.` : (state.brandExportMode === "separate" ? " Marcas: catalogos separados." : " Marca: todas."));
 const categoryText = state.smartCategoryFilter ? ` Categoria: ${state.smartCategoryFilter}.` : " Categoria: todas.";
 const searchText = state.descriptionSearch ? ` Busqueda: "${state.descriptionSearch}".` : "";
 const imageText = state.hideMissingImages ? " Sin imagen: excluidos." : " Sin imagen: incluidos.";
 return `Productos detectados: ${state.records.length}${total && total !== state.records.length ? ` de ${total}` : ""}.${entryText}${brandText}${categoryText}${searchText}${imageText} Precio: ${getPriceModeLabel(state.priceMode)}.`;
 }
 function buildBatchEntryStatus() { return state.batch.entryFilter ? `Entrada del lote: ${state.batch.entryFilter}.` : "Entrada del lote: todas."; }
+function hasEntryFilter(value) { return normalizeEntryValue(value) !== ""; }
 function getKnownItemsForImageIndex() { return new Set(getManualFilteredRecords(false).map((record) => normalizeIdentifier(record.item)).filter(Boolean)); }
 function buildImageMapFromFiles(files) { const map = new Map(); const knownItems = getKnownItemsForImageIndex(); files.forEach((file) => { const stem = resolveMainMediaItemKey(file.name || "", knownItems); if (!stem || map.has(stem)) return; map.set(stem, URL.createObjectURL(file)); }); return map; }
 async function buildCompressedImageMapFromPaths(paths, quality) { const map = new Map(); for (const filePath of paths) { const stem = normalizeIdentifier(String(filePath).split(/[\\/]/).pop().replace(/\.[^.]+$/, "")); if (!stem || map.has(stem)) continue; map.set(stem, await compressImagePath(filePath, quality, 1800)); } return map; }

@@ -732,7 +732,7 @@ async function publishCatalogPackage(payload, onProgress = () => {}) {
     const slug = exportResult.slug;
     const hosting = payload?.hosting || {};
     const publish = payload?.publish || {};
-    const zipBaseName = sanitizeArchiveName(publish.title || slug);
+    const zipBaseName = sanitizeArchiveName(slug);
     const zipFileName = `${zipBaseName}.zip`;
     const zipFilePath = path.join(path.dirname(packageDir), zipFileName);
     onProgress({ phase: "compressing", percent: 18, completed: 0, total: 0, label: zipFileName });
@@ -1727,8 +1727,12 @@ try {
 
 function sanitizeArchiveName(value) {
     return String(value || "catalogo")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
         .replace(/[<>:"/\\|?*]+/g, "")
-        .replace(/\s+/g, " ")
+        .replace(/[^a-zA-Z0-9._ -]+/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/-+/g, "-")
         .trim() || "catalogo";
 }
 
@@ -1752,6 +1756,11 @@ function buildWebExportHtml(snapshotHtml, metadata) {
 </head>
 <body class="catalog-locked">
     <div class="network-banner" id="networkBanner" hidden></div>
+    <div class="language-switcher notranslate" id="catalogLanguageSwitcher" aria-label="Idioma del catalogo" translate="no">
+        <button type="button" data-catalog-lang="es">ES</button>
+        <button type="button" data-catalog-lang="en">EN</button>
+    </div>
+    <div id="google_translate_element" class="google-translate-host" hidden></div>
     <div class="expired" id="expiredOverlay"><div class="expired__card"><h1>Este catalogo ya no esta disponible</h1><p>Solicita a tu vendedor un enlace actualizado para continuar comprando.</p></div></div>
     <div class="catalog-shell">
         <header class="catalog-header">

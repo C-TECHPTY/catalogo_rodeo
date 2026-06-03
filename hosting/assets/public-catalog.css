@@ -40,6 +40,43 @@ body.catalog-locked .overlay { display: none !important; }
 button, input, textarea, select { font: inherit; }
 button, .product-card__media { -webkit-tap-highlight-color: transparent; }
 
+.language-switcher {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 80;
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(var(--primary-rgb), 0.16);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.94);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.13);
+  backdrop-filter: blur(12px);
+}
+.language-switcher button {
+  min-width: 38px;
+  min-height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--primary-strong);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.language-switcher button.is-active {
+  background: var(--primary);
+  color: #fff;
+}
+.google-translate-host,
+.goog-te-banner-frame,
+.goog-te-balloon-frame,
+#goog-gt-tt {
+  display: none !important;
+}
+body { top: 0 !important; }
+
 .network-banner {
   position: sticky;
   top: 0;

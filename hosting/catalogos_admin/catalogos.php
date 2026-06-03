@@ -180,7 +180,10 @@ admin_header('Catalogos', 'catalogos.php');
                     <td>
                         <div class="toolbar__actions catalog-actions">
                             <a class="button" href="catalogos.php?edit=<?= (int) $catalog['id'] ?>">Editar</a>
+                            <a class="button" href="catalog_edit_live.php?catalog_id=<?= (int) $catalog['id'] ?>">Editar visual</a>
                             <a class="button" href="links.php?catalog_id=<?= (int) $catalog['id'] ?>">Crear link</a>
+                            <a class="button" href="catalog_update_products.php?catalog_id=<?= (int) $catalog['id'] ?>">Actualizar productos</a>
+                            <a class="button" href="catalog_history.php?catalog_id=<?= (int) $catalog['id'] ?>">Historial</a>
                             <a class="button" href="catalog_update_data.php?catalog_id=<?= (int) $catalog['id'] ?>">Actualizar datos</a>
                             <a class="button" href="catalog_update_images.php?catalog_id=<?= (int) $catalog['id'] ?>">Actualizar imagenes</a>
                             <a class="button" href="send_catalog_to_sellers.php?catalog_id=<?= (int) $catalog['id'] ?>">Enviar a vendedores</a>
