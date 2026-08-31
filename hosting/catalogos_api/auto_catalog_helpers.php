@@ -329,6 +329,8 @@ function auto_catalog_publish_json_clone(array $baseCatalog, string $slug, array
 
     $jsonPath = $targetDir . DIRECTORY_SEPARATOR . 'catalog.json';
     file_put_contents($jsonPath, json_encode($json, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+    auto_catalog_refresh_public_index_meta($targetDir, $json);
+    auto_catalog_refresh_public_assets($targetDir);
     file_put_contents(
         $targetDir . DIRECTORY_SEPARATOR . '.htaccess',
         "<Files \"catalog.json\">\n    Require all denied\n</Files>\n"
@@ -338,6 +340,42 @@ function auto_catalog_publish_json_clone(array $baseCatalog, string $slug, array
         'json_path' => 'catalogos/' . $slug . '/catalog.json',
         'public_url' => auto_catalog_public_url_for_slug($baseCatalog, $slug),
     ];
+}
+
+function auto_catalog_refresh_public_assets(string $targetDir): void
+{
+    $source = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'public-catalog.js';
+    $target = $targetDir . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'public-catalog.js';
+    if (is_file($source) && is_dir(dirname($target))) {
+        copy($source, $target);
+    }
+}
+
+function auto_catalog_refresh_public_index_meta(string $targetDir, array $json): void
+{
+    $indexPath = $targetDir . DIRECTORY_SEPARATOR . 'index.html';
+    if (!is_file($indexPath)) {
+        return;
+    }
+    $html = file_get_contents($indexPath);
+    if (!is_string($html) || $html === '') {
+        return;
+    }
+    $encoded = json_encode($json, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (!is_string($encoded)) {
+        return;
+    }
+    $encoded = str_replace('</script', '<\/script', $encoded);
+    $updated = preg_replace(
+        '#(<script\b[^>]*\bid=["\']catalogMeta["\'][^>]*>)(.*?)(</script>)#is',
+        '$1' . $encoded . '$3',
+        $html,
+        1,
+        $count
+    );
+    if ($count > 0 && is_string($updated)) {
+        file_put_contents($indexPath, $updated);
+    }
 }
 
 function auto_catalog_base_catalog_dir(array $baseCatalog): string
@@ -404,6 +442,10 @@ function auto_catalog_register_catalog(array $baseCatalog, array $rule, string $
         'base_catalog_id' => (int) $baseCatalog['id'],
         'metadata' => $json['autoCatalog'] ?? [],
     ];
+    if (!empty($json['scanList'])) {
+        $payload['scan_list'] = true;
+        $payload['metadata'] = ['scanList' => $json['scanList']];
+    }
 
     $statement = db()->prepare(
         'INSERT INTO catalogs (

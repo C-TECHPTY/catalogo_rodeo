@@ -16,6 +16,7 @@ $addressZone = trim((string) ($payload['address_zone'] ?? ''));
 $comments = trim((string) ($payload['comments'] ?? ''));
 $sourceChannel = trim((string) ($payload['source_channel'] ?? 'web'));
 $customerConfirmed = filter_var($payload['customer_confirmed'] ?? false, FILTER_VALIDATE_BOOLEAN);
+$priceList = trim((string) ($payload['price_list'] ?? ''));
 $items = $payload['items'] ?? [];
 
 if ($slug === '' || $contactName === '' || $contactPhone === '' || !is_array($items) || !$items) {
@@ -38,6 +39,11 @@ $orderNumber = next_order_number();
 $subtotal = 0.0;
 $normalizedItems = [];
 $catalogProductImages = build_catalog_product_image_map($catalog);
+$catalogProducts = order_catalog_products_by_item($catalog);
+$isChristmasPriceList = in_array($priceList, ['panama', 'direct'], true);
+if (order_catalog_requires_christmas_price_list($catalog) && !$isChristmasPriceList) {
+    json_response(['ok' => false, 'error' => 'Selecciona Precio Panamá o Precio Directo antes de confirmar la proforma.'], 422);
+}
 
 foreach ($items as $item) {
     $quantity = max(0.0, parse_decimal($item['quantity'] ?? 0));
@@ -45,7 +51,20 @@ foreach ($items as $item) {
         continue;
     }
 
-    $unitPrice = parse_decimal($item['unit_price'] ?? $item['price'] ?? 0);
+    $itemCode = trim((string) ($item['item_code'] ?? ''));
+    $catalogProduct = $catalogProducts[strtoupper($itemCode)] ?? null;
+    if ($isChristmasPriceList) {
+        if (!is_array($catalogProduct) || (string) ($catalogProduct['catalogType'] ?? '') !== 'christmas') {
+            json_response(['ok' => false, 'error' => 'La lista de precio elegida no es válida para uno de los productos.'], 422);
+        }
+        $priceField = $priceList === 'direct' ? 'directPrice' : 'panamaPrice';
+        $unitPrice = parse_decimal($catalogProduct[$priceField] ?? 0);
+        if ($unitPrice <= 0) {
+            json_response(['ok' => false, 'error' => 'El catálogo no tiene precio ' . ($priceList === 'direct' ? 'Directo' : 'Panamá') . ' para ' . $itemCode . '.'], 422);
+        }
+    } else {
+        $unitPrice = parse_decimal($item['unit_price'] ?? $item['price'] ?? 0);
+    }
     $packageQty = max(1.0, parse_decimal($item['package_qty'] ?? 1));
     $piecesTotal = max($quantity * $packageQty, parse_decimal($item['pieces_total'] ?? 0));
     $lineTotal = parse_decimal($item['line_total'] ?? 0);
@@ -55,8 +74,8 @@ foreach ($items as $item) {
 
     $subtotal += $lineTotal;
     $normalizedItems[] = [
-        'item_code' => trim((string) ($item['item_code'] ?? '')),
-        'description' => trim((string) ($item['description'] ?? '')),
+        'item_code' => $itemCode,
+        'description' => trim((string) ($catalogProduct['description'] ?? $item['description'] ?? '')),
         'quantity' => $quantity,
         'sale_unit' => trim((string) ($item['sale_unit'] ?? 'unidad')),
         'package_label' => trim((string) ($item['package_label'] ?? 'Empaque')),
@@ -119,6 +138,7 @@ try {
         'customer_confirmed' => 1,
         'confirmed_at' => date('Y-m-d H:i:s'),
         'customer_ip' => $_SERVER['REMOTE_ADDR'] ?? '',
+        'price_list' => $isChristmasPriceList ? $priceList : null,
     ];
     foreach ($optionalOrderData as $column => $value) {
         if (catalog_column_exists('orders', $column)) {
@@ -149,6 +169,7 @@ try {
             'price' => $item['unit_price'],
             'line_total' => $item['line_total'],
             'image_url' => $item['image_url'],
+            'price_list' => $isChristmasPriceList ? $priceList : null,
         ];
         foreach ($optionalItemData as $column => $value) {
             if (catalog_column_exists('order_items', $column)) {
@@ -267,6 +288,7 @@ $lines = [
     'Zona / Direccion: ' . $addressZone,
     'Vendedor asociado: ' . ($sellerDisplayName ?: 'No definido'),
     'Cliente asociado: ' . ($context['client_name'] ?: 'No definido'),
+    'Lista de precio: ' . ($isChristmasPriceList ? ($priceList === 'direct' ? 'Directo' : 'Panamá') : 'Estándar'),
     'Confirmacion del cliente: Si, revisado y autorizado',
     'Total: ' . format_money($subtotal, (string) ($catalog['currency'] ?: 'USD')),
     '',
@@ -402,6 +424,37 @@ json_response([
         'status' => 'new',
     ],
 ]);
+
+/** Maps published products by ITEM so the browser cannot set Christmas prices. */
+function order_catalog_products_by_item(array $catalog): array
+{
+    $json = catalog_json_data((string) ($catalog['catalog_json_path'] ?? ''));
+    if (!$json) {
+        $json = json_decode((string) ($catalog['api_payload'] ?? ''), true);
+    }
+    if (!is_array($json)) return [];
+    $products = [];
+    foreach (['catalog', 'products', 'items'] as $key) {
+        if (is_array($json[$key] ?? null)) { $products = $json[$key]; break; }
+    }
+    if (!$products && is_array($json['metadata']['catalog'] ?? null)) $products = $json['metadata']['catalog'];
+    $map = [];
+    foreach ($products as $product) {
+        if (!is_array($product)) continue;
+        $item = strtoupper(trim((string) ($product['item'] ?? $product['item_code'] ?? $product['sku'] ?? '')));
+        if ($item !== '') $map[$item] = $product;
+    }
+    return $map;
+}
+
+function order_catalog_requires_christmas_price_list(array $catalog): bool
+{
+    $json = catalog_json_data((string) ($catalog['catalog_json_path'] ?? ''));
+    if (!$json) $json = json_decode((string) ($catalog['api_payload'] ?? ''), true);
+    if (!is_array($json)) return false;
+    $metadata = is_array($json['metadata'] ?? null) ? $json['metadata'] : $json;
+    return !empty($metadata['christmasPriceSelector']);
+}
 
 function order_resolve_client_id(PDO $pdo, array $data): ?int
 {

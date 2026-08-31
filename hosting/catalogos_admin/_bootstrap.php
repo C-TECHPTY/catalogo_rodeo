@@ -87,6 +87,7 @@ function admin_menu_items(): array
             'seguimiento_vendedores.php' => 'Seguimiento vendedores',
             'sellers.php' => 'Vendedores',
             'auto_catalogs.php' => 'Catalogos automaticos',
+            'scan_lists.php' => 'Listas sala',
             'brand_templates.php' => 'Plantillas marca',
             'usuarios.php' => 'Usuarios',
             'links.php' => 'Links / Enlaces',

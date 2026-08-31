@@ -13,6 +13,24 @@ return [
         'charset' => 'utf8mb4',
     ],
     'api_key' => 'CHANGE_THIS_PRIVATE_API_KEY',
+    'openai' => [
+        'enabled' => false,
+        'api_key' => '',
+        'model' => 'gpt-4.1-mini',
+        'timeout' => 20,
+        'max_retries' => 2,
+    ],
+    // Los valores de entorno tienen precedencia. Nunca subas config.php al repositorio.
+    'whatsapp' => [
+        'enabled' => false,
+        'access_token' => '',
+        'phone_number_id' => '',
+        'business_account_id' => '',
+        'verify_token' => '',
+        'app_secret' => '',
+        'api_version' => 'v22.0',
+        'timeout' => 20,
+    ],
     'sales_contact' => [
         'name' => 'Ventas',
         'email' => 'ventas@rodeoimportzl.com',

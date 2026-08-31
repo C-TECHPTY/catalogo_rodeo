@@ -192,3 +192,47 @@ function ai_product_image_url(array $product, array $catalog): string
     $baseUrl = rtrim((string) ($catalog['public_url'] ?? ''), '/') . '/';
     return $baseUrl !== '/' ? $baseUrl . ltrim(preg_replace('#^\./#', '', $image) ?? $image, '/') : '';
 }
+
+/** Normalizes only fields that are actually present in a published catalog. */
+function ai_product_gallery_urls(array $product, array $catalog): array
+{
+    $gallery = $product['gallery'] ?? $product['media']['gallery'] ?? [];
+    if (!is_array($gallery)) {
+        $gallery = [];
+    }
+    $main = ai_product_image_url($product, $catalog);
+    if ($main !== '') {
+        array_unshift($gallery, $main);
+    }
+
+    $urls = [];
+    foreach ($gallery as $image) {
+        $url = trim((string) $image);
+        if ($url === '') continue;
+        if (!preg_match('#^https?://#i', $url)) {
+            $baseUrl = rtrim((string) ($catalog['public_url'] ?? ''), '/') . '/';
+            $url = $baseUrl === '/' ? '' : $baseUrl . ltrim(preg_replace('#^\./#', '', $url) ?? $url, '/');
+        }
+        if ($url !== '' && !in_array($url, $urls, true)) $urls[] = $url;
+    }
+    return $urls;
+}
+
+function ai_product_response(array $product, array $catalog, string $requestedItem = ''): array
+{
+    $media = is_array($product['media'] ?? null) ? $product['media'] : [];
+    $imageUrl = ai_product_image_url($product, $catalog);
+    return [
+        'item' => ai_first_text([$product['item'] ?? '', $product['item_code'] ?? '', $product['sku'] ?? '', $requestedItem]),
+        'description' => ai_first_text([$product['description'] ?? '', $product['shortDescription'] ?? '', $product['name'] ?? '']),
+        'brand' => ai_first_text([$product['brand'] ?? '', $product['marca'] ?? '']),
+        'price' => ai_first_text([$product['price'] ?? '', $product['unit_price'] ?? '', $product['regular_price'] ?? '']),
+        'available' => ai_first_text([$product['available'] ?? '', $product['stock'] ?? '', $product['disponible'] ?? '', $media['available'] ?? '']),
+        'package' => ai_first_text([$product['package'] ?? '', $product['package_label'] ?? '', $product['empaque'] ?? '', $product['bulto'] ?? '']),
+        'um' => ai_first_text([$product['um'] ?? '', $product['unit_of_measure'] ?? '', $product['unidad_medida'] ?? '']),
+        'ctn' => ai_first_text([$product['ctn'] ?? '', $product['carton'] ?? '', $product['caja'] ?? '']),
+        'barcode' => ai_first_text([$product['barcode'] ?? '', $product['cbarras'] ?? '', $product['codigo_barras'] ?? '']),
+        'image_url' => $imageUrl,
+        'gallery' => ai_product_gallery_urls($product, $catalog),
+    ];
+}

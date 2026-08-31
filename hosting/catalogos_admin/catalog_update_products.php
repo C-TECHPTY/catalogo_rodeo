@@ -7,6 +7,7 @@ admin_require_login(['admin', 'sales']);
 
 const CATALOG_PRODUCTS_UPDATE_MAX_CSV_BYTES = 5242880;
 const CATALOG_PRODUCTS_UPDATE_MAX_IMAGE_BYTES = 8388608;
+const CATALOG_PRODUCTS_UPDATE_MAX_ZIP_BYTES = 536870912;
 const CATALOG_PRODUCTS_THUMB_MAX_WIDTH = 720;
 
 $catalogId = (int) ($_GET['catalog_id'] ?? $_POST['catalog_id'] ?? 0);
@@ -18,8 +19,11 @@ $errorMessage = '';
 $infoMessage = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    verify_csrf_or_abort();
     try {
+        if (products_update_post_exceeds_php_limit()) {
+            throw new RuntimeException('La subida es demasiado grande para la configuracion actual del servidor. Sube las imagenes en grupos mas pequenos. Limites PHP: post_max_size ' . ini_get('post_max_size') . ', upload_max_filesize ' . ini_get('upload_max_filesize') . ', max_file_uploads ' . ini_get('max_file_uploads') . '.');
+        }
+        verify_csrf_or_abort();
         if (!$catalog) {
             throw new RuntimeException('Catalogo no encontrado.');
         }
@@ -31,7 +35,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $preview = products_update_build_preview_from_upload($catalog);
         } elseif ($action === 'attach_images') {
             $preview = products_update_attach_images_to_preview($catalog);
-            $infoMessage = 'Imagenes agregadas a la vista previa. Revisa de nuevo antes de confirmar.';
+            $report = is_array($preview['upload_report'] ?? null) ? $preview['upload_report'] : [];
+            $infoMessage = 'Imagenes revisadas: recibidas ' . (int) ($report['received_count'] ?? 0)
+                . ', coincidieron ' . (int) ($report['matched_count'] ?? 0)
+                . ', sin coincidencia ' . (int) ($report['unmatched_count'] ?? 0)
+                . '. Sin imagen antes: ' . (int) ($report['missing_before'] ?? 0)
+                . ', ahora: ' . (int) ($report['missing_after'] ?? 0) . '.';
         } elseif ($action === 'apply') {
             $applyResult = products_update_apply_confirmed($catalog);
             flash_set('success', 'Actualizacion aplicada al catalogo vivo. Actualizados: ' . (int) $applyResult['updated_count'] . ' · Nuevos: ' . (int) $applyResult['new_count'] . ' · Imagenes: ' . (int) $applyResult['image_count'] . ' · Backup: ' . (string) ($applyResult['backup_path'] ?? ''));
@@ -56,12 +65,20 @@ admin_header('Actualizar productos e imagenes', 'catalogos.php');
     <?php else: ?>
         <p class="muted">Catalogo: <strong><?= html_escape($catalog['title'] ?? '') ?></strong> &middot; <code><?= html_escape($catalog['slug'] ?? '') ?></code></p>
         <p class="muted">Esta pantalla actualiza productos por ITEM y puede cargar imagenes nuevas por nombre de archivo. Crea backup antes de aplicar.</p>
+        <p class="muted"><code>Version imagenes: diagnostico-subida-20260625</code></p>
+        <p class="muted">Para evitar rechazos del servidor, sube imagenes en tandas de hasta <strong><?= (int) ini_get('max_file_uploads') ?: 20 ?></strong> archivos por vez.</p>
 
         <?php if ($errorMessage !== ''): ?>
             <div class="notice notice--warning" style="margin:16px 0;"><?= html_escape($errorMessage) ?></div>
         <?php endif; ?>
         <?php if ($infoMessage !== ''): ?>
             <div class="notice notice--success" style="margin:16px 0;"><?= html_escape($infoMessage) ?></div>
+        <?php endif; ?>
+        <?php if (is_array($preview['upload_report'] ?? null) && !empty($preview['upload_report']['unmatched_names'])): ?>
+            <div class="notice notice--warning" style="margin:16px 0;">
+                Algunas imagenes no coincidieron con ningun ITEM de esta vista previa. Revisa que el archivo se llame igual que el ITEM, por ejemplo <code>NB23189-190.jpg</code>.
+                Primeros archivos sin coincidencia: <code><?= html_escape(implode(', ', array_slice((array) $preview['upload_report']['unmatched_names'], 0, 20))) ?></code>
+            </div>
         <?php endif; ?>
 
         <?php if ($applyResult): ?>
@@ -95,13 +112,13 @@ admin_header('Actualizar productos e imagenes', 'catalogos.php');
 
             <?php if (((int) $preview['missing_image_count']) > 0): ?>
                 <div class="notice notice--warning" style="margin-bottom:16px;">
-                    Faltan imagenes para algunos productos. Agrega esas imagenes a esta vista previa antes de confirmar.
+                    Faltan imagenes para algunos productos. Puedes agregar las imagenes a esta vista previa o confirmar de todos modos si no las tienes.
                 </div>
             <?php endif; ?>
 
-            <?php if (((int) $preview['updated_count'] + (int) $preview['new_count']) > 0 && ((int) $preview['missing_image_count']) === 0): ?>
+            <?php if (((int) $preview['updated_count'] + (int) $preview['new_count']) > 0): ?>
                 <div class="notice notice--warning" style="margin-bottom:16px;">
-                    Esta es solo la vista previa. Para aplicar cambios al catalogo vivo debes confirmar la actualizacion.
+                    Esta es solo la vista previa. Para aplicar cambios al catalogo vivo debes confirmar la actualizacion<?= ((int) $preview['missing_image_count']) > 0 ? ' aunque queden productos sin imagen.' : '.' ?>
                 </div>
                 <form class="js-products-apply-form" method="post" action="catalog_update_products.php?catalog_id=<?= (int) $catalog['id'] ?>" style="margin-bottom:18px;">
                     <?= csrf_field() ?>
@@ -132,7 +149,7 @@ admin_header('Actualizar productos e imagenes', 'catalogos.php');
                 </table>
             </div>
 
-            <?php if (((int) $preview['updated_count'] + (int) $preview['new_count']) > 0 && ((int) $preview['missing_image_count']) === 0): ?>
+            <?php if (((int) $preview['updated_count'] + (int) $preview['new_count']) > 0): ?>
                 <form class="js-products-apply-form" method="post" action="catalog_update_products.php?catalog_id=<?= (int) $catalog['id'] ?>">
                     <?= csrf_field() ?>
                     <input type="hidden" name="action" value="apply">
@@ -171,7 +188,13 @@ admin_header('Actualizar productos e imagenes', 'catalogos.php');
                         <input type="hidden" name="preview_token" value="<?= html_escape($preview['preview_token']) ?>">
                         <label class="wide">
                             <span>Subir imagenes faltantes</span>
-                            <input type="file" name="product_images[]" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple required>
+                            <input type="file" name="product_images[]" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple>
+                            <small>Para mas de <?= (int) ini_get('max_file_uploads') ?: 20 ?> imagenes, sube un ZIP abajo.</small>
+                        </label>
+                        <label class="wide">
+                            <span>O subir ZIP con imagenes</span>
+                            <input type="file" name="product_images_zip" accept=".zip,application/zip,application/x-zip-compressed">
+                            <small>El ZIP puede traer muchas imagenes nombradas con el ITEM, por ejemplo <code>100-8952.jpg</code>.</small>
                         </label>
                         <div class="wide"><button class="button--primary" type="submit">Agregar imagenes a esta vista previa</button></div>
                     </form>
@@ -217,6 +240,11 @@ admin_header('Actualizar productos e imagenes', 'catalogos.php');
                 <span>Imagenes nuevas por ITEM</span>
                 <input type="file" name="product_images[]" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple>
                 <small>Nombra las imagenes con el ITEM, por ejemplo <code>100-8952.jpg</code>. Si Backblaze esta configurado, se suben directo al CDN.</small>
+            </label>
+            <label class="wide">
+                <span>ZIP de imagenes por ITEM</span>
+                <input type="file" name="product_images_zip" accept=".zip,application/zip,application/x-zip-compressed">
+                <small>Usalo para cargar mas imagenes que el limite del servidor. Dentro del ZIP deben venir JPG, PNG o WEBP nombradas con el ITEM.</small>
             </label>
             <label class="wide check-row">
                 <input type="checkbox" name="mark_missing_out_of_stock" value="1">
@@ -397,18 +425,49 @@ function products_update_build_preview_from_upload(array $catalog): array
 function products_update_attach_images_to_preview(array $catalog): array
 {
     $token = preg_replace('/[^a-f0-9]/', '', strtolower((string) ($_POST['preview_token'] ?? '')));
-    $preview = products_update_read_preview($token);
+    [$token, $preview] = products_update_read_preview_for_catalog($token, (int) $catalog['id']);
     if (!$preview || (int) ($preview['catalog_id'] ?? 0) !== (int) $catalog['id']) {
-        throw new RuntimeException('La vista previa vencio o no pertenece a este catalogo.');
+        throw new RuntimeException('La vista previa vencio. Vuelve a cargar el CSV y presiona Vista previa antes de subir imagenes.');
     }
+    $missingBefore = (int) ($preview['missing_image_count'] ?? 0);
+    $previewItemKeys = products_update_preview_item_keys($preview);
     $newImages = products_update_save_preview_images($token);
     if (!$newImages) {
         throw new RuntimeException('No se recibieron imagenes nuevas para agregar a esta vista previa.');
     }
     $preview['images'] = array_replace(is_array($preview['images'] ?? null) ? $preview['images'] : [], $newImages);
     $preview = products_update_rebuild_preview_image_state($catalog, $preview);
+    $matchedNames = [];
+    $unmatchedNames = [];
+    foreach ($newImages as $itemKey => $image) {
+        if (isset($previewItemKeys[$itemKey])) {
+            $matchedNames[] = (string) ($image['name'] ?? $itemKey);
+        } else {
+            $unmatchedNames[] = (string) ($image['name'] ?? $itemKey);
+        }
+    }
+    $preview['upload_report'] = [
+        'received_count' => count($newImages),
+        'matched_count' => count($matchedNames),
+        'unmatched_count' => count($unmatchedNames),
+        'missing_before' => $missingBefore,
+        'missing_after' => (int) ($preview['missing_image_count'] ?? 0),
+        'matched_names' => $matchedNames,
+        'unmatched_names' => $unmatchedNames,
+    ];
     products_update_write_preview($token, $preview);
     return $preview;
+}
+
+function products_update_preview_item_keys(array $preview): array
+{
+    $keys = [];
+    foreach ((array) ($preview['rows'] ?? []) as $row) {
+        if (!is_array($row)) continue;
+        $itemKey = products_update_item_key((string) ($row['ITEM'] ?? ''));
+        if ($itemKey !== '') $keys[$itemKey] = true;
+    }
+    return $keys;
 }
 
 function products_update_rebuild_preview_image_state(array $catalog, array $preview): array
@@ -491,9 +550,9 @@ function products_update_rebuild_preview_image_state(array $catalog, array $prev
 function products_update_apply_confirmed(array $catalog): array
 {
     $token = preg_replace('/[^a-f0-9]/', '', strtolower((string) ($_POST['preview_token'] ?? '')));
-    $preview = products_update_read_preview($token);
+    [$token, $preview] = products_update_read_preview_for_catalog($token, (int) $catalog['id']);
     if (!$preview || (int) ($preview['catalog_id'] ?? 0) !== (int) $catalog['id']) {
-        throw new RuntimeException('La vista previa vencio o no pertenece a este catalogo.');
+        throw new RuntimeException('La vista previa vencio. Vuelve a cargar el CSV.');
     }
     if (!empty($preview['errors'])) {
         throw new RuntimeException('Corrige los errores de columnas antes de aplicar.');
@@ -719,27 +778,85 @@ function products_update_validate_required_columns(array $rows): array
 
 function products_update_save_preview_images(string $token): array
 {
-    if (empty($_FILES['product_images']) || !is_array($_FILES['product_images']['name'] ?? null)) return [];
     $tokenDir = products_update_preview_dir($token);
     $map = [];
-    $count = count($_FILES['product_images']['name']);
-    for ($i = 0; $i < $count; $i++) {
-        $error = (int) ($_FILES['product_images']['error'][$i] ?? UPLOAD_ERR_NO_FILE);
-        if ($error === UPLOAD_ERR_NO_FILE) continue;
-        if ($error !== UPLOAD_ERR_OK) throw new RuntimeException('No se pudo recibir una imagen.');
-        $size = (int) ($_FILES['product_images']['size'][$i] ?? 0);
-        if ($size <= 0 || $size > CATALOG_PRODUCTS_UPDATE_MAX_IMAGE_BYTES) throw new RuntimeException('Cada imagen debe pesar menos de 8 MB.');
-        $name = basename((string) ($_FILES['product_images']['name'][$i] ?? ''));
-        $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-        if ($extension === 'jpeg') $extension = 'jpg';
-        if (!in_array($extension, ['jpg', 'png', 'webp'], true)) throw new RuntimeException('Solo se permiten imagenes JPG, PNG o WEBP.');
-        $item = products_update_item_key(pathinfo($name, PATHINFO_FILENAME));
-        if ($item === '') continue;
-        $target = $tokenDir . DIRECTORY_SEPARATOR . $item . '.' . $extension;
-        if (!move_uploaded_file((string) $_FILES['product_images']['tmp_name'][$i], $target)) throw new RuntimeException('No se pudo guardar imagen temporal.');
-        $map[$item] = ['path' => $target, 'extension' => $extension, 'name' => $name];
+    if (!empty($_FILES['product_images']) && is_array($_FILES['product_images']['name'] ?? null)) {
+        $count = count($_FILES['product_images']['name']);
+        for ($i = 0; $i < $count; $i++) {
+            $error = (int) ($_FILES['product_images']['error'][$i] ?? UPLOAD_ERR_NO_FILE);
+            if ($error === UPLOAD_ERR_NO_FILE) continue;
+            if ($error !== UPLOAD_ERR_OK) throw new RuntimeException('No se pudo recibir una imagen.');
+            $size = (int) ($_FILES['product_images']['size'][$i] ?? 0);
+            if ($size <= 0 || $size > CATALOG_PRODUCTS_UPDATE_MAX_IMAGE_BYTES) throw new RuntimeException('Cada imagen debe pesar menos de 8 MB.');
+            $name = basename((string) ($_FILES['product_images']['name'][$i] ?? ''));
+            $extension = products_update_image_extension($name);
+            $item = products_update_item_key(pathinfo($name, PATHINFO_FILENAME));
+            if ($item === '') continue;
+            $target = $tokenDir . DIRECTORY_SEPARATOR . $item . '.' . $extension;
+            if (!move_uploaded_file((string) $_FILES['product_images']['tmp_name'][$i], $target)) throw new RuntimeException('No se pudo guardar imagen temporal.');
+            $map[$item] = ['path' => $target, 'extension' => $extension, 'name' => $name];
+        }
+    }
+    return array_replace($map, products_update_save_preview_zip_images($tokenDir));
+}
+
+function products_update_save_preview_zip_images(string $tokenDir): array
+{
+    if (empty($_FILES['product_images_zip']) || !is_array($_FILES['product_images_zip'])) return [];
+    $file = $_FILES['product_images_zip'];
+    $error = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
+    if ($error === UPLOAD_ERR_NO_FILE) return [];
+    if ($error !== UPLOAD_ERR_OK) throw new RuntimeException('No se pudo recibir el ZIP de imagenes.');
+    $size = (int) ($file['size'] ?? 0);
+    if ($size <= 0 || $size > CATALOG_PRODUCTS_UPDATE_MAX_ZIP_BYTES) throw new RuntimeException('El ZIP debe pesar menos de 512 MB.');
+    if (!class_exists('ZipArchive')) throw new RuntimeException('El servidor no tiene ZipArchive habilitado para leer ZIP.');
+    $zipPath = (string) ($file['tmp_name'] ?? '');
+    $zip = new ZipArchive();
+    if ($zip->open($zipPath) !== true) throw new RuntimeException('No se pudo abrir el ZIP de imagenes.');
+    $map = [];
+    try {
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $stat = $zip->statIndex($i);
+            if (!is_array($stat)) continue;
+            $entryName = str_replace('\\', '/', (string) ($stat['name'] ?? ''));
+            if ($entryName === '' || str_ends_with($entryName, '/')) continue;
+            $baseName = basename($entryName);
+            $extension = products_update_image_extension($baseName, false);
+            if ($extension === '') continue;
+            $entrySize = (int) ($stat['size'] ?? 0);
+            if ($entrySize <= 0 || $entrySize > CATALOG_PRODUCTS_UPDATE_MAX_IMAGE_BYTES) continue;
+            $item = products_update_item_key(pathinfo($baseName, PATHINFO_FILENAME));
+            if ($item === '') continue;
+            $stream = $zip->getStream($entryName);
+            if (!is_resource($stream)) continue;
+            $target = $tokenDir . DIRECTORY_SEPARATOR . $item . '.' . $extension;
+            $out = fopen($target, 'wb');
+            if (!$out) {
+                fclose($stream);
+                throw new RuntimeException('No se pudo guardar una imagen del ZIP.');
+            }
+            stream_copy_to_stream($stream, $out, CATALOG_PRODUCTS_UPDATE_MAX_IMAGE_BYTES + 1);
+            fclose($out);
+            fclose($stream);
+            if (filesize($target) > CATALOG_PRODUCTS_UPDATE_MAX_IMAGE_BYTES) {
+                @unlink($target);
+                continue;
+            }
+            $map[$item] = ['path' => $target, 'extension' => $extension, 'name' => $baseName];
+        }
+    } finally {
+        $zip->close();
     }
     return $map;
+}
+
+function products_update_image_extension(string $name, bool $throw = true): string
+{
+    $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    if ($extension === 'jpeg') $extension = 'jpg';
+    if (in_array($extension, ['jpg', 'png', 'webp'], true)) return $extension;
+    if ($throw) throw new RuntimeException('Solo se permiten imagenes JPG, PNG o WEBP.');
+    return '';
 }
 
 function products_update_catalog_json_full_path(array $catalog): string
@@ -1142,6 +1259,10 @@ function products_update_preview_dir(string $token): string
 function products_update_write_preview(string $token, array $preview): void
 {
     file_put_contents(products_update_preview_base_dir() . DIRECTORY_SEPARATOR . $token . '.json', json_encode($preview, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    $catalogId = (int) ($preview['catalog_id'] ?? 0);
+    if ($catalogId > 0) {
+        file_put_contents(products_update_preview_base_dir() . DIRECTORY_SEPARATOR . 'latest-' . $catalogId . '.txt', $token);
+    }
 }
 
 function products_update_read_preview(string $token): ?array
@@ -1151,6 +1272,30 @@ function products_update_read_preview(string $token): ?array
     if (!is_file($path)) return null;
     $decoded = json_decode((string) file_get_contents($path), true);
     return is_array($decoded) ? $decoded : null;
+}
+
+function products_update_read_preview_for_catalog(string $token, int $catalogId): array
+{
+    $preview = products_update_read_preview($token);
+    if ($preview && (int) ($preview['catalog_id'] ?? 0) === $catalogId) {
+        return [$token, $preview];
+    }
+    $latestToken = products_update_latest_preview_token($catalogId);
+    if ($latestToken !== '' && $latestToken !== $token) {
+        $latestPreview = products_update_read_preview($latestToken);
+        if ($latestPreview && (int) ($latestPreview['catalog_id'] ?? 0) === $catalogId) {
+            return [$latestToken, $latestPreview];
+        }
+    }
+    return [$token, $preview];
+}
+
+function products_update_latest_preview_token(int $catalogId): string
+{
+    if ($catalogId <= 0) return '';
+    $path = products_update_preview_base_dir() . DIRECTORY_SEPARATOR . 'latest-' . $catalogId . '.txt';
+    $token = is_file($path) ? trim((string) file_get_contents($path)) : '';
+    return preg_match('/^[a-f0-9]{32}$/', $token) === 1 ? $token : '';
 }
 
 function products_update_delete_preview(string $token): void
@@ -1173,6 +1318,30 @@ function products_update_delete_dir(string $dir): void
         is_dir($path) ? products_update_delete_dir($path) : @unlink($path);
     }
     @rmdir($dir);
+}
+
+function products_update_post_exceeds_php_limit(): bool
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') return false;
+    if (!empty($_POST) || !empty($_FILES)) return false;
+    $contentLength = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+    if ($contentLength <= 0) return false;
+    $postMax = products_update_ini_bytes((string) ini_get('post_max_size'));
+    return $postMax > 0 && $contentLength > $postMax;
+}
+
+function products_update_ini_bytes(string $value): int
+{
+    $value = trim($value);
+    if ($value === '') return 0;
+    $unit = strtolower(substr($value, -1));
+    $number = (float) $value;
+    return match ($unit) {
+        'g' => (int) ($number * 1024 * 1024 * 1024),
+        'm' => (int) ($number * 1024 * 1024),
+        'k' => (int) ($number * 1024),
+        default => (int) $number,
+    };
 }
 
 function products_update_normalize_column(string $value): string

@@ -23,7 +23,18 @@
                 <div class="mode-switch">
                     <button id="manualModeButton" class="mode-switch__button mode-switch__button--active" type="button">Modo manual</button>
                     <button id="batchModeButton" class="mode-switch__button" type="button">Modo por lotes</button>
+                    <button id="orderExcelModeButton" class="mode-switch__button" type="button">Excel de pedidos</button>
                 </div>
+
+                <label class="catalog-type-switch">
+                    <span>Tipo de catalogo</span>
+                    <select id="catalogTypeSelect">
+                        <option value="standard">Actual</option>
+                        <option value="christmas">Navidad</option>
+                        <option value="christmas-stock">Navidad Stock</option>
+                        <option value="depot">DEPOT</option>
+                    </select>
+                </label>
 
                 <section class="controls-section controls-section--data manual-only">
                     <h2>Datos generales</h2>
@@ -47,19 +58,56 @@
                             <span>Plantilla</span>
                             <select id="templateSelect">
                                 <option value="classic">Clasica original</option>
-                                <option value="editorial">Editorial premium</option>
                                 <option value="industrial">Industrial moderno</option>
                                 <option value="minimal">Minimal comercial</option>
                                 <option value="showcase">Showcase de marca</option>
                                 <option value="horizon">Horizontal editorial</option>
                                 <option value="ledger">Horizontal tecnica</option>
-                                <option value="campin1">CAMPIN1</option>
+                                <option value="campin1">Camping Premium</option>
+                                <option value="plushies">Peluches</option>
+                                <option value="marketplace">Marketplace Pro</option>
+                                <option value="locotime">Loco Time</option>
                             </select>
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Plantilla web</span>
+                            <select id="webTemplateSelect">
+                                <option value="b2b-modern">B2B moderna actual</option>
+                                <option value="pets">Animal Planet / Mascotas</option>
+                                <option value="camping">Camping / Outdoor</option>
+                                <option value="home-kitchen">Hogar y cocina</option>
+                                <option value="decor">Decoracion</option>
+                                <option value="christmas">Navidad</option>
+                                <option value="marketplace">Marketplace Pro</option>
+                                <option value="christmas-marketplace">Marketplace Navidad</option>
+                            </select>
+                            <small>Solo cambia la presentacion web. La plantilla actual queda como predeterminada.</small>
                         </label>
 
                         <label class="control-field">
                             <span>Productos por pagina</span>
                             <input id="productsPerPage" type="number" min="1" max="12" step="1" value="6">
+                        </label>
+
+                        <label class="control-field">
+                            <span>Tamano de imagen PDF</span>
+                            <select id="pdfProductImageSize">
+                                <option value="normal">Normal (catalogo)</option>
+                                <option value="large">Grande (cuadricula 2 x 2)</option>
+                                <option value="spotlight">Protagonista (1 por pagina)</option>
+                            </select>
+                            <small>Ajusta automaticamente los productos por pagina y conserva la proporcion de la foto.</small>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Ajuste dentro del recuadro</span>
+                            <select id="pdfProductImageFit">
+                                <option value="contain">Completa (sin recortar)</option>
+                                <option value="expanded">Ampliada (sin recortar)</option>
+                                <option value="cover">Llenar recuadro (puede recortar)</option>
+                            </select>
+                            <small>Ninguna opcion deforma la imagen. Llenar puede recortar los bordes si la proporcion es diferente.</small>
                         </label>
                     </div>
                 </section>
@@ -82,9 +130,33 @@
                             <input id="coverImageFile" type="file" accept=".jpg,.jpeg,.png,.webp,.JPG,.JPEG,.PNG,.WEBP">
                         </label>
 
+                        <div class="control-field control-field--wide ai-cover-tools">
+                            <span>Portada con IA solo para PDF</span>
+                            <label class="checkbox-line"><input id="pdfAiCoverEnabled" type="checkbox"> Usar portada IA cargada en el PDF</label>
+                            <select id="pdfAiCoverStyle">
+                                <option value="editorial">Editorial profesional</option>
+                                <option value="luxury">Lujo comercial</option>
+                                <option value="minimal">Minimalista premium</option>
+                                <option value="seasonal">Temporada / campana</option>
+                            </select>
+                            <div class="panel-actions">
+                                <button id="preparePdfAiPromptButton" type="button">Preparar prompt</button>
+                                <button id="copyPdfAiPromptButton" type="button">Copiar prompt</button>
+                            </div>
+                            <textarea id="pdfAiCoverPrompt" rows="8" placeholder="Aqui aparecera el prompt para usarlo en ChatGPT."></textarea>
+                            <label><span>Cargar imagen creada en ChatGPT</span><input id="pdfAiCoverFile" type="file" accept=".jpg,.jpeg,.png,.webp,.JPG,.JPEG,.PNG,.WEBP"></label>
+                            <small id="pdfAiCoverStatus">Esta portada se usa solo al previsualizar o exportar PDF; no cambia la web.</small>
+                        </div>
+
                         <label class="control-field control-field--wide">
                             <span>Logo paginas de producto</span>
                             <input id="pageLogoFile" type="file" accept=".jpg,.jpeg,.png,.webp,.svg,.JPG,.JPEG,.PNG,.WEBP,.SVG">
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Tamaño del logo web</span>
+                            <input id="pageLogoScale" type="range" min="0.7" max="2" step="0.05" value="1.35">
+                            <small>Ajusta el tamaño del logo en el encabezado de la web. No modifica el PDF.</small>
                         </label>
 
                         <label class="control-field">
@@ -103,6 +175,31 @@
                         <label class="control-field control-field--wide">
                             <span>Intensidad del fondo</span>
                             <input id="pageBackgroundOpacity" type="range" min="0" max="0.35" step="0.01" value="0.12">
+                        </label>
+
+                        <div class="control-field control-field--wide">
+                            <span>Intro y portada web</span>
+                            <label class="checkbox-line"><input id="webEntranceEnabled" type="checkbox"> Activar intro profesional al abrir la web</label>
+                            <label class="checkbox-line"><input id="webEntranceCoverEnabled" type="checkbox" checked> Mostrar portada con boton antes del catalogo</label>
+                            <small>Si esta apagado, la web queda como esta actualmente.</small>
+                        </div>
+
+                        <label class="control-field control-field--wide">
+                            <span>Fondo intro escritorio</span>
+                            <input id="webEntranceBackgroundFile" type="file" accept=".jpg,.jpeg,.png,.webp,.JPG,.JPEG,.PNG,.WEBP">
+                            <small>Horizontal recomendado: 1920 x 1080. Si no eliges fondo, usa la imagen hero, portada o colores de marca.</small>
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Fondo intro tablet</span>
+                            <input id="webEntranceTabletBackgroundFile" type="file" accept=".jpg,.jpeg,.png,.webp,.JPG,.JPEG,.PNG,.WEBP">
+                            <small>Opcional. Recomendado: 1536 x 2048 o 1600 x 1200.</small>
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Fondo intro celular</span>
+                            <input id="webEntranceMobileBackgroundFile" type="file" accept=".jpg,.jpeg,.png,.webp,.JPG,.JPEG,.PNG,.WEBP">
+                            <small>Opcional. Vertical recomendado: 1080 x 1920.</small>
                         </label>
                     </div>
                 </section>
@@ -182,6 +279,13 @@
                             <small>Usa los ITEM del Excel y solo carga imagenes con nombre coincidente.</small>
                         </div>
 
+                        <div class="control-field control-field--wide">
+                            <span>Indice rapido de imagenes</span>
+                            <button id="buildImageIndexButton" type="button">Crear / actualizar indice</button>
+                            <label class="checkbox-line"><input id="autoMatchImagesInput" type="checkbox" checked> Cargar imagenes automaticamente al subir Excel</label>
+                            <small id="imageIndexStatus">Sin indice rapido configurado.</small>
+                        </div>
+
                         <label class="control-field control-field--wide">
                             <span>Productos sin imagen</span>
                             <label class="checkbox-line"><input id="hideMissingImages" type="checkbox"> No incluir productos sin imagen principal</label>
@@ -233,7 +337,7 @@
 
                         <label class="control-field control-field--wide">
                             <span>Buscar por descripcion / ITEM</span>
-                            <input id="descriptionSearchInput" type="text" value="" placeholder="Ejemplo: vajilla, barra de cortina, vasos">
+                            <input id="descriptionSearchInput" type="text" value="" placeholder="Ejemplo: carpa, sillas, bolso de dormir, hamacas">
                             <small>Filtra por palabras en descripcion, ITEM, marca, categoria y medidas. Vacio no filtra.</small>
                         </label>
 
@@ -326,6 +430,24 @@
                             <input id="heroImageFile" type="file" accept=".jpg,.jpeg,.png,.webp,.JPG,.JPEG,.PNG,.WEBP">
                         </label>
 
+                        <label class="checkbox-line control-field--wide"><input id="heroSliderEnabled" type="checkbox"> Activar carrusel de imágenes de fondo Hero</label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Imágenes carrusel Hero</span>
+                            <input id="heroSliderImages" type="file" accept=".jpg,.jpeg,.png,.webp,.JPG,.JPEG,.PNG,.WEBP" multiple disabled>
+                            <small>Con dos o más imágenes, cambia con fundido suave sin alterar el tamaño del Hero.</small>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Tiempo carrusel Hero</span>
+                            <select id="heroSliderInterval" disabled>
+                                <option value="3000">3 segundos</option>
+                                <option value="5000" selected>5 segundos</option>
+                                <option value="8000">8 segundos</option>
+                                <option value="15000">15 segundos</option>
+                            </select>
+                        </label>
+
                         <label class="control-field control-field--wide">
                             <span>Texto hero B2B</span>
                             <input id="heroSubtitleInput" type="text" value="Pedidos por empaque, link trazable y salida operativa en Excel/CSV/XLSX.">
@@ -384,7 +506,7 @@
                         <div class="section-subtitle control-field--wide">Salida y URL publica</div>
                         <label class="control-field">
                             <span>Nombre del catalogo</span>
-                            <input id="webCatalogSlug" type="text" value="catalogo-publicable">
+                            <input id="webCatalogSlug" type="text" value="especial-dia-del-padre">
                         </label>
 
                         <label class="control-field">
@@ -392,8 +514,8 @@
                             <select id="webExpiryDays">
                                 <option value="7">7 dias</option>
                                 <option value="15">15 dias</option>
-                                <option value="30" selected>30 dias</option>
-                                <option value="90">90 dias</option>
+                                <option value="30">30 dias</option>
+                                <option value="90" selected>90 dias</option>
                             </select>
                         </label>
 
@@ -451,6 +573,37 @@
                                 <button id="toggleApiKeyButton" type="button" aria-label="Mostrar API key privada">Mostrar</button>
                             </div>
                         </label>
+
+                        <div class="section-subtitle control-field--wide">Backblaze B2 (configuracion cifrada)</div>
+                        <label class="control-field control-field--wide">
+                            <span>URL CDN de imagenes</span>
+                            <input id="b2CdnBaseUrl" type="text" value="" placeholder="https://cdn.ejemplo.com">
+                        </label>
+                        <label class="control-field">
+                            <span>Bucket</span>
+                            <input id="b2BucketName" type="text" value="" placeholder="catalogo-imagenes">
+                        </label>
+                        <label class="control-field">
+                            <span>Key ID</span>
+                            <input id="b2KeyId" type="text" value="" placeholder="Key ID limitado al bucket">
+                        </label>
+                        <label class="control-field control-field--wide">
+                            <span>Application key</span>
+                            <input id="b2ApplicationKey" type="password" value="" placeholder="Se guarda cifrada en esta PC">
+                        </label>
+                        <label class="control-field control-field--wide">
+                            <span>Endpoint S3</span>
+                            <input id="b2Endpoint" type="text" value="" placeholder="https://s3.us-east-005.backblazeb2.com">
+                        </label>
+                        <div class="control-field control-field--wide">
+                            <span>Sincronizacion y mantenimiento</span>
+                            <div class="settings-actions">
+                                <button id="testBackblazeButton" type="button">Probar Backblaze</button>
+                                <button id="analyzeBackblazeButton" type="button">Analizar catalogo actual</button>
+                                <button id="cleanBackblazeButton" type="button" disabled>Limpiar seleccion segura</button>
+                            </div>
+                            <small id="backblazeMaintenanceStatus" class="settings-path">La publicacion reemplazara solamente imagenes cuyo contenido haya cambiado.</small>
+                        </div>
 
                         <div class="control-field control-field--wide">
                             <span>Configuracion local</span>
@@ -516,6 +669,13 @@
                                 <button id="copyWebLinkButton" type="button">Copiar</button>
                             </div>
                         </label>
+                        <div class="control-field control-field--wide">
+                            <span>Actualizar catalogo existente</span>
+                            <div class="settings-actions">
+                                <button id="analyzeCatalogUpdateButton" type="button">Analizar Excel contra publicado</button>
+                            </div>
+                            <small id="catalogUpdateAnalysisStatus" class="settings-path">Conserva el mismo slug y enlace. La publicacion actualiza el catalogo existente.</small>
+                        </div>
                     </div>
                     <p id="webExportStatus" class="status-message">La exportacion web generara HTML, JSON, multimedia y metadata. Para compartir con clientes usa Links / Enlaces en el panel admin.</p>
                     <div id="webPublishProgressPanel" class="batch-progress-panel" hidden>
@@ -532,7 +692,7 @@
                         <button id="renderButton" type="button">Generar catalogo</button>
                         <button id="printButton" type="button">Imprimir / Exportar PDF</button>
                         <button id="exportWebButton" type="button">Guardar paquete local</button>
-                        <button id="publishHostingButton" type="button">Subir al hosting</button>
+                        <button id="publishHostingButton" type="button">Publicar / actualizar existente</button>
                         <button id="testHostingButton" type="button">Probar FTP</button>
                     </div>
                     <p id="statusMessage" class="status-message">Carga un Excel y tus imagenes para comenzar.</p>
@@ -573,20 +733,63 @@
                         <label class="control-field">
                             <span>Plantilla base</span>
                             <select id="batchTemplateSelect">
-                                <option value="editorial">Editorial premium</option>
                                 <option value="classic">Clasica original</option>
                                 <option value="industrial">Industrial moderno</option>
                                 <option value="minimal">Minimal comercial</option>
                                 <option value="showcase">Showcase de marca</option>
                                 <option value="horizon">Horizontal editorial</option>
                                 <option value="ledger">Horizontal tecnica</option>
-                                <option value="campin1">CAMPIN1</option>
+                                <option value="campin1">Camping Premium</option>
+                                <option value="plushies">Peluches</option>
+                                <option value="marketplace">Marketplace Pro</option>
                             </select>
                         </label>
 
                         <label class="control-field">
                             <span>Compresion imagen</span>
                             <input id="batchImageQuality" type="range" min="0.45" max="0.95" step="0.05" value="0.72">
+                        </label>
+
+                        <label class="control-field">
+                            <span>Productos por pagina</span>
+                            <select id="batchProductsPerPage">
+                                <option value="auto">Automatico (segun plantilla)</option>
+                                <option value="1">1</option><option value="2">2</option><option value="4">4</option>
+                                <option value="6">6</option><option value="8">8</option><option value="9">9</option><option value="12">12</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Tamano de imagen PDF</span>
+                            <select id="batchProductImageSize">
+                                <option value="auto">Automatico</option>
+                                <option value="small">Pequeno</option>
+                                <option value="medium">Mediano</option>
+                                <option value="large">Grande</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field">
+                            <span>Ajuste dentro del recuadro</span>
+                            <select id="batchProductImageFit">
+                                <option value="contain">Completa (sin recortar)</option>
+                                <option value="cover">Llenar (puede recortar)</option>
+                            </select>
+                        </label>
+
+                        <label class="control-field control-field--wide">
+                            <span>Ordenar productos por</span>
+                            <select id="batchProductSort">
+                                <option value="original">Orden original del Excel</option>
+                                <option value="description-asc">Descripcion A-Z</option>
+                                <option value="description-desc">Descripcion Z-A</option>
+                                <option value="item-asc">Codigo / ITEM ascendente</option>
+                                <option value="item-desc">Codigo / ITEM descendente</option>
+                                <option value="price-asc">Precio menor a mayor</option>
+                                <option value="price-desc">Precio mayor a menor</option>
+                                <option value="category-description">Categoria y despues descripcion</option>
+                            </select>
+                            <small>Solo ordena una copia temporal; no modifica el Excel.</small>
                         </label>
 
                         <label class="control-field">
@@ -619,6 +822,23 @@
                                 <option value="left">Izquierda</option>
                             </select>
                         </label>
+
+                        <div class="control-field control-field--wide ai-cover-tools">
+                            <span>Portadas IA del lote (solo PDF)</span>
+                            <select id="batchAiCoverStyle">
+                                <option value="editorial">Editorial profesional</option>
+                                <option value="luxury">Lujo comercial</option>
+                                <option value="minimal">Minimalista premium</option>
+                                <option value="seasonal">Temporada / campana</option>
+                            </select>
+                            <input id="batchAiCoverInstructions" type="text" placeholder="Instruccion opcional para todas las portadas">
+                            <div class="panel-actions">
+                                <button id="prepareBatchAiPromptsButton" type="button">Preparar prompts</button>
+                                <button id="copyBatchAiPromptsButton" type="button">Copiar prompts</button>
+                            </div>
+                            <textarea id="batchAiCoverPrompts" rows="10" readonly placeholder="Escanea las categorias y prepara los prompts."></textarea>
+                            <small id="batchAiCoverStatus">Luego carga la imagen aprobada desde cada categoria.</small>
+                        </div>
                     </div>
                 </section>
 
@@ -639,6 +859,81 @@
                     </div>
                     <div id="batchResultsList" class="batch-results-list"></div>
                     <p id="batchStatusMessage" class="status-message">El modo por lotes funciona dentro de la app local de escritorio.</p>
+                </section>
+
+                <section class="controls-section order-excel-only" hidden>
+                    <h2>Excel profesional de pedidos</h2>
+                    <div class="controls-grid">
+                        <label class="control-field control-field--wide">
+                            <span>Archivo SAP o reporte comercial</span>
+                            <div class="path-picker">
+                                <input id="orderSapPath" type="text" readonly placeholder="Selecciona 44687.xls o report123.xls">
+                                <button id="pickOrderSapButton" type="button">Buscar</button>
+                            </div>
+                        </label>
+                        <label class="control-field control-field--wide">
+                            <span>Carpeta de imagenes</span>
+                            <div class="path-picker">
+                                <input id="orderImagesRoot" type="text" readonly placeholder="Imagenes nombradas por referencia">
+                                <button id="pickOrderImagesButton" type="button">Buscar</button>
+                            </div>
+                        </label>
+                        <div class="control-field control-field--wide">
+                            <span>Indice rapido de imagenes</span>
+                            <button id="buildOrderImageIndexButton" type="button">Crear / actualizar indice</button>
+                            <small id="orderImageIndexStatus">Sin indice para pedidos. La primera creacion puede tardar.</small>
+                        </div>
+                        <div class="control-field control-field--wide">
+                            <span>Productos sin imagen</span>
+                            <label class="checkbox-line"><input id="orderExcludeMissingImages" type="checkbox"> No incluir productos sin imagen</label>
+                            <small>Desactivado: se mantienen y se marcan como SIN IMAGEN. Activado: se excluyen de la vista, el Excel y el total.</small>
+                        </div>
+                        <label class="control-field control-field--wide">
+                            <span>Logo</span>
+                            <div class="path-picker">
+                                <input id="orderLogoPath" type="text" readonly placeholder="PNG o JPG opcional">
+                                <button id="pickOrderLogoButton" type="button">Buscar</button>
+                            </div>
+                        </label>
+                        <label class="control-field control-field--wide">
+                            <span>Titulo del documento</span>
+                            <input id="orderExcelTitle" type="text" value="Pedido comercial" placeholder="Ejemplo: Pedido Blackout 44687">
+                        </label>
+                        <label class="control-field">
+                            <span>Plantilla</span>
+                            <select id="orderExcelTemplate">
+                                <option value="blackout">Blackout</option>
+                                <option value="professional">Profesional moderna</option>
+                            </select>
+                        </label>
+                        <label class="control-field">
+                            <span>Tamano de imagen</span>
+                            <select id="orderImageSize">
+                                <option value="small">Pequena</option>
+                                <option value="medium" selected>Mediana</option>
+                                <option value="large">Grande</option>
+                            </select>
+                        </label>
+                        <label class="control-field">
+                            <span>Factor de precio</span>
+                            <input id="orderPriceFactor" type="number" min="0.01" max="10" step="0.01" value="1.00" list="orderPriceFactorOptions">
+                            <datalist id="orderPriceFactorOptions"><option value="1.00"></option><option value="0.55"></option><option value="0.52"></option></datalist>
+                            <small>1.00 mantiene $US. Ejemplo: 0.55 aplica 55% del precio.</small>
+                        </label>
+                        <label class="control-field">
+                            <span>Color del encabezado</span>
+                            <input id="orderHeaderColor" type="color" value="#465ab4">
+                        </label>
+                        <label class="control-field">
+                            <span>Color de acento</span>
+                            <input id="orderAccentColor" type="color" value="#203764">
+                        </label>
+                    </div>
+                    <div class="panel-actions">
+                        <button id="analyzeOrderExcelButton" type="button">Analizar pedido</button>
+                        <button id="generateOrderExcelButton" type="button">Generar Excel</button>
+                    </div>
+                    <p id="orderExcelStatus" class="status-message">Selecciona el archivo SAP para comenzar.</p>
                 </section>
             </div>
         </aside>
@@ -702,6 +997,22 @@
                     </footer>
                 </section>
             </main>
+            <section id="orderExcelWorkspace" class="order-excel-workspace no-print" hidden>
+                <div class="order-excel-hero">
+                    <p>Modulo independiente</p>
+                    <h2>Excel profesional de pedidos</h2>
+                    <span>Convierte la exportacion de SAP en un archivo XLSX con imagenes, logo, estilos y formato de impresion.</span>
+                </div>
+                <div id="orderExcelSummary" class="order-excel-summary">
+                    <article><strong>0</strong><span>Productos</span></article>
+                    <article><strong>0</strong><span>Imagenes encontradas</span></article>
+                    <article><strong>0</strong><span>Sin imagen</span></article>
+                    <article><strong>$0.00</strong><span>Total general</span></article>
+                </div>
+                <div id="orderExcelPreview" class="order-excel-preview">
+                    <p>Selecciona y analiza un archivo SAP para ver el resumen.</p>
+                </div>
+            </section>
             <div id="layoutEditorOverlay" class="layout-editor-overlay no-print" hidden></div>
         </main>
     </div>

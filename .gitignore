@@ -3,11 +3,14 @@ node_modules/
 dist/
 build/
 release/
+release-*/
+installer-output/
 .DS_Store
 Thumbs.db
 settings.json
 .env
 .env.*
+config.php
 !.env.example
 hosting/catalogos_api/config.php
 hosting/hosting.zip

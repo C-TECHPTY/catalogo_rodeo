@@ -447,6 +447,27 @@ function fetch_catalog_by_slug(string $slug): ?array
     return $catalog ?: null;
 }
 
+function fetch_catalog_by_id(int $catalogId): ?array
+{
+    if ($catalogId <= 0) {
+        return null;
+    }
+    $sql = 'SELECT c.*,
+                   s.name AS seller_display_name,
+                   cl.business_name AS client_business_name,
+                   cl.contact_name AS client_contact_name
+            FROM catalogs c
+            LEFT JOIN sellers s ON s.id = c.seller_id
+            LEFT JOIN clients cl ON cl.id = c.client_id
+            WHERE c.id = :id
+            LIMIT 1';
+    $statement = db()->prepare($sql);
+    $statement->execute(['id' => $catalogId]);
+    $catalog = $statement->fetch();
+
+    return $catalog ?: null;
+}
+
 function resolve_catalog_status(array $catalog): string
 {
     $status = (string) ($catalog['status'] ?? 'active');
@@ -627,11 +648,12 @@ function fetch_short_link_target(string $code): ?array
 
     $statement = db()->prepare(
         'SELECT sl.*,
+                l.catalog_id AS link_catalog_id,
                 l.token, l.expires_at AS share_expires_at, l.is_active AS share_is_active,
                 c.public_url, c.slug AS catalog_slug, c.status AS catalog_status, c.expires_at AS catalog_expires_at
          FROM catalog_short_links sl
          INNER JOIN catalog_share_links l ON l.id = sl.share_link_id
-         INNER JOIN catalogs c ON c.id = sl.catalog_id
+         INNER JOIN catalogs c ON c.id = l.catalog_id
          WHERE sl.code = :code
          LIMIT 1'
     );
@@ -755,14 +777,18 @@ function resolve_public_catalog_context(string $slug, string $token = '', string
 
     if ($token !== '') {
         $link = fetch_share_link_by_token($token);
-        if (!$link || (int) $link['catalog_id'] !== (int) $catalog['id']) {
-            json_response([
-                'ok' => false,
-                'error' => 'El enlace compartido no es valido para este catalogo.',
-                'share_link' => [
-                    'status' => 'invalid',
-                ],
-            ], 404);
+        if (!$link || !catalog_share_link_matches_catalog($link, $catalog)) {
+            $linkedCatalog = $link ? fetch_catalog_by_id((int) ($link['catalog_id'] ?? 0)) : null;
+            if (!$linkedCatalog || resolve_catalog_status($linkedCatalog) !== 'active') {
+                json_response([
+                    'ok' => false,
+                    'error' => 'El enlace compartido no es valido para este catalogo.',
+                    'share_link' => [
+                        'status' => 'invalid',
+                    ],
+                ], 404);
+            }
+            $catalog = $linkedCatalog;
         }
 
         $linkStatus = resolve_share_link_status($link);
@@ -801,6 +827,23 @@ function resolve_public_catalog_context(string $slug, string $token = '', string
         'seller_name' => $sellerName,
         'client_name' => $link['client_name'] ?? $catalog['client_business_name'] ?? $catalog['client_name'] ?? '',
     ];
+}
+
+function catalog_share_link_matches_catalog(array $link, array $catalog): bool
+{
+    $linkCatalogId = (int) ($link['catalog_id'] ?? 0);
+    $catalogId = (int) ($catalog['id'] ?? 0);
+    if ($linkCatalogId > 0 && $linkCatalogId === $catalogId) {
+        return true;
+    }
+
+    $payload = json_decode((string) ($catalog['api_payload'] ?? ''), true);
+    if (!is_array($payload)) {
+        return false;
+    }
+    $isScanList = !empty($payload['scan_list']) || !empty($payload['metadata']['scanList']) || !empty($payload['metadata']['enabled']);
+    $baseCatalogId = (int) ($payload['base_catalog_id'] ?? 0);
+    return $isScanList && $baseCatalogId > 0 && $linkCatalogId === $baseCatalogId;
 }
 
 function record_catalog_access(array $context): void
@@ -871,6 +914,7 @@ function build_public_catalog_payload(array $context): array
     if (empty($json['theme']) && !empty($apiPayload['theme']) && is_array($apiPayload['theme'])) {
         $json['theme'] = $apiPayload['theme'];
     }
+    $json = apply_catalog_product_live_edits((int) ($catalog['id'] ?? 0), $json);
 
     $promotion = [
         'title' => (string) ($catalog['promo_title'] ?? ''),
@@ -909,6 +953,277 @@ function build_public_catalog_payload(array $context): array
         'product_view_counts' => catalog_product_view_counts((int) $catalog['id']),
         'metadata' => $json,
     ];
+}
+
+function apply_catalog_product_live_edits(int $catalogId, array $json): array
+{
+    if ($catalogId <= 0 || !catalog_table_exists('catalog_product_live_edits')) {
+        return $json;
+    }
+
+    $productKey = '';
+    foreach (['catalog', 'products', 'items'] as $key) {
+        if (isset($json[$key]) && is_array($json[$key])) {
+            $productKey = $key;
+            break;
+        }
+    }
+    if ($productKey === '') {
+        return $json;
+    }
+
+    $phase2Ready = catalog_column_exists('catalog_product_live_edits', 'source_type')
+        && catalog_column_exists('catalog_product_live_edits', 'brand')
+        && catalog_column_exists('catalog_product_live_edits', 'package_label')
+        && catalog_column_exists('catalog_product_live_edits', 'category')
+        && catalog_column_exists('catalog_product_live_edits', 'is_new')
+        && catalog_column_exists('catalog_product_live_edits', 'product_payload');
+    $barcodeReady = catalog_column_exists('catalog_product_live_edits', 'barcode');
+    $select = $phase2Ready
+        ? 'item_code, description, price, available, brand, package_label, category' . ($barcodeReady ? ', barcode' : '') . ', is_new, is_active, image_url, thumbnail_url, source_type, product_payload'
+        : 'item_code, description, price, available, is_active, image_url, thumbnail_url';
+    $statement = db()->prepare(
+        "SELECT {$select}
+         FROM catalog_product_live_edits
+         WHERE catalog_id = :catalog_id"
+    );
+    $statement->execute(['catalog_id' => $catalogId]);
+    $edits = [];
+    foreach ($statement->fetchAll() as $row) {
+        $itemKey = catalog_product_live_edit_item_key((string) ($row['item_code'] ?? ''));
+        if ($itemKey !== '') {
+            $edits[$itemKey] = $row;
+        }
+    }
+    if (!$edits) {
+        return catalog_product_apply_barcode_mappings($catalogId, $json, $productKey);
+    }
+
+    $products = [];
+    $matchedItems = [];
+    foreach ($json[$productKey] as $product) {
+        if (!is_array($product)) {
+            $products[] = $product;
+            continue;
+        }
+        $itemKey = catalog_product_live_edit_item_key((string) ($product['item'] ?? $product['item_code'] ?? ''));
+        if ($itemKey === '' || !isset($edits[$itemKey])) {
+            $products[] = $product;
+            continue;
+        }
+
+        $edit = $edits[$itemKey];
+        $matchedItems[$itemKey] = true;
+        if ((int) ($edit['is_active'] ?? 1) !== 1) {
+            continue;
+        }
+
+        $products[] = catalog_product_live_edit_apply_to_product($product, $edit);
+    }
+    foreach ($edits as $itemKey => $edit) {
+        if (!$phase2Ready || isset($matchedItems[$itemKey]) || (string) ($edit['source_type'] ?? '') !== 'manual') {
+            continue;
+        }
+        if ((int) ($edit['is_active'] ?? 1) !== 1) {
+            continue;
+        }
+        $manualProduct = catalog_product_live_edit_manual_product($edit);
+        if ($manualProduct) {
+            array_unshift($products, $manualProduct);
+        }
+    }
+
+    $json[$productKey] = $products;
+    return catalog_product_apply_barcode_mappings($catalogId, $json, $productKey);
+}
+
+function catalog_product_apply_barcode_mappings(int $catalogId, array $json, string $productKey): array
+{
+    if ($catalogId <= 0 || $productKey === '' || !isset($json[$productKey]) || !is_array($json[$productKey]) || !catalog_table_exists('catalog_product_barcodes')) {
+        return $json;
+    }
+    $statement = db()->prepare(
+        'SELECT item_code, barcode
+         FROM catalog_product_barcodes
+         WHERE catalog_id = :catalog_id OR catalog_id IS NULL
+         ORDER BY catalog_id DESC'
+    );
+    $statement->execute(['catalog_id' => $catalogId]);
+    $barcodes = [];
+    foreach ($statement->fetchAll() as $row) {
+        $itemKey = catalog_product_live_edit_item_key((string) ($row['item_code'] ?? ''));
+        $barcode = trim((string) ($row['barcode'] ?? ''));
+        if ($itemKey !== '' && $barcode !== '' && !isset($barcodes[$itemKey])) {
+            $barcodes[$itemKey] = $barcode;
+        }
+    }
+    if (!$barcodes) {
+        return $json;
+    }
+    foreach ($json[$productKey] as &$product) {
+        if (!is_array($product)) {
+            continue;
+        }
+        $itemKey = catalog_product_live_edit_item_key((string) ($product['item'] ?? $product['item_code'] ?? ''));
+        if ($itemKey !== '' && isset($barcodes[$itemKey]) && trim((string) ($product['barcode'] ?? $product['cbarra'] ?? '')) === '') {
+            $product['barcode'] = $barcodes[$itemKey];
+            $product['cbarra'] = $barcodes[$itemKey];
+        }
+    }
+    unset($product);
+    return $json;
+}
+
+function catalog_product_live_edit_apply_to_product(array $product, array $edit): array
+{
+    if (array_key_exists('description', $edit) && $edit['description'] !== null) {
+        $description = (string) $edit['description'];
+        $product['description'] = $description;
+        $product['shortDescription'] = $description;
+    }
+    if (array_key_exists('price', $edit) && $edit['price'] !== null) {
+        $product['price'] = (string) $edit['price'];
+    }
+    if (array_key_exists('available', $edit) && $edit['available'] !== null) {
+        $available = (string) $edit['available'];
+        $product['available'] = $available;
+        $product['disponible'] = $available;
+        $isOut = catalog_product_live_edit_is_out_of_stock($available);
+        $product['outOfStock'] = $isOut ? 1 : 0;
+        $product['agotado'] = $isOut ? 1 : 0;
+    }
+    if (array_key_exists('brand', $edit) && $edit['brand'] !== null) {
+        $product['brand'] = (string) $edit['brand'];
+    }
+    if (array_key_exists('package_label', $edit) && $edit['package_label'] !== null) {
+        $package = (string) $edit['package_label'];
+        $product['package'] = $package;
+        $product['empaque'] = $package;
+        $product['packageLabel'] = $package;
+        $product['packageQty'] = max(1, catalog_product_live_edit_available_number($package));
+    }
+    if (array_key_exists('category', $edit) && $edit['category'] !== null) {
+        $product['category'] = (string) ($edit['category'] ?: 'General');
+    }
+    if (array_key_exists('barcode', $edit) && trim((string) $edit['barcode']) !== '') {
+        $product['barcode'] = trim((string) $edit['barcode']);
+        $product['cbarra'] = trim((string) $edit['barcode']);
+    }
+    $product['isNew'] = (int) ($edit['is_new'] ?? $product['isNew'] ?? $product['is_new'] ?? 0);
+    $product['is_new'] = (int) ($edit['is_new'] ?? $product['isNew'] ?? $product['is_new'] ?? 0);
+    $imageUrl = trim((string) ($edit['image_url'] ?? ''));
+    $thumbnailUrl = trim((string) ($edit['thumbnail_url'] ?? ''));
+    if ($imageUrl !== '') {
+        catalog_product_live_edit_set_image($product, $imageUrl, $thumbnailUrl);
+    }
+    $product['liveEditUpdatedAt'] = true;
+    return $product;
+}
+
+function catalog_product_live_edit_manual_product(array $edit): ?array
+{
+    $payload = json_decode((string) ($edit['product_payload'] ?? ''), true);
+    $product = is_array($payload) ? $payload : [];
+    $item = trim((string) ($edit['item_code'] ?? $product['item'] ?? ''));
+    if ($item === '') {
+        return null;
+    }
+
+    $product['item'] = $item;
+    $product['description'] = (string) ($edit['description'] ?? $product['description'] ?? $item);
+    $product['shortDescription'] = $product['description'];
+    $product['price'] = (string) ($edit['price'] ?? $product['price'] ?? '');
+    $product['originalPrice'] = (string) ($product['originalPrice'] ?? $product['price']);
+    $available = (string) ($edit['available'] ?? $product['available'] ?? '0');
+    $product['available'] = $available;
+    $product['disponible'] = $available;
+    $isOut = catalog_product_live_edit_is_out_of_stock($available);
+    $product['outOfStock'] = $isOut ? 1 : 0;
+    $product['agotado'] = $isOut ? 1 : 0;
+    $product['brand'] = (string) ($edit['brand'] ?? $product['brand'] ?? '');
+    $package = (string) ($edit['package_label'] ?? $product['package'] ?? '');
+    $product['package'] = $package;
+    $product['empaque'] = $package;
+    $product['packageLabel'] = $package;
+    $product['packageQty'] = max(1, catalog_product_live_edit_available_number($package));
+    $product['category'] = (string) ($edit['category'] ?? $product['category'] ?? 'General') ?: 'General';
+    $barcode = trim((string) ($edit['barcode'] ?? $product['barcode'] ?? ''));
+    if ($barcode !== '') {
+        $product['barcode'] = $barcode;
+        $product['cbarra'] = $barcode;
+    }
+    $product['saleUnit'] = (string) ($product['saleUnit'] ?? 'bulto');
+    $product['minimumOrder'] = max(1, (int) ($product['minimumOrder'] ?? 1));
+    $product['multipleQty'] = max(1, (int) ($product['multipleQty'] ?? 1));
+    $product['isNew'] = (int) ($edit['is_new'] ?? 0);
+    $product['is_new'] = (int) ($edit['is_new'] ?? 0);
+    $product['sourceType'] = 'manual';
+    $imageUrl = trim((string) ($edit['image_url'] ?? $product['image_url'] ?? ''));
+    $thumbnailUrl = trim((string) ($edit['thumbnail_url'] ?? $product['thumbnail_url'] ?? ''));
+    if ($imageUrl !== '') {
+        catalog_product_live_edit_set_image($product, $imageUrl, $thumbnailUrl);
+    }
+
+    return $product;
+}
+
+function catalog_product_live_edit_set_image(array &$product, string $imageUrl, string $thumbnailUrl = ''): void
+{
+    $isRemote = preg_match('#^https?://#i', $imageUrl) === 1;
+    $product['image_url'] = $imageUrl;
+    $product['imageUrl'] = $imageUrl;
+    if ($isRemote) {
+        $product['remote_image_url'] = $imageUrl;
+        $product['remoteImageUrl'] = $imageUrl;
+    }
+
+    $media = isset($product['media']) && is_array($product['media']) ? $product['media'] : [];
+    $media['mainImage'] = $imageUrl;
+    $media['main_image'] = $imageUrl;
+    $media['mainImageCandidates'] = [$imageUrl];
+    $media['gallery'] = [$imageUrl];
+    if ($thumbnailUrl !== '') {
+        $product['thumbnail_url'] = $thumbnailUrl;
+        $product['thumbnailUrl'] = $thumbnailUrl;
+        $media['thumbnail'] = $thumbnailUrl;
+        $media['thumbnailUrl'] = $thumbnailUrl;
+        $media['cardImage'] = $thumbnailUrl;
+        $media['cardImageCandidates'] = [$thumbnailUrl, $imageUrl];
+    }
+    if ($isRemote) {
+        $media['remote_image_url'] = $imageUrl;
+        $media['remoteImageUrl'] = $imageUrl;
+    }
+    $product['media'] = $media;
+}
+
+function catalog_product_live_edit_is_out_of_stock(string $value): bool
+{
+    $availability = strtolower(trim($value));
+    if ($availability === '') {
+        return false;
+    }
+    if (in_array($availability, ['0', '0.0', '0.00', 'agotado', 'sin stock', 'no disponible', 'out of stock'], true)) {
+        return true;
+    }
+    $numeric = (float) preg_replace('/[^0-9.-]+/', '', $availability);
+    return is_finite($numeric) && $numeric <= 0;
+}
+
+function catalog_product_live_edit_available_number(string $value): int
+{
+    $number = (int) preg_replace('/[^0-9-]+/', '', $value);
+    return max(0, $number);
+}
+
+function catalog_product_live_edit_item_key(string $value): string
+{
+    $normalized = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+    if (!is_string($normalized) || $normalized === '') {
+        $normalized = $value;
+    }
+
+    return preg_replace('/[^A-Z0-9]+/', '', strtoupper($normalized)) ?? '';
 }
 
 function catalog_product_view_counts(int $catalogId): array

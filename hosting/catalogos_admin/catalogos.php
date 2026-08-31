@@ -170,7 +170,12 @@ admin_header('Catalogos', 'catalogos.php');
             <?php foreach ($catalogs as $catalog): ?>
                 <tr>
                     <td class="optional-col"><?= html_escape($catalog['slug'] ?? '') ?></td>
-                    <td><strong><?= html_escape($catalog['title'] ?? '') ?></strong><div class="muted"><?= html_escape($catalog['public_url'] ?? '') ?></div></td>
+                    <td>
+                        <div class="catalog-title-cell">
+                            <strong><?= html_escape($catalog['title'] ?? '') ?></strong>
+                            <a class="catalog-url" href="<?= html_escape($catalog['public_url'] ?? '#') ?>" target="_blank" rel="noreferrer"><?= html_escape($catalog['public_url'] ?? '') ?></a>
+                        </div>
+                    </td>
                     <td><?= html_escape(($catalog['seller_display_name'] ?? '') ?: ($catalog['seller_name'] ?? '') ?: 'Sin vendedor') ?></td>
                     <td><?= admin_status_badge(resolve_catalog_status($catalog)) ?></td>
                     <td class="optional-col"><?= html_escape(($catalog['created_at'] ?? '') ?: ($catalog['generated_at'] ?? '')) ?></td>
@@ -178,28 +183,47 @@ admin_header('Catalogos', 'catalogos.php');
                     <td><?= (int) $catalog['links_count'] ?></td>
                     <td><?= (int) $catalog['orders_count'] ?></td>
                     <td>
-                        <div class="toolbar__actions catalog-actions">
-                            <a class="button" href="catalogos.php?edit=<?= (int) $catalog['id'] ?>">Editar</a>
-                            <a class="button" href="catalog_edit_live.php?catalog_id=<?= (int) $catalog['id'] ?>">Editar visual</a>
-                            <a class="button" href="links.php?catalog_id=<?= (int) $catalog['id'] ?>">Crear link</a>
-                            <a class="button" href="catalog_update_products.php?catalog_id=<?= (int) $catalog['id'] ?>">Actualizar productos</a>
-                            <a class="button" href="catalog_history.php?catalog_id=<?= (int) $catalog['id'] ?>">Historial</a>
-                            <a class="button" href="catalog_update_data.php?catalog_id=<?= (int) $catalog['id'] ?>">Actualizar datos</a>
-                            <a class="button" href="catalog_update_images.php?catalog_id=<?= (int) $catalog['id'] ?>">Actualizar imagenes</a>
-                            <a class="button" href="send_catalog_to_sellers.php?catalog_id=<?= (int) $catalog['id'] ?>">Enviar a vendedores</a>
-                            <?php if (!empty($catalog['public_url'])): ?><a class="button" href="<?= html_escape($catalog['public_url']) ?>" target="_blank">Abrir</a><?php endif; ?>
-                            <?php if ($catalogColumns['status']): ?><form method="post">
-                                <?= csrf_field() ?>
-                                <input type="hidden" name="action" value="toggle">
-                                <input type="hidden" name="catalog_id" value="<?= (int) $catalog['id'] ?>">
-                                <button type="submit"><?= ($catalog['status'] ?? '') === 'active' ? 'Archivar' : 'Activar' ?></button>
-                            </form><?php endif; ?>
-                            <form method="post" onsubmit="return confirm('Eliminar este catalogo y sus links/pedidos asociados? Esta accion no se puede deshacer.');">
-                                <?= csrf_field() ?>
-                                <input type="hidden" name="action" value="delete">
-                                <input type="hidden" name="catalog_id" value="<?= (int) $catalog['id'] ?>">
-                                <button class="button--danger" type="submit">Eliminar</button>
-                            </form>
+                        <div class="catalog-actions">
+                            <div class="catalog-actions__primary">
+                                <?php if (!empty($catalog['public_url'])): ?><a class="button button--primary" href="<?= html_escape($catalog['public_url']) ?>" target="_blank">Abrir</a><?php endif; ?>
+                                <a class="button" href="catalog_product_live_import.php?catalog_id=<?= (int) $catalog['id'] ?>">Importar vivo</a>
+                                <a class="button" href="catalog_product_live_edit.php?catalog_id=<?= (int) $catalog['id'] ?>">Productos vivo</a>
+                            </div>
+                            <details class="catalog-actions__group">
+                                <summary>Gestionar</summary>
+                                <div>
+                                    <a class="button" href="catalogos.php?edit=<?= (int) $catalog['id'] ?>">Editar datos</a>
+                                    <a class="button" href="catalog_edit_live.php?catalog_id=<?= (int) $catalog['id'] ?>">Editar visual</a>
+                                    <a class="button" href="catalog_update_products.php?catalog_id=<?= (int) $catalog['id'] ?>">Actualizar productos</a>
+                                    <a class="button" href="catalog_update_data.php?catalog_id=<?= (int) $catalog['id'] ?>">Actualizar datos</a>
+                                    <a class="button" href="catalog_update_images.php?catalog_id=<?= (int) $catalog['id'] ?>">Actualizar imagenes</a>
+                                </div>
+                            </details>
+                            <details class="catalog-actions__group">
+                                <summary>Compartir</summary>
+                                <div>
+                                    <a class="button" href="links.php?catalog_id=<?= (int) $catalog['id'] ?>">Crear link</a>
+                                    <a class="button" href="send_catalog_to_sellers.php?catalog_id=<?= (int) $catalog['id'] ?>">Enviar a vendedores</a>
+                                    <a class="button" href="catalog_history.php?catalog_id=<?= (int) $catalog['id'] ?>">Historial</a>
+                                </div>
+                            </details>
+                            <details class="catalog-actions__group">
+                                <summary>Sistema</summary>
+                                <div>
+                                    <?php if ($catalogColumns['status']): ?><form method="post">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="action" value="toggle">
+                                        <input type="hidden" name="catalog_id" value="<?= (int) $catalog['id'] ?>">
+                                        <button type="submit"><?= ($catalog['status'] ?? '') === 'active' ? 'Archivar' : 'Activar' ?></button>
+                                    </form><?php endif; ?>
+                                    <form method="post" onsubmit="return confirm('Eliminar este catalogo y sus links/pedidos asociados? Esta accion no se puede deshacer.');">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="catalog_id" value="<?= (int) $catalog['id'] ?>">
+                                        <button class="button--danger" type="submit">Eliminar</button>
+                                    </form>
+                                </div>
+                            </details>
                         </div>
                     </td>
                 </tr>

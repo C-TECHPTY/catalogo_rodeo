@@ -7,11 +7,63 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "pack": "node node_modules/@electron/packager/bin/electron-packager.mjs . \"Catalogo Rodeo B2B\" --platform=win32 --arch=x64 --out=release --overwrite --prune=true --ignore=\"^/release\" --ignore=\"^/web\" --ignore=\"^/\\.env\" --ignore=\"\\\\.xlsx$\" --ignore=\"\\\\.xlsm$\" --ignore=\"\\\\.xls$\" --ignore=\"\\\\.zip$\"",
-    "dist:win": "npm run pack"
+    "pack": "node node_modules/@electron/packager/bin/electron-packager.mjs . \"Catalogo Rodeo B2B\" --platform=win32 --arch=x64 --out=release --overwrite --prune=true --icon=build/icon.ico --ignore=\"^/release\" --ignore=\"^/web\" --ignore=\"^/\\.env\" --ignore=\"\\\\.xlsx$\" --ignore=\"\\\\.xlsm$\" --ignore=\"\\\\.xls$\" --ignore=\"\\\\.zip$\"",
+    "dist:win": "electron-builder --win nsis --x64",
+    "dist:portable": "npm run pack"
   },
   "devDependencies": {
     "@electron/packager": "^19.1.0",
-    "electron": "^31.7.7"
+    "electron": "^31.7.7",
+    "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0"
+  },
+  "build": {
+    "appId": "com.ctechpty.catalogorodeob2b",
+    "productName": "Catalogo Rodeo B2B",
+    "asar": true,
+    "directories": {
+      "output": "installer-output",
+      "buildResources": "build"
+    },
+    "files": [
+      "index.html",
+      "main.js",
+      "preload.js",
+      "script.js",
+      "styles.css",
+      "fonts/**/*",
+      "assets/**/*",
+      "hosting/assets/public-catalog.css",
+      "hosting/assets/public-catalog.js",
+      "hosting/assets/img/no-photo-camera.svg",
+      "hosting/assets/brand_templates/**/*",
+      "hosting/catalogos_admin/assets/logo-rodeo-azul.png",
+      "node_modules/**/*",
+      "package.json",
+      "!**/.env*",
+      "!**/*.sql",
+      "!**/*.xlsx",
+      "!**/*.xls",
+      "!**/*.xlsm",
+      "!release*/**",
+      "!installer-output/**"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": ["nsis"],
+      "artifactName": "Catalogo-Rodeo-B2B-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Catalogo Rodeo B2B",
+      "deleteAppDataOnUninstall": false
+    }
   }
 }
