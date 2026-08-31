@@ -1,6 +1,6 @@
 {
   "name": "catalogo-rodeo-b2b",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Generador B2B de catalogos comerciales Rodeo",
   "author": "C-TECHPTY",
   "productName": "Catalogo Rodeo B2B",
@@ -9,6 +9,7 @@
     "start": "electron .",
     "pack": "node node_modules/@electron/packager/bin/electron-packager.mjs . \"Catalogo Rodeo B2B\" --platform=win32 --arch=x64 --out=release --overwrite --prune=true --icon=build/icon.ico --ignore=\"^/release\" --ignore=\"^/web\" --ignore=\"^/\\.env\" --ignore=\"\\\\.xlsx$\" --ignore=\"\\\\.xlsm$\" --ignore=\"\\\\.xls$\" --ignore=\"\\\\.zip$\"",
     "dist:win": "electron-builder --win nsis --x64",
+    "dist:publish": "electron-builder --win nsis --x64 --publish always",
     "dist:portable": "npm run pack"
   },
   "devDependencies": {
@@ -17,6 +18,7 @@
     "electron-builder": "^26.0.12"
   },
   "dependencies": {
+    "electron-updater": "^6.6.2",
     "exceljs": "^4.4.0"
   },
   "build": {
@@ -55,6 +57,13 @@
       "target": ["nsis"],
       "artifactName": "Catalogo-Rodeo-B2B-Setup-${version}-${arch}.${ext}"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "C-TECHPTY",
+        "repo": "catalogo_rodeo"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "perMachine": false,

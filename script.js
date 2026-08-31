@@ -281,6 +281,7 @@ const webPublishProgressPanel = byId("webPublishProgressPanel");
 const webPublishProgressBarFill = byId("webPublishProgressBarFill");
 const webPublishProgressText = byId("webPublishProgressText");
 const publishHostingButton = byId("publishHostingButton");
+const checkAppUpdatesButton = byId("checkAppUpdatesButton");
 const testHostingButton = byId("testHostingButton");
 const analyzeCatalogUpdateButton = byId("analyzeCatalogUpdateButton");
 const catalogUpdateAnalysisStatus = byId("catalogUpdateAnalysisStatus");
@@ -354,6 +355,7 @@ bindOrderExcelEvents();
 bindDesktopExportReceiver();
 bindBatchProgressReceiver();
 bindHostingProgressReceiver();
+bindAppUpdateReceiver();
 setMode("manual");
 applyThemeVariables();
 renderLayoutPresetOptions();
@@ -636,6 +638,12 @@ setTimeout(() => window.print(), 250);
 });
 exportWebButton?.addEventListener("click", async () => { await exportWebPackage(); });
 publishHostingButton?.addEventListener("click", async () => { await publishCatalogToHosting(); });
+checkAppUpdatesButton?.addEventListener("click", async () => {
+if (!isDesktop || !desktopApi?.checkForAppUpdates) return setWebExportStatus("La búsqueda de actualizaciones requiere la aplicación instalada.", true);
+setWebExportStatus("Buscando actualización de la aplicación...");
+const result = await desktopApi.checkForAppUpdates();
+if (result?.status === "development") setWebExportStatus(result.message || "La búsqueda de actualizaciones se realiza desde la aplicación instalada.");
+});
 testHostingButton?.addEventListener("click", async () => { await testHostingConnection(); });
 analyzeCatalogUpdateButton?.addEventListener("click", analyzeCatalogUpdateFromUi);
 window.addEventListener("resize", refreshLayoutEditorOverlay);
@@ -731,6 +739,17 @@ appendBatchResult(payload);
 function bindHostingProgressReceiver() {
 if (!isDesktop || !desktopApi.onHostingProgress) return;
 desktopApi.onHostingProgress((payload) => { updateHostingProgressUi(payload); });
+}
+
+function bindAppUpdateReceiver() {
+if (!isDesktop || !desktopApi?.onAppUpdateStatus) return;
+desktopApi.onAppUpdateStatus((payload) => {
+const status = String(payload?.status || "");
+if (status === "checking") setWebExportStatus("Buscando actualización de la aplicación...");
+if (status === "downloading") setWebExportStatus(`Descargando actualización: ${Number(payload?.percent || 0)}%`);
+if (status === "not-available") setWebExportStatus("La aplicación ya está actualizada.");
+if (status === "downloaded") setWebExportStatus("Actualización descargada. Confirma la instalación en la ventana mostrada.");
+});
 }
 
 function setPreviewMode(mode) {

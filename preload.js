@@ -19,6 +19,10 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("catalogDesktop", {
     isDesktop: true,
+    checkForAppUpdates: () => ipcRenderer.invoke("app:update:check"),
+    onAppUpdateStatus: (callback) => {
+        ipcRenderer.on("app-update-status", (_, payload) => callback(payload));
+    },
     chooseFile: (options) => ipcRenderer.invoke("dialog:open-file", options),
     chooseDirectory: (options) => ipcRenderer.invoke("dialog:open-directory", options),
     readFileBuffer: (filePath) => ipcRenderer.invoke("fs:read-file-buffer", filePath),

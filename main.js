@@ -22,6 +22,14 @@ const { pathToFileURL } = require("url");
 const { execFile, spawn } = require("child_process");
 const crypto = require("crypto");
 const ExcelJS = require("exceljs");
+let autoUpdater = null;
+try {
+    ({ autoUpdater } = require("electron-updater"));
+} catch (error) {
+    // La app sigue funcionando en desarrollo aunque aun no se haya instalado
+    // la dependencia del actualizador.
+    console.warn("Actualizador no disponible:", error.message);
+}
 
 // Algunos controladores de video de Windows no pueden iniciar el proceso GPU de Chromium.
 // Electron debe cambiar a renderizado por software antes de crear cualquier ventana.
@@ -63,6 +71,91 @@ const DEFAULT_PUBLICATION_SETTINGS = {
 };
 
 let mainWindow = null;
+let updateDownloadInProgress = false;
+let updatePromptVisible = false;
+
+function updateStatusPayload(status, details = {}) {
+    return { status, version: app.getVersion(), ...details };
+}
+
+function sendUpdateStatus(status, details = {}) {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send("app-update-status", updateStatusPayload(status, details));
+}
+
+async function checkForAppUpdates({ userInitiated = false } = {}) {
+    if (!app.isPackaged) {
+        return updateStatusPayload("development", { message: "Las actualizaciones se comprueban en la aplicación instalada." });
+    }
+    if (!autoUpdater) {
+        return updateStatusPayload("unavailable", { message: "El actualizador no está disponible en esta instalación." });
+    }
+    try {
+        sendUpdateStatus("checking");
+        const result = await autoUpdater.checkForUpdates();
+        if (!result?.updateInfo && userInitiated) {
+            await dialog.showMessageBox(mainWindow, { type: "info", title: "Actualizaciones", message: "Tu aplicación ya está actualizada." });
+        }
+        return updateStatusPayload("checked", { availableVersion: result?.updateInfo?.version || "" });
+    } catch (error) {
+        console.warn("No se pudo buscar una actualización:", error.message);
+        sendUpdateStatus("error", { message: error.message });
+        if (userInitiated) {
+            await dialog.showMessageBox(mainWindow, { type: "warning", title: "Actualizaciones", message: "No se pudo comprobar si hay actualizaciones.", detail: error.message });
+        }
+        return updateStatusPayload("error", { message: error.message });
+    }
+}
+
+function initializeAutoUpdater() {
+    if (!app.isPackaged || !autoUpdater) return;
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.on("checking-for-update", () => sendUpdateStatus("checking"));
+    autoUpdater.on("update-not-available", (info) => sendUpdateStatus("not-available", { availableVersion: info?.version || app.getVersion() }));
+    autoUpdater.on("download-progress", (progress) => sendUpdateStatus("downloading", { percent: Math.round(progress?.percent || 0) }));
+    autoUpdater.on("error", (error) => sendUpdateStatus("error", { message: error?.message || "Error desconocido" }));
+    autoUpdater.on("update-available", async (info) => {
+        sendUpdateStatus("available", { availableVersion: info?.version || "" });
+        if (updatePromptVisible) return;
+        updatePromptVisible = true;
+        const result = await dialog.showMessageBox(mainWindow, {
+            type: "info",
+            title: "Nueva actualización disponible",
+            message: `Está disponible la versión ${info?.version || "nueva"} de Catálogo Rodeo B2B.`,
+            detail: "Puedes descargarla ahora. La aplicación se reiniciará únicamente cuando la descarga finalice y confirmes la instalación.",
+            buttons: ["Descargar ahora", "Más tarde"],
+            defaultId: 0,
+            cancelId: 1,
+            noLink: true,
+        });
+        updatePromptVisible = false;
+        if (result.response !== 0 || updateDownloadInProgress) return;
+        updateDownloadInProgress = true;
+        try {
+            await autoUpdater.downloadUpdate();
+        } catch (error) {
+            updateDownloadInProgress = false;
+            console.warn("No se pudo descargar la actualización:", error.message);
+            await dialog.showMessageBox(mainWindow, { type: "warning", title: "Actualizaciones", message: "No se pudo descargar la actualización.", detail: error.message });
+        }
+    });
+    autoUpdater.on("update-downloaded", async (info) => {
+        updateDownloadInProgress = false;
+        sendUpdateStatus("downloaded", { availableVersion: info?.version || "" });
+        const result = await dialog.showMessageBox(mainWindow, {
+            type: "info",
+            title: "Actualización lista",
+            message: `La versión ${info?.version || "nueva"} ya se descargó.`,
+            detail: "Guarda tu trabajo y selecciona Instalar y reiniciar para aplicar la actualización.",
+            buttons: ["Instalar y reiniciar", "Instalar al cerrar"],
+            defaultId: 0,
+            cancelId: 1,
+            noLink: true,
+        });
+        if (result.response === 0) autoUpdater.quitAndInstall(false, true);
+    });
+}
 
 function configureAppStorage() {
     const localAppData = process.env.LOCALAPPDATA || path.join(app.getPath("home"), "AppData", "Local");
@@ -106,6 +199,8 @@ if (!gotSingleInstanceLock) {
     app.whenReady().then(() => {
         registerIpcHandlers();
         createMainWindow();
+        initializeAutoUpdater();
+        setTimeout(() => { checkForAppUpdates(); }, 8000);
 
         app.on("activate", () => {
             if (BrowserWindow.getAllWindows().length === 0) {
@@ -122,6 +217,7 @@ app.on("window-all-closed", () => {
 });
 
 function registerIpcHandlers() {
+    ipcMain.handle("app:update:check", async () => checkForAppUpdates({ userInitiated: true }));
     ipcMain.handle("dialog:open-file", async (_, options = {}) => {
         const result = await dialog.showOpenDialog(mainWindow, {
             title: options.title || "Seleccionar archivo",
